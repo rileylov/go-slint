@@ -1,0 +1,98 @@
+# Weekly check for a new upstream Slint release. When one exists, it attempts the
+# update (bump .slint-version, build the shim, run the full test suite) and:
+#   - opens a PR if it builds + tests clean (the common case — just merge it), or
+#   - opens an Issue with the build log if it doesn't (a breaking API change —
+#     fix the shim per UPDATING.md).
+# Only acts when .slint-version is pinned to a release tag (vX.Y.Z).
+name: slint-update
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Mondays 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine target release
+        id: check
+        run: |
+          current="$(cat .slint-version)"
+          case "$current" in
+            v[0-9]*) ;;
+            *) echo "Pin '$current' is not a release tag — skipping (pin a tag to enable auto-updates)."
+               echo "skip=true" >> "$GITHUB_OUTPUT"; exit 0;;
+          esac
+          latest="$(gh api repos/slint-ui/slint/releases/latest --jq .tag_name)"
+          echo "current=$current  latest=$latest"
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+          if [ "$current" = "$latest" ]; then
+            echo "Already on the latest release."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-go@v5
+        if: steps.check.outputs.skip != 'true'
+        with:
+          go-version-file: go.mod
+
+      - name: Attempt the update
+        id: build
+        if: steps.check.outputs.skip != 'true'
+        continue-on-error: true
+        run: |
+          tag="${{ steps.check.outputs.latest }}"
+          echo "$tag" > .slint-version
+          git init -q slint
+          git -C slint remote add origin https://github.com/slint-ui/slint
+          git -C slint fetch --depth 1 origin "$tag"
+          git -C slint checkout -q FETCH_HEAD
+          sudo apt-get update && sudo apt-get install -y libfontconfig-dev
+          rustup toolchain install stable --profile minimal --no-self-update
+          set -o pipefail
+          make lib 2>&1 | tee build.log
+          go test ./... 2>&1 | tee -a build.log
+
+      - name: Open PR (update is clean)
+        if: steps.check.outputs.skip != 'true' && steps.build.outcome == 'success'
+        run: |
+          tag="${{ steps.check.outputs.latest }}"
+          branch="slint-update/$tag"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$branch"
+          git add .slint-version
+          git commit -m "build: update Slint to $tag"
+          git push -f origin "$branch"
+          existing="$(gh pr list --head "$branch" --state open --json number --jq '.[0].number')"
+          if [ -z "$existing" ]; then
+            gh pr create --base main --head "$branch" \
+              --title "build: update Slint to $tag" \
+              --body "Automated update: bumps .slint-version to $tag. The shim built and the full test suite (incl. the conformance corpus) passed in the watcher; CI re-verifies on this PR. Merge, then tag a go-slint release to publish the updated native libs."
+          fi
+
+      - name: Open issue (update needs work)
+        if: steps.check.outputs.skip != 'true' && steps.build.outcome == 'failure'
+        run: |
+          tag="${{ steps.check.outputs.latest }}"
+          title="Slint $tag: shim needs updating"
+          existing="$(gh issue list --state open --search "$title in:title" --json number --jq '.[0].number')"
+          if [ -z "$existing" ]; then
+            excerpt="$(tail -c 6000 build.log 2>/dev/null || echo '(no log captured)')"
+            printf '%s\n\n```\n%s\n```\n' \
+              "Slint released **$tag**, but \`make lib\` / the test suite failed against it — the interpreter API likely changed. See [UPDATING.md](../blob/main/UPDATING.md) for the fix process. Build log tail:" \
+              "$excerpt" > issue.md
+            gh issue create --title "$title" --body-file issue.md
+          fi

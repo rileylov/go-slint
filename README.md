@@ -159,6 +159,11 @@ broken update can't ship silently. In practice the shim builds unchanged across
 Slint versions (verified compiling clean and conformance-green on both 1.16.1 and
 1.17.0-dev).
 
+A weekly [`slint-update`](.github/workflows/slint-update.yml) workflow watches for
+new Slint releases and opens a ready-to-merge PR when one builds + tests clean (or
+an issue when it needs a shim fix). See [UPDATING.md](UPDATING.md) for the full
+process and versioning policy.
+
 ## License
 
 The **go-slint** binding code in this repository is licensed under the
