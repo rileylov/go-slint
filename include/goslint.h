@@ -81,6 +81,17 @@ int      goslint_instance_hide(const GoComponentInstance *i);
 int      goslint_instance_run(const GoComponentInstance *i);
 void     goslint_instance_free(GoComponentInstance *i);
 
+/* ---- window control (physical pixels) ---- */
+int      goslint_instance_window_size(const GoComponentInstance *i, uint32_t *w, uint32_t *h);
+void     goslint_instance_window_set_size(const GoComponentInstance *i, uint32_t w, uint32_t h);
+int      goslint_instance_window_position(const GoComponentInstance *i, int32_t *x, int32_t *y);
+void     goslint_instance_window_set_position(const GoComponentInstance *i, int32_t x, int32_t y);
+float    goslint_instance_window_scale_factor(const GoComponentInstance *i);
+void     goslint_instance_window_set_fullscreen(const GoComponentInstance *i, bool on);
+void     goslint_instance_window_set_maximized(const GoComponentInstance *i, bool on);
+void     goslint_instance_window_set_minimized(const GoComponentInstance *i, bool on);
+void     goslint_instance_window_request_redraw(const GoComponentInstance *i);
+
 /* ---- callbacks, invoke, globals ---- */
 /* A callback receives a host handle (user_data) + borrowed args, and returns an
  * owned GoValue (NULL == Void) that the library takes ownership of. `drop` is

@@ -340,5 +340,22 @@ func (i *Instance) Show() error { return i.inner.Show() }
 func (i *Instance) Hide() error { return i.inner.Hide() }
 func (i *Instance) Run() error  { return i.inner.Run() }
 
+// Window control. Sizes and positions are in physical pixels; divide by
+// ScaleFactor to get logical (.slint) pixels. These act on the instance's window
+// and are most reliable once it's shown.
+//
+// Note: on Wayland the compositor controls window placement, so
+// SetWindowPosition/WindowPosition are no-ops there (they work on X11, Windows,
+// and macOS). Run on X11 — e.g. with WAYLAND_DISPLAY unset — to use positioning.
+func (i *Instance) WindowSize() (w, h int)     { return i.inner.WindowSize() }
+func (i *Instance) SetWindowSize(w, h int)     { i.inner.SetWindowSize(w, h) }
+func (i *Instance) WindowPosition() (x, y int) { return i.inner.WindowPosition() }
+func (i *Instance) SetWindowPosition(x, y int) { i.inner.SetWindowPosition(x, y) }
+func (i *Instance) ScaleFactor() float32       { return i.inner.WindowScaleFactor() }
+func (i *Instance) SetFullscreen(on bool)      { i.inner.SetWindowFullscreen(on) }
+func (i *Instance) SetMaximized(on bool)       { i.inner.SetWindowMaximized(on) }
+func (i *Instance) SetMinimized(on bool)       { i.inner.SetWindowMinimized(on) }
+func (i *Instance) RequestRedraw()             { i.inner.RequestRedraw() }
+
 // Close releases the instance.
 func (i *Instance) Close() { i.inner.Free() }

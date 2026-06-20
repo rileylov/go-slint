@@ -1,0 +1,55 @@
+import { Button, VerticalBox, HorizontalBox } from "std-widgets.slint";
+
+export component AppWindow inherits Window {
+    title: "Window control demo";
+    preferred-width: 440px;
+    preferred-height: 340px;
+
+    // live readout, updated from Go
+    in property <string> info: "…";
+
+    // driven into Go
+    callback set-size(int, int);
+    callback set-pos(int, int);
+    callback toggle-maximize();
+    callback toggle-fullscreen();
+
+    VerticalBox {
+        Text {
+            text: "Window control (driven from Go)";
+            font-size: 18px;
+            font-weight: 700;
+            horizontal-alignment: center;
+        }
+        Text {
+            text: root.info;
+            horizontal-alignment: center;
+            color: #4caf50;
+        }
+
+        Text { text: "Resize:"; }
+        HorizontalBox {
+            Button { text: "640×480"; clicked => { root.set-size(640, 480); } }
+            Button { text: "800×600"; clicked => { root.set-size(800, 600); } }
+            Button { text: "1024×768"; clicked => { root.set-size(1024, 768); } }
+        }
+
+        Text { text: "Move (X11/Windows/macOS — ignored on Wayland):"; }
+        HorizontalBox {
+            Button { text: "→ 50, 50"; clicked => { root.set-pos(50, 50); } }
+            Button { text: "→ 400, 200"; clicked => { root.set-pos(400, 200); } }
+        }
+
+        HorizontalBox {
+            Button { text: "Toggle maximize"; clicked => { root.toggle-maximize(); } }
+            Button { text: "Toggle fullscreen"; clicked => { root.toggle-fullscreen(); } }
+        }
+
+        Text {
+            text: "Tip: drag-resize the window — the readout updates live (a Go timer polls it).";
+            font-size: 11px;
+            color: #888;
+            wrap: word-wrap;
+        }
+    }
+}

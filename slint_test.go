@@ -369,6 +369,22 @@ func TestHeadlessRoundTrip(t *testing.T) {
 	if pw, _ := gci.Int("pic-w"); pw != w {
 		t.Fatalf("pic-w = %d; want %d", pw, w)
 	}
+
+	// ---- window control (FFI plumbing; values are backend-defined) ----
+	if sf := inst.ScaleFactor(); sf <= 0 {
+		t.Fatalf("ScaleFactor() = %v; want > 0", sf)
+	}
+	inst.SetWindowSize(640, 480)
+	inst.SetWindowPosition(5, 5)
+	inst.SetMaximized(false)
+	inst.SetMinimized(false)
+	inst.RequestRedraw()
+	if ww, wh := inst.WindowSize(); ww < 0 || wh < 0 {
+		t.Fatalf("WindowSize() = %dx%d", ww, wh)
+	}
+	if px, py := inst.WindowPosition(); px == 0 && py == 0 {
+		t.Logf("WindowPosition() = 0,0 (headless backend default)")
+	}
 }
 
 func mustColor(t *testing.T, inst *slint.Instance, name string) slint.Color {

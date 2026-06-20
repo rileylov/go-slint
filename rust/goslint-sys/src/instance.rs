@@ -168,6 +168,161 @@ pub unsafe extern "C" fn goslint_instance_run(i: *const ComponentInstance) -> i3
     })
 }
 
+// ---- window control (all in physical pixels; use scale_factor to convert) ----
+
+/// Read the window size (physical px) into `w`/`h`. Returns 0 on success.
+///
+/// # Safety
+/// `i`/`w`/`h` must be NULL or valid pointers.
+#[no_mangle]
+pub unsafe extern "C" fn goslint_instance_window_size(
+    i: *const ComponentInstance,
+    w: *mut u32,
+    h: *mut u32,
+) -> i32 {
+    guard(1, || match i.as_ref() {
+        Some(i) => {
+            let s = i.window().size();
+            if let Some(w) = w.as_mut() {
+                *w = s.width;
+            }
+            if let Some(h) = h.as_mut() {
+                *h = s.height;
+            }
+            0
+        }
+        None => 1,
+    })
+}
+
+/// Set the window size in physical pixels.
+///
+/// # Safety
+/// `i` must be NULL or an instance pointer.
+#[no_mangle]
+pub unsafe extern "C" fn goslint_instance_window_set_size(
+    i: *const ComponentInstance,
+    w: u32,
+    h: u32,
+) {
+    guard((), || {
+        if let Some(i) = i.as_ref() {
+            i.window()
+                .set_size(i_slint_core::api::PhysicalSize::new(w, h));
+        }
+    })
+}
+
+/// Read the window position (physical px) into `x`/`y`. Returns 0 on success.
+///
+/// # Safety
+/// `i`/`x`/`y` must be NULL or valid pointers.
+#[no_mangle]
+pub unsafe extern "C" fn goslint_instance_window_position(
+    i: *const ComponentInstance,
+    x: *mut i32,
+    y: *mut i32,
+) -> i32 {
+    guard(1, || match i.as_ref() {
+        Some(i) => {
+            let p = i.window().position();
+            if let Some(x) = x.as_mut() {
+                *x = p.x;
+            }
+            if let Some(y) = y.as_mut() {
+                *y = p.y;
+            }
+            0
+        }
+        None => 1,
+    })
+}
+
+/// Set the window position in physical pixels.
+///
+/// # Safety
+/// `i` must be NULL or an instance pointer.
+#[no_mangle]
+pub unsafe extern "C" fn goslint_instance_window_set_position(
+    i: *const ComponentInstance,
+    x: i32,
+    y: i32,
+) {
+    guard((), || {
+        if let Some(i) = i.as_ref() {
+            i.window()
+                .set_position(i_slint_core::api::PhysicalPosition::new(x, y));
+        }
+    })
+}
+
+/// The window scale factor (device pixels per logical pixel), or 0 on error.
+///
+/// # Safety
+/// `i` must be NULL or an instance pointer.
+#[no_mangle]
+pub unsafe extern "C" fn goslint_instance_window_scale_factor(i: *const ComponentInstance) -> f32 {
+    guard(0.0, || match i.as_ref() {
+        Some(i) => i.window().scale_factor(),
+        None => 0.0,
+    })
+}
+
+/// # Safety
+/// `i` must be NULL or an instance pointer.
+#[no_mangle]
+pub unsafe extern "C" fn goslint_instance_window_set_fullscreen(
+    i: *const ComponentInstance,
+    on: bool,
+) {
+    guard((), || {
+        if let Some(i) = i.as_ref() {
+            i.window().set_fullscreen(on);
+        }
+    })
+}
+
+/// # Safety
+/// `i` must be NULL or an instance pointer.
+#[no_mangle]
+pub unsafe extern "C" fn goslint_instance_window_set_maximized(
+    i: *const ComponentInstance,
+    on: bool,
+) {
+    guard((), || {
+        if let Some(i) = i.as_ref() {
+            i.window().set_maximized(on);
+        }
+    })
+}
+
+/// # Safety
+/// `i` must be NULL or an instance pointer.
+#[no_mangle]
+pub unsafe extern "C" fn goslint_instance_window_set_minimized(
+    i: *const ComponentInstance,
+    on: bool,
+) {
+    guard((), || {
+        if let Some(i) = i.as_ref() {
+            i.window().set_minimized(on);
+        }
+    })
+}
+
+/// Request a redraw of the window.
+///
+/// # Safety
+/// `i` must be NULL or an instance pointer.
+#[no_mangle]
+pub unsafe extern "C" fn goslint_instance_window_request_redraw(i: *const ComponentInstance) {
+    guard((), || {
+        if let Some(i) = i.as_ref() {
+            i.window().request_redraw();
+        }
+    })
+}
+
 /// # Safety
 /// `i` must be NULL or an instance pointer.
 #[no_mangle]

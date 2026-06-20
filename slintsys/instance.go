@@ -106,6 +106,48 @@ func (i *Instance) Show() error { return rc(C.goslint_instance_show(i.ptr), "sho
 func (i *Instance) Hide() error { return rc(C.goslint_instance_hide(i.ptr), "hide") }
 func (i *Instance) Run() error  { return rc(C.goslint_instance_run(i.ptr), "run") }
 
+// ---- window control (physical pixels) ----
+
+func (i *Instance) WindowSize() (w, h int) {
+	var cw, ch C.uint32_t
+	C.goslint_instance_window_size(i.ptr, &cw, &ch)
+	return int(cw), int(ch)
+}
+
+func (i *Instance) SetWindowSize(w, h int) {
+	C.goslint_instance_window_set_size(i.ptr, C.uint32_t(w), C.uint32_t(h))
+}
+
+func (i *Instance) WindowPosition() (x, y int) {
+	var cx, cy C.int32_t
+	C.goslint_instance_window_position(i.ptr, &cx, &cy)
+	return int(cx), int(cy)
+}
+
+func (i *Instance) SetWindowPosition(x, y int) {
+	C.goslint_instance_window_set_position(i.ptr, C.int32_t(x), C.int32_t(y))
+}
+
+func (i *Instance) WindowScaleFactor() float32 {
+	return float32(C.goslint_instance_window_scale_factor(i.ptr))
+}
+
+func (i *Instance) SetWindowFullscreen(on bool) {
+	C.goslint_instance_window_set_fullscreen(i.ptr, C._Bool(on))
+}
+
+func (i *Instance) SetWindowMaximized(on bool) {
+	C.goslint_instance_window_set_maximized(i.ptr, C._Bool(on))
+}
+
+func (i *Instance) SetWindowMinimized(on bool) {
+	C.goslint_instance_window_set_minimized(i.ptr, C._Bool(on))
+}
+
+func (i *Instance) RequestRedraw() {
+	C.goslint_instance_window_request_redraw(i.ptr)
+}
+
 func (i *Instance) Free() {
 	if i.ptr != nil {
 		C.goslint_instance_free(i.ptr)
