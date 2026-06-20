@@ -185,9 +185,11 @@ type androidTools struct {
 
 func resolveAndroidTools(sdkArg, ndkArg string) (androidTools, error) {
 	var t androidTools
-	t.sdk = firstNonEmpty(sdkArg, os.Getenv("ANDROID_HOME"), os.Getenv("ANDROID_SDK_ROOT"))
+	t.sdk = findSDK(sdkArg)
 	if t.sdk == "" {
-		return t, fmt.Errorf("Android SDK not found — set ANDROID_HOME or pass -sdk")
+		return t, fmt.Errorf("Android SDK not found — looked at -sdk, $ANDROID_HOME, " +
+			"$ANDROID_SDK_ROOT, ~/android-sdk, ~/Android/Sdk, ~/Library/Android/sdk " +
+			"(none had build-tools). Pass -sdk <dir> or set ANDROID_HOME")
 	}
 	bt, err := latestDir(filepath.Join(t.sdk, "build-tools"), "*")
 	if err != nil {
@@ -207,18 +209,46 @@ func resolveAndroidTools(sdkArg, ndkArg string) (androidTools, error) {
 		return t, fmt.Errorf("missing %s", t.platformJar)
 	}
 
-	ndk := firstNonEmpty(ndkArg, os.Getenv("ANDROID_NDK_HOME"), os.Getenv("ANDROID_NDK_ROOT"))
-	if ndk == "" {
-		ndk, err = latestDir(filepath.Join(t.sdk, "ndk"), "*")
-		if err != nil {
-			return t, fmt.Errorf("NDK not found — set ANDROID_NDK_HOME or pass -ndk: %w", err)
+	// NDK: try -ndk, the env vars, then the newest under <sdk>/ndk; pick the first
+	// whose toolchain bin actually exists.
+	latestNDK, _ := latestDir(filepath.Join(t.sdk, "ndk"), "*")
+	for _, ndk := range []string{ndkArg, os.Getenv("ANDROID_NDK_HOME"), os.Getenv("ANDROID_NDK_ROOT"), latestNDK} {
+		if ndk == "" {
+			continue
+		}
+		bin := filepath.Join(ndk, "toolchains", "llvm", "prebuilt", ndkHostTag(), "bin")
+		if exists(bin) {
+			t.ndkBin = bin
+			break
 		}
 	}
-	t.ndkBin = filepath.Join(ndk, "toolchains", "llvm", "prebuilt", ndkHostTag(), "bin")
-	if !exists(t.ndkBin) {
-		return t, fmt.Errorf("NDK toolchain bin not found at %s", t.ndkBin)
+	if t.ndkBin == "" {
+		return t, fmt.Errorf("Android NDK not found under %s/ndk or $ANDROID_NDK_HOME — install one or pass -ndk <dir>", t.sdk)
 	}
 	return t, nil
+}
+
+// findSDK returns the first candidate location that actually contains build-tools,
+// so an empty/stale ANDROID_HOME doesn't win over a real SDK on disk.
+func findSDK(sdkArg string) string {
+	home, _ := os.UserHomeDir()
+	candidates := []string{
+		sdkArg,
+		os.Getenv("ANDROID_HOME"),
+		os.Getenv("ANDROID_SDK_ROOT"),
+		filepath.Join(home, "android-sdk"),
+		filepath.Join(home, "Android", "Sdk"),
+		filepath.Join(home, "Library", "Android", "sdk"),
+	}
+	for _, c := range candidates {
+		if c == "" {
+			continue
+		}
+		if _, err := latestDir(filepath.Join(c, "build-tools"), "*"); err == nil {
+			return c
+		}
+	}
+	return ""
 }
 
 func ndkHostTag() string {

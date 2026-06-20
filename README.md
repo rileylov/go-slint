@@ -70,7 +70,8 @@ How it fits together:
   `.go` changes.
 - **`goslint build`/`run`** wrap `go build`/`go run` with the linker flags set.
   Prefer plain `go`? `eval "$(goslint env)"; go build -tags goslint_pkgconfig .`
-- **`goslint doctor`** checks your toolchain and the cached library.
+- **`goslint doctor`** checks your toolchain and the cached library; **`goslint
+  uninstall`** removes everything it downloaded (and the binary itself).
 
 The desktop result is a **single self-contained binary**: `libgoslint` (and the
 Slint interpreter inside it) is linked statically, leaving only ubiquitous system
@@ -95,10 +96,12 @@ NativeActivity. An APK ships two libraries per ABI: `libgoslint.so` (the native
 Slint shim — NativeActivity entry + the `goslint_*` C ABI) and `libgoslintapp.so`
 (your Go package built as a c-shared, `dlopen`'d by the Rust `android_main`).
 
-Your Go package needs an Android entry that exports `goslint_android_main` (a
+Your Go package needs an Android entry that exports `goslint_android_main` — a
 `//go:build android` file calling `runtime.LockOSThread()` then `slint.Compile`/
-`Create`/`Run`) — see [`cmd/examples/interop`](cmd/examples/interop) for a
-cross-platform example.
+`Create`/`Run`. **`goslint init` scaffolds this for you** (`app_android.go`); see
+[`cmd/examples/interop`](cmd/examples/interop) for a hand-written cross-platform
+example. The build finds your SDK via `-sdk`, `$ANDROID_HOME`, or common locations
+like `~/android-sdk`.
 
 Build a signed APK with the `goslint` tool (it downloads the prebuilt
 `libgoslint.so` for each ABI, cross-builds your package, and packages + signs):

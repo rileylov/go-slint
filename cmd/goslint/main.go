@@ -68,6 +68,8 @@ func main() {
 		err = cmdDoctor(os.Args[2:])
 	case "android":
 		err = cmdAndroid(os.Args[2:])
+	case "uninstall":
+		err = cmdUninstall(os.Args[2:])
 	case "help", "-h", "--help":
 		usage()
 	default:
@@ -93,6 +95,7 @@ Usage:
   goslint env                                         print the PKG_CONFIG_PATH export line
   goslint doctor                                      check the toolchain and cached lib
   goslint android build [flags] <package>            build a signed APK of a Go package
+  goslint uninstall [-keep-binary]                    remove downloaded libs + the binary
 
 Environment:
   GOSLINT_BASE_URL     override the release base (e.g. file:///path/to/release)

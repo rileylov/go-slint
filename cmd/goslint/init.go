@@ -50,6 +50,9 @@ func cmdInit(args []string) error {
 	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte(mainTemplate), 0o644); err != nil {
 		return err
 	}
+	if err := os.WriteFile(filepath.Join(dir, "app_android.go"), []byte(androidTemplate), 0o644); err != nil {
+		return err
+	}
 	if err := os.WriteFile(filepath.Join(dir, "app.slint"), []byte(fmt.Sprintf(slintTemplate, name)), 0o644); err != nil {
 		return err
 	}
@@ -63,8 +66,9 @@ func cmdInit(args []string) error {
 	if dir != "." {
 		fmt.Printf("  cd %s\n", dir)
 	}
-	fmt.Println("  goslint setup        # fetch the native lib for this platform")
-	fmt.Println("  goslint dev .        # run with live reload — edit app.slint and save")
+	fmt.Println("  goslint setup            # fetch the native lib for this platform")
+	fmt.Println("  goslint dev .            # run with live reload — edit app.slint and save")
+	fmt.Println("  goslint android build .  # build a signed APK (app_android.go is the entry)")
 	return nil
 }
 
@@ -124,6 +128,40 @@ func main() {
 	if err := wire(win); err != nil {
 		panic(err)
 	}
+	win.Run()
+}
+`
+
+const androidTemplate = `//go:build android
+
+package main
+
+import "C"
+
+import (
+	"runtime"
+
+	"github.com/rileylov/go-slint"
+)
+
+// goslint_android_main is the Android entry point: the native side dlopen's this
+// Go library and calls it. Build an APK with ` + "`goslint android build .`" + `.
+// It reuses the embedded ` + "`ui`" + ` and ` + "`wire`" + ` from main.go.
+//
+//export goslint_android_main
+func goslint_android_main(_ *C.char) {
+	runtime.LockOSThread()
+	app, err := slint.Compile(ui, slint.WithStyle("material")) // material = Android-native
+	if err != nil {
+		return
+	}
+	defer app.Close()
+	win, err := app.Create("AppWindow")
+	if err != nil {
+		return
+	}
+	defer win.Close()
+	_ = wire(win)
 	win.Run()
 }
 `
