@@ -287,4 +287,67 @@ func TestHeadlessRoundTrip(t *testing.T) {
 	if s, _ := mi.Str("first"); s != "b" {
 		t.Fatalf("first after RemoveAt = %q; want \"b\"", s)
 	}
+
+	// ---- color & image ----
+	gfx, err := slint.Compile(`
+		export component GFX inherits Window {
+			in-out property <color> tint: #336699;
+			in-out property <image> pic;
+			out property <int> pic-w: pic.width;
+		}`)
+	if err != nil {
+		t.Fatalf("Compile GFX: %v", err)
+	}
+	defer gfx.Close()
+	gci, err := gfx.Create("GFX")
+	if err != nil {
+		t.Fatalf("Create GFX: %v", err)
+	}
+	defer gci.Close()
+
+	// color read
+	cv, err := gci.Get("tint")
+	if err != nil {
+		t.Fatalf("Get(tint): %v", err)
+	}
+	if col, ok := cv.(slint.Color); !ok || col.R != 0x33 || col.G != 0x66 || col.B != 0x99 {
+		t.Fatalf("tint = %#v; want Color{0x33,0x66,0x99,255}", cv)
+	}
+	// color write + re-read
+	if err := gci.Set("tint", slint.Color{R: 10, G: 20, B: 30, A: 255}); err != nil {
+		t.Fatalf("Set(tint): %v", err)
+	}
+	if c := mustColor(t, gci, "tint"); c.R != 10 || c.G != 20 || c.B != 30 {
+		t.Fatalf("tint after set = %#v; want {10,20,30,255}", c)
+	}
+
+	// image load + assign; the bound `pic-w` reflects the image width.
+	img, err := slint.LoadImage("slint/logo/slint-logo-full-light.png")
+	if err != nil {
+		t.Fatalf("LoadImage: %v", err)
+	}
+	defer img.Free()
+	w, h := img.Size()
+	if w != 330 || h != 132 {
+		t.Fatalf("image size = %dx%d; want 330x132", w, h)
+	}
+	if err := gci.Set("pic", img); err != nil {
+		t.Fatalf("Set(pic): %v", err)
+	}
+	if pw, _ := gci.Int("pic-w"); pw != w {
+		t.Fatalf("pic-w = %d; want %d", pw, w)
+	}
+}
+
+func mustColor(t *testing.T, inst *slint.Instance, name string) slint.Color {
+	t.Helper()
+	v, err := inst.Get(name)
+	if err != nil {
+		t.Fatalf("Get(%s): %v", name, err)
+	}
+	c, ok := v.(slint.Color)
+	if !ok {
+		t.Fatalf("%s is not a Color: %#v", name, v)
+	}
+	return c
 }

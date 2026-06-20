@@ -1,0 +1,18 @@
+import { VerticalBox } from "std-widgets.slint";
+
+export component Clock inherits Window {
+    title: "go-slint clock";
+    preferred-width: 240px;
+    preferred-height: 120px;
+
+    in-out property <int> ticks: 0;
+
+    VerticalBox {
+        alignment: center;
+        Text {
+            text: "Ticks: " + root.ticks;
+            font-size: 28px;
+            horizontal-alignment: center;
+        }
+    }
+}

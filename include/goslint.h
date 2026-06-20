@@ -23,6 +23,8 @@ extern "C" {
 typedef struct GoValue GoValue;
 typedef struct GoStruct GoStruct;
 typedef struct GoModel GoModel;
+typedef struct GoImage GoImage;
+typedef struct GoTimer GoTimer;
 typedef struct GoCompiler GoCompiler;
 typedef struct GoCompilationResult GoCompilationResult;
 typedef struct GoComponentDefinition GoComponentDefinition;
@@ -36,6 +38,7 @@ char *goslint_smoke_compile(void);
 
 /* ---- event loop & platform ---- */
 int  goslint_testing_init_headless(void);          /* 0 = ok */
+int  goslint_testing_init_integration(void);       /* simple loop, system time */
 void goslint_testing_mock_elapsed_time(uint64_t ms);
 void goslint_testing_configure_fonts(void);
 int  goslint_run_event_loop(void);                 /* blocks; UI thread only */
@@ -135,6 +138,26 @@ void     goslint_model_notify_reset(const GoModel *m);
 /* read a Slint-returned model out of a Value */
 size_t   goslint_value_model_row_count(const GoValue *v);
 GoValue *goslint_value_model_row_data(const GoValue *v, size_t row);
+
+/* ---- color, image, timer (M6) ---- */
+GoValue *goslint_value_new_color(uint8_t r, uint8_t g, uint8_t b, uint8_t a);
+bool     goslint_value_as_color(const GoValue *v, uint8_t *r, uint8_t *g, uint8_t *b, uint8_t *a);
+
+GoImage *goslint_image_load_from_path(const char *path);
+void     goslint_image_free(GoImage *img);
+void     goslint_image_size(const GoImage *img, uint32_t *w, uint32_t *h);
+GoValue *goslint_value_new_image(const GoImage *img);
+GoImage *goslint_value_as_image(const GoValue *v);
+
+GoTimer *goslint_timer_new(void);
+void     goslint_timer_free(GoTimer *t);
+void     goslint_timer_start(const GoTimer *t, int32_t mode, uint64_t interval_ms,
+                             void (*cb)(uintptr_t), uintptr_t handle, void (*drop)(uintptr_t));
+void     goslint_timer_single_shot(uint64_t interval_ms, void (*cb)(uintptr_t),
+                                   uintptr_t handle, void (*drop)(uintptr_t));
+void     goslint_timer_stop(const GoTimer *t);
+void     goslint_timer_restart(const GoTimer *t);
+bool     goslint_timer_running(const GoTimer *t);
 
 #ifdef __cplusplus
 }

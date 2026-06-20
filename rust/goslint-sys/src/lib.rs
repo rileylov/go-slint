@@ -9,9 +9,11 @@
 //   * Inbound `*const c_char` are borrowed (copied here).
 
 mod compiler;
+mod graphics;
 mod instance;
 mod model;
 mod structs;
+mod timer;
 mod value;
 
 use std::cell::RefCell;
@@ -95,6 +97,16 @@ pub unsafe extern "C" fn goslint_string_free(s: *mut c_char) {
 pub extern "C" fn goslint_testing_init_headless() -> i32 {
     guard(1, || {
         i_slint_backend_testing::init_no_event_loop();
+        0
+    })
+}
+
+/// Install the integration-test backend: a simple event loop driven by the real
+/// system clock (so timers fire). Like the headless init, call once per process.
+#[no_mangle]
+pub extern "C" fn goslint_testing_init_integration() -> i32 {
+    guard(1, || {
+        i_slint_backend_testing::init_integration_test_with_system_time();
         0
     })
 }

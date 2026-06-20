@@ -28,9 +28,9 @@ cgo links it via `#cgo LDFLAGS`. The first cargo build is slow (it compiles
 - Go callbacks cross into C only via `runtime/cgo.Handle` — never raw Go pointers.
 
 ## Current state
-**M0–M5 complete** (the full data layer: scalars, structs, enums, models). Shim built
-with `backend-winit` + `renderer-software` + the headless testing backend (`internal`
-feature → `configure_test_fonts`).
+**M0–M6 complete** (data layer + graphics/timers). Shim built with `backend-winit` +
+`renderer-software` + the headless testing backend (`internal` feature →
+`configure_test_fonts`).
 
 C ABI (`include/goslint.h`): version/last_error/string_free; testing init + mock-time
 + configure-fonts; run/quit event loop; Compiler (style, include paths,
@@ -61,9 +61,22 @@ file); the `//export` functions in `callback.go`. Never pass a raw Go pointer in
 Compile options: `slint.Compile(src, slint.WithStyle("fluent"), slint.WithIncludePaths(...))`
 — WithStyle is required for `import "std-widgets.slint"`.
 
+Color↔slint.Color{R,G,B,A}, Image (slint.LoadImage → assign to `image` prop),
+Timer (slint.NewTimer/Start/Stop/Running/Free, slint.SingleShot). Timers fire only while
+the loop runs; `internal/timertest` verifies real firing via the integration backend's
+run_event_loop.
+
+**FFI closure gotcha (cost a long debug session):** in a `move ||` closure that drives a
+host callback, call a *method* on the Drop-guard struct (`data.call()`), never access its
+`Copy` fields directly (`(data.cb)(data.handle)`). Rust 2021 disjoint capture would move
+only the Copy fields and drop the guard immediately, releasing the cgo.Handle early →
+"misuse of an invalid Handle". See timer.rs / TimerCallback::call. Applies to any future
+FFI callback closure (file loaders, custom platform, etc.).
+
 Examples (`cmd/examples/`): `hello` (static, M1), `counter` (callbacks, M3),
-`todo` (SliceModel + callbacks + two-way binding, M5). Each non-hello example embeds its
-`ui.slint` and has a compile-smoke `*_test.go` (validates markup, no display needed).
+`todo` (SliceModel + callbacks + two-way binding, M5), `clock` (Timer, M6). Each non-hello
+example embeds its `ui.slint` and has a compile-smoke `*_test.go` (validates markup, no
+display needed).
 
 Go: `slintsys` (Layer 1) and `slint` (Layer 2: `Compile`, `Compilation.Create`,
 `Instance.Int/Float/Bool/Str/Set`, `OnCallback`/`OnGlobalCallback`/`Invoke`/
@@ -71,7 +84,6 @@ Go: `slintsys` (Layer 1) and `slint` (Layer 2: `Compile`, `Compilation.Create`,
 `cmd/examples/hello`. Conformance: `internal/conformance` (`make conformance`),
 0 failures across the self-contained dirs.
 
-**Next: M6** — graphics & timers: brush/color (rgba), images (path/SVG/buffer),
-`Timer`. Then M7 (idiomatic polish + full corpus green + examples) and M8 (cross-platform
-packaging) per PLAN.md §10. Introduce cbindgen when the header grows further (it's ~60
-functions now).
+**Next: M7** — idiomatic polish + docs + a full `tests/cases` green run + (optionally)
+switch `goslint.h` to cbindgen-generated (~80 functions now). Then M8 (cross-platform
+packaging: prebuilt libs, build tags, CI). PLAN.md §10.

@@ -49,6 +49,11 @@ type Enum struct {
 	Value string
 }
 
+// Color is an RGBA color (the value of a `color` property, or a solid `brush`).
+type Color struct {
+	R, G, B, A uint8
+}
+
 // Value type codes (mirror slint_interpreter::ValueType).
 const (
 	TypeVoid   = 0
@@ -92,6 +97,10 @@ func cValue(v any) (*C.GoValue, error) {
 		return C.goslint_value_new_enum(cn, cv), nil
 	case map[string]any:
 		return cStruct(x)
+	case Color:
+		return C.goslint_value_new_color(C.uint8_t(x.R), C.uint8_t(x.G), C.uint8_t(x.B), C.uint8_t(x.A)), nil
+	case *Image:
+		return C.goslint_value_new_image(x.ptr), nil
 	case *ModelHandle:
 		return C.goslint_value_new_model(x.ptr), nil
 	default:
@@ -156,6 +165,12 @@ func goValue(v *C.GoValue) any {
 		return takeString(C.goslint_value_as_string(v))
 	case TypeStruct:
 		return goStruct(v)
+	case TypeBrush:
+		var r, g, b, a C.uint8_t
+		if bool(C.goslint_value_as_color(v, &r, &g, &b, &a)) {
+			return Color{R: uint8(r), G: uint8(g), B: uint8(b), A: uint8(a)}
+		}
+		return nil // gradient brush: not yet represented
 	case TypeModel:
 		n := int(C.goslint_value_model_row_count(v))
 		out := make([]any, n)

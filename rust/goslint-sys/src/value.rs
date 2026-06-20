@@ -3,6 +3,7 @@
 // is heap-owned by the library and freed with `goslint_value_free`.
 
 use crate::{guard, to_c_string};
+use i_slint_core::{Brush, Color};
 use slint_interpreter::{SharedString, Struct, Value, ValueType};
 use std::ffi::c_char;
 
@@ -172,6 +173,47 @@ pub unsafe extern "C" fn goslint_value_as_enum(
             }
             if !out_value.is_null() {
                 *out_value = to_c_string(val);
+            }
+            true
+        }
+        _ => false,
+    })
+}
+
+/// Build a solid-color brush Value from RGBA components.
+#[no_mangle]
+pub extern "C" fn goslint_value_new_color(r: u8, g: u8, b: u8, a: u8) -> *mut Value {
+    guard(std::ptr::null_mut(), || {
+        Box::into_raw(Box::new(Value::Brush(Brush::SolidColor(Color::from_argb_u8(a, r, g, b)))))
+    })
+}
+
+/// Read RGBA components from a solid-color brush Value. Returns false for
+/// gradients or non-brush values.
+///
+/// # Safety
+/// `v` valid; out-pointers NULL or valid.
+#[no_mangle]
+pub unsafe extern "C" fn goslint_value_as_color(
+    v: *const Value,
+    r: *mut u8,
+    g: *mut u8,
+    b: *mut u8,
+    a: *mut u8,
+) -> bool {
+    guard(false, || match v.as_ref() {
+        Some(Value::Brush(Brush::SolidColor(c))) => {
+            if !r.is_null() {
+                *r = c.red();
+            }
+            if !g.is_null() {
+                *g = c.green();
+            }
+            if !b.is_null() {
+                *b = c.blue();
+            }
+            if !a.is_null() {
+                *a = c.alpha();
             }
             true
         }

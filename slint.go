@@ -275,6 +275,31 @@ func mapToSys(args []any) []any {
 	return out
 }
 
+// Color is an RGBA color (a `color` property, or a solid `brush`).
+type Color = slintsys.Color
+
+// Image is a loaded image; assign it to an `image` property and Free it when done.
+type Image = slintsys.Image
+
+// LoadImage loads an image (PNG/JPEG) from a file path.
+func LoadImage(path string) (*Image, error) { return slintsys.LoadImage(path) }
+
+// Timer fires a Go callback after an interval. Timers fire only while the event
+// loop runs (Run); create and start them after Create.
+type Timer = slintsys.Timer
+
+// Timer modes.
+const (
+	TimerSingleShot = slintsys.TimerSingleShot
+	TimerRepeated   = slintsys.TimerRepeated
+)
+
+// NewTimer creates a stopped timer.
+func NewTimer() *Timer { return slintsys.NewTimer() }
+
+// SingleShot fires fn once after the given number of milliseconds.
+func SingleShot(intervalMs uint64, fn func()) { slintsys.SingleShot(intervalMs, fn) }
+
 // OnCallback installs a handler for the named callback.
 func (i *Instance) OnCallback(name string, fn Callback) error {
 	return i.inner.SetCallback(name, fn)
