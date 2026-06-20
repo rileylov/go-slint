@@ -35,3 +35,9 @@ spin_on = "0.1"
 # so desktop builds are unaffected. android_main lives in src/android.rs.
 [target.'cfg(target_os = "android")'.dependencies]
 i-slint-backend-android-activity = { path = "../../slint/internal/backends/android-activity", features = ["native-activity", "aa-06"] }
+# The backend selector references i_slint_backend_android_activity unconditionally
+# on android (via `cfg!`, which compiles the reference regardless of the flag), so
+# its `backend-android-activity` feature must be enabled or it fails to compile.
+# The interpreter only forwards backend-winit, so enable it on the selector
+# directly; Cargo unifies this with the selector the interpreter already pulls in.
+i-slint-backend-selector = { path = "../../slint/internal/backends/selector", features = ["backend-android-activity"] }

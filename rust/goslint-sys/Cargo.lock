@@ -1426,6 +1426,7 @@ name = "goslint-sys"
 version = "0.0.0"
 dependencies = [
  "i-slint-backend-android-activity",
+ "i-slint-backend-selector",
  "i-slint-backend-testing",
  "i-slint-core",
  "slint-interpreter",
@@ -1555,6 +1556,7 @@ name = "i-slint-backend-selector"
 version = "1.16.1"
 dependencies = [
  "cfg-if",
+ "i-slint-backend-android-activity",
  "i-slint-backend-linuxkms",
  "i-slint-backend-qt",
  "i-slint-backend-winit",
