@@ -385,6 +385,52 @@ func TestHeadlessRoundTrip(t *testing.T) {
 	if px, py := inst.WindowPosition(); px == 0 && py == 0 {
 		t.Logf("WindowPosition() = 0,0 (headless backend default)")
 	}
+
+	// ---- gradient brushes ----
+	gr, err := slint.Compile(`export component GR inherits Window { in-out property <brush> bg; }`)
+	if err != nil {
+		t.Fatalf("Compile GR: %v", err)
+	}
+	defer gr.Close()
+	gri, err := gr.Create("GR")
+	if err != nil {
+		t.Fatalf("Create GR: %v", err)
+	}
+	defer gri.Close()
+
+	// linear gradient round-trip
+	lg := slint.Gradient{Angle: 90, Stops: []slint.GradientStop{
+		{Pos: 0, Color: slint.Color{R: 255, A: 255}},
+		{Pos: 1, Color: slint.Color{B: 255, A: 255}},
+	}}
+	if err := gri.Set("bg", lg); err != nil {
+		t.Fatalf("Set(bg) linear: %v", err)
+	}
+	got, err := gri.Get("bg")
+	if err != nil {
+		t.Fatalf("Get(bg): %v", err)
+	}
+	g2, ok := got.(slint.Gradient)
+	if !ok || g2.Radial || g2.Angle != 90 || len(g2.Stops) != 2 {
+		t.Fatalf("linear gradient = %#v; want linear, angle 90, 2 stops", got)
+	}
+	if g2.Stops[0].Color.R != 255 || g2.Stops[1].Color.B != 255 {
+		t.Fatalf("linear gradient stops = %#v", g2.Stops)
+	}
+
+	// radial gradient round-trip
+	rg := slint.Gradient{Radial: true, Stops: []slint.GradientStop{
+		{Pos: 0, Color: slint.Color{R: 1, G: 2, B: 3, A: 255}},
+		{Pos: 1, Color: slint.Color{R: 9, G: 8, B: 7, A: 255}},
+	}}
+	if err := gri.Set("bg", rg); err != nil {
+		t.Fatalf("Set(bg) radial: %v", err)
+	}
+	got2, _ := gri.Get("bg")
+	g3, ok := got2.(slint.Gradient)
+	if !ok || !g3.Radial || len(g3.Stops) != 2 {
+		t.Fatalf("radial gradient = %#v; want radial, 2 stops", got2)
+	}
 }
 
 func mustColor(t *testing.T, inst *slint.Instance, name string) slint.Color {

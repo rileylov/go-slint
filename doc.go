@@ -62,6 +62,7 @@
 //	struct / anonymous object     <-> map[string]any
 //	enum                          <-> [Enum]{Type, Value}
 //	color / solid brush           <-> [Color]
+//	gradient brush                <-> [Gradient] (linear or radial)
 //	image                         <-> *[Image] (write; load via [LoadImage])
 //	array / model                 <-> []any (read) or [*ModelHandle] (write)
 //

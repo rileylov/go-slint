@@ -283,6 +283,13 @@ func mapToSys(args []any) []any {
 // Color is an RGBA color (a `color` property, or a solid `brush`).
 type Color = slintsys.Color
 
+// Gradient is a gradient `brush` value (linear by default, or Radial); set it on
+// a brush/color property, or read one back from Get. GradientStop is one stop.
+type Gradient = slintsys.Gradient
+
+// GradientStop is one stop of a [Gradient]: Pos in 0..=1 with a Color.
+type GradientStop = slintsys.GradientStop
+
 // Image is a loaded image; assign it to an `image` property and Free it when done.
 type Image = slintsys.Image
 

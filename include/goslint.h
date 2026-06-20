@@ -157,6 +157,15 @@ GoValue *goslint_value_model_row_data(const GoValue *v, size_t row);
 GoValue *goslint_value_new_color(uint8_t r, uint8_t g, uint8_t b, uint8_t a);
 bool     goslint_value_as_color(const GoValue *v, uint8_t *r, uint8_t *g, uint8_t *b, uint8_t *a);
 
+/* gradient brushes */
+typedef struct { float pos; uint8_t r, g, b, a; } GoGradientStop;
+GoValue *goslint_value_new_linear_gradient(float angle, const GoGradientStop *stops, size_t n);
+GoValue *goslint_value_new_radial_gradient(const GoGradientStop *stops, size_t n);
+int      goslint_value_brush_kind(const GoValue *v); /* -1 none, 0 solid, 1 linear, 2 radial, 3 other */
+float    goslint_value_linear_gradient_angle(const GoValue *v);
+size_t   goslint_value_gradient_stop_count(const GoValue *v);
+bool     goslint_value_gradient_stop(const GoValue *v, size_t i, GoGradientStop *out);
+
 GoImage *goslint_image_load_from_path(const char *path);
 void     goslint_image_free(GoImage *img);
 void     goslint_image_size(const GoImage *img, uint32_t *w, uint32_t *h);

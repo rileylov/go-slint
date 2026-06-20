@@ -1,0 +1,43 @@
+import { Button, VerticalBox, HorizontalBox } from "std-widgets.slint";
+
+export component AppWindow inherits Window {
+    title: "Gradient brushes (from Go)";
+    preferred-width: 480px;
+    preferred-height: 440px;
+
+    // a `brush` set from Go to a linear/radial gradient
+    in property <brush> swatch;
+    in property <string> label;
+
+    callback linear(int); // angle in degrees
+    callback radial();
+    callback rainbow();
+    callback toggle-animate();
+
+    VerticalBox {
+        Rectangle {
+            vertical-stretch: 1;
+            background: root.swatch;
+            border-radius: 10px;
+            Text {
+                text: root.label;
+                color: white;
+                font-size: 18px;
+                font-weight: 700;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+
+        HorizontalBox {
+            Button { text: "Linear 0°"; clicked => { root.linear(0); } }
+            Button { text: "Linear 45°"; clicked => { root.linear(45); } }
+            Button { text: "Linear 90°"; clicked => { root.linear(90); } }
+        }
+        HorizontalBox {
+            Button { text: "Radial"; clicked => { root.radial(); } }
+            Button { text: "Rainbow"; clicked => { root.rainbow(); } }
+            Button { text: "Animate ⟳"; clicked => { root.toggle-animate(); } }
+        }
+    }
+}

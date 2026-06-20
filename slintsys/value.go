@@ -54,6 +54,20 @@ type Color struct {
 	R, G, B, A uint8
 }
 
+// GradientStop is one stop of a gradient brush: Pos in 0..=1 with a Color.
+type GradientStop struct {
+	Pos   float32
+	Color Color
+}
+
+// Gradient is a gradient `brush`. Radial=false is a linear gradient rotated by
+// Angle degrees; Radial=true is a centered circle (Angle ignored).
+type Gradient struct {
+	Radial bool
+	Angle  float32
+	Stops  []GradientStop
+}
+
 // Value type codes (mirror slint_interpreter::ValueType).
 const (
 	TypeVoid   = 0
@@ -99,6 +113,10 @@ func cValue(v any) (*C.GoValue, error) {
 		return cStruct(x)
 	case Color:
 		return C.goslint_value_new_color(C.uint8_t(x.R), C.uint8_t(x.G), C.uint8_t(x.B), C.uint8_t(x.A)), nil
+	case Gradient:
+		return cGradient(x), nil
+	case *Gradient:
+		return cGradient(*x), nil
 	case *Image:
 		return C.goslint_value_new_image(x.ptr), nil
 	case *ModelHandle:
@@ -106,6 +124,50 @@ func cValue(v any) (*C.GoValue, error) {
 	default:
 		return nil, fmt.Errorf("slint: unsupported value type %T", v)
 	}
+}
+
+// cGradient builds a gradient brush Value. The C side copies the stops during the
+// call (it does not retain the pointer), so passing the Go slice is allowed.
+func cGradient(g Gradient) *C.GoValue {
+	var ptr *C.GoGradientStop
+	var stops []C.GoGradientStop
+	if len(g.Stops) > 0 {
+		stops = make([]C.GoGradientStop, len(g.Stops))
+		for i, s := range g.Stops {
+			stops[i] = C.GoGradientStop{
+				pos: C.float(s.Pos),
+				r:   C.uint8_t(s.Color.R),
+				g:   C.uint8_t(s.Color.G),
+				b:   C.uint8_t(s.Color.B),
+				a:   C.uint8_t(s.Color.A),
+			}
+		}
+		ptr = (*C.GoGradientStop)(unsafe.Pointer(&stops[0]))
+	}
+	if g.Radial {
+		return C.goslint_value_new_radial_gradient(ptr, C.size_t(len(g.Stops)))
+	}
+	return C.goslint_value_new_linear_gradient(C.float(g.Angle), ptr, C.size_t(len(g.Stops)))
+}
+
+// goGradient reads a gradient brush Value into a Gradient.
+func goGradient(v *C.GoValue, radial bool) Gradient {
+	n := int(C.goslint_value_gradient_stop_count(v))
+	stops := make([]GradientStop, 0, n)
+	for i := 0; i < n; i++ {
+		var s C.GoGradientStop
+		if bool(C.goslint_value_gradient_stop(v, C.size_t(i), &s)) {
+			stops = append(stops, GradientStop{
+				Pos:   float32(s.pos),
+				Color: Color{R: uint8(s.r), G: uint8(s.g), B: uint8(s.b), A: uint8(s.a)},
+			})
+		}
+	}
+	g := Gradient{Radial: radial, Stops: stops}
+	if !radial {
+		g.Angle = float32(C.goslint_value_linear_gradient_angle(v))
+	}
+	return g
 }
 
 // cStruct builds a struct Value from a Go map.
@@ -166,11 +228,18 @@ func goValue(v *C.GoValue) any {
 	case TypeStruct:
 		return goStruct(v)
 	case TypeBrush:
-		var r, g, b, a C.uint8_t
-		if bool(C.goslint_value_as_color(v, &r, &g, &b, &a)) {
-			return Color{R: uint8(r), G: uint8(g), B: uint8(b), A: uint8(a)}
+		switch int(C.goslint_value_brush_kind(v)) {
+		case 1: // linear gradient
+			return goGradient(v, false)
+		case 2: // radial gradient
+			return goGradient(v, true)
+		default: // solid color (0) or unrepresentable
+			var r, g, b, a C.uint8_t
+			if bool(C.goslint_value_as_color(v, &r, &g, &b, &a)) {
+				return Color{R: uint8(r), G: uint8(g), B: uint8(b), A: uint8(a)}
+			}
+			return nil
 		}
-		return nil // gradient brush: not yet represented
 	case TypeModel:
 		n := int(C.goslint_value_model_row_count(v))
 		out := make([]any, n)

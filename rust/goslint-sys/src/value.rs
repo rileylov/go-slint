@@ -3,6 +3,7 @@
 // is heap-owned by the library and freed with `goslint_value_free`.
 
 use crate::{guard, to_c_string};
+use i_slint_core::graphics::{GradientStop, LinearGradientBrush, RadialGradientBrush};
 use i_slint_core::{Brush, Color};
 use slint_interpreter::{SharedString, Struct, Value, ValueType};
 use std::ffi::c_char;
@@ -218,6 +219,149 @@ pub unsafe extern "C" fn goslint_value_as_color(
             true
         }
         _ => false,
+    })
+}
+
+/// One gradient stop: position (0..=1) and an RGBA color. Mirrors GoGradientStop.
+#[repr(C)]
+pub struct GoGradientStop {
+    pub pos: f32,
+    pub r: u8,
+    pub g: u8,
+    pub b: u8,
+    pub a: u8,
+}
+
+unsafe fn read_stops(stops: *const GoGradientStop, n: usize) -> Vec<GradientStop> {
+    let mut v = Vec::with_capacity(n);
+    if !stops.is_null() {
+        for i in 0..n {
+            let s = &*stops.add(i);
+            v.push(GradientStop {
+                position: s.pos,
+                color: Color::from_argb_u8(s.a, s.r, s.g, s.b),
+            });
+        }
+    }
+    v
+}
+
+fn brush_stops(v: &Value) -> Option<Vec<GradientStop>> {
+    match v {
+        Value::Brush(Brush::LinearGradient(g)) => Some(g.stops().cloned().collect()),
+        Value::Brush(Brush::RadialGradient(g)) => Some(g.stops().cloned().collect()),
+        _ => None,
+    }
+}
+
+/// A linear-gradient brush value (angle in degrees + RGBA stops).
+///
+/// # Safety
+/// `stops` must be NULL or an array of `n` GoGradientStop.
+#[no_mangle]
+pub unsafe extern "C" fn goslint_value_new_linear_gradient(
+    angle: f32,
+    stops: *const GoGradientStop,
+    n: usize,
+) -> *mut Value {
+    guard(std::ptr::null_mut(), || {
+        let s = read_stops(stops, n);
+        Box::into_raw(Box::new(Value::Brush(Brush::LinearGradient(
+            LinearGradientBrush::new(angle, s),
+        ))))
+    })
+}
+
+/// A radial-gradient (circle) brush value.
+///
+/// # Safety
+/// `stops` must be NULL or an array of `n` GoGradientStop.
+#[no_mangle]
+pub unsafe extern "C" fn goslint_value_new_radial_gradient(
+    stops: *const GoGradientStop,
+    n: usize,
+) -> *mut Value {
+    guard(std::ptr::null_mut(), || {
+        let s = read_stops(stops, n);
+        Box::into_raw(Box::new(Value::Brush(Brush::RadialGradient(
+            RadialGradientBrush::new_circle(s),
+        ))))
+    })
+}
+
+/// Brush kind: -1 not a brush, 0 solid color, 1 linear gradient, 2 radial, 3 other.
+///
+/// # Safety
+/// `v` must be NULL or a value pointer.
+#[no_mangle]
+pub unsafe extern "C" fn goslint_value_brush_kind(v: *const Value) -> i32 {
+    guard(-1, || match v.as_ref() {
+        Some(Value::Brush(b)) => match b {
+            Brush::SolidColor(_) => 0,
+            Brush::LinearGradient(_) => 1,
+            Brush::RadialGradient(_) => 2,
+            _ => 3,
+        },
+        _ => -1,
+    })
+}
+
+/// The angle (degrees) of a linear-gradient brush, or 0.
+///
+/// # Safety
+/// `v` must be NULL or a value pointer.
+#[no_mangle]
+pub unsafe extern "C" fn goslint_value_linear_gradient_angle(v: *const Value) -> f32 {
+    guard(0.0, || match v.as_ref() {
+        Some(Value::Brush(Brush::LinearGradient(g))) => g.angle(),
+        _ => 0.0,
+    })
+}
+
+/// Number of stops in a gradient brush, or 0.
+///
+/// # Safety
+/// `v` must be NULL or a value pointer.
+#[no_mangle]
+pub unsafe extern "C" fn goslint_value_gradient_stop_count(v: *const Value) -> usize {
+    guard(0, || match v.as_ref() {
+        Some(val) => brush_stops(val).map_or(0, |s| s.len()),
+        None => 0,
+    })
+}
+
+/// Read gradient stop `i` into `out`. Returns false if `v` is not a gradient or
+/// `i` is out of range.
+///
+/// # Safety
+/// `v` must be NULL or a value pointer; `out` NULL or a valid GoGradientStop.
+#[no_mangle]
+pub unsafe extern "C" fn goslint_value_gradient_stop(
+    v: *const Value,
+    i: usize,
+    out: *mut GoGradientStop,
+) -> bool {
+    guard(false, || {
+        let val = match v.as_ref() {
+            Some(v) => v,
+            None => return false,
+        };
+        let stops = match brush_stops(val) {
+            Some(s) => s,
+            None => return false,
+        };
+        let s = match stops.get(i) {
+            Some(s) => s,
+            None => return false,
+        };
+        if let Some(out) = out.as_mut() {
+            out.pos = s.position;
+            out.r = s.color.red();
+            out.g = s.color.green();
+            out.b = s.color.blue();
+            out.a = s.color.alpha();
+        }
+        true
     })
 }
 
