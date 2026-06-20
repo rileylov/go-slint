@@ -34,9 +34,14 @@ headless testing backend (`internal` feature → `configure_test_fonts`).
 C ABI (`include/goslint.h`): version/last_error/string_free; testing init + mock-time
 + configure-fonts; run/quit event loop; Compiler (style, include paths,
 build_from_source/path); CompilationResult + diagnostics; ComponentDefinition
-(name/create); ComponentInstance (get/set property, show/hide/run, **invoke,
-set_callback, globals: get/set property + set_callback + invoke_global**); Value
-scalars (void/number/bool/string).
+(name/create); ComponentInstance (get/set property, show/hide/run, invoke,
+set_callback, globals: get/set property + set_callback + invoke_global); Value
+scalars (void/number/bool/string) **+ structs (GoStruct: new/free/get/set/iter) and
+enums (new/as)**.
+
+**Value <-> Go mapping:** Void↔nil, Number↔float64, Bool↔bool, String↔string,
+**Struct↔map[string]any (recursive), Enum↔slint.Enum{Type,Value}**. Models still TODO
+(M5). Set/Get and callbacks accept/return all of these.
 
 **Callback model (M3):** the C ABI uses `uintptr_t user_data` (cgo.Handle pattern).
 Go stores the closure via `cgo.NewHandle`, passes the handle; one exported
@@ -50,5 +55,6 @@ Go: `slintsys` (Layer 1) and `slint` (Layer 2: `Compile`, `Compilation.Create`,
 `cmd/examples/hello`. Conformance: `internal/conformance` (`make conformance`),
 0 failures across the self-contained dirs.
 
-**Next: M4** — structs & enums in `Value` (get/set struct fields, enum<->string),
-then models (M5) per PLAN.md §10. Introduce cbindgen when the header grows further.
+**Next: M5** — models (the `ModelRc` vtable bridge): a Go-backed `Model` interface
+(RowCount/RowData/SetRowData) + change notifications, and reading Slint-returned
+models. PLAN.md §10 M5. Introduce cbindgen when the header grows further.

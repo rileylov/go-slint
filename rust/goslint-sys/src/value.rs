@@ -3,7 +3,7 @@
 // is heap-owned by the library and freed with `goslint_value_free`.
 
 use crate::{guard, to_c_string};
-use slint_interpreter::{SharedString, Value, ValueType};
+use slint_interpreter::{SharedString, Struct, Value, ValueType};
 use std::ffi::c_char;
 
 /// Stable C-side discriminant, matching `slint_interpreter::ValueType`.
@@ -106,6 +106,76 @@ pub unsafe extern "C" fn goslint_value_as_string(v: *const Value) -> *mut c_char
     guard(std::ptr::null_mut(), || match v.as_ref() {
         Some(Value::String(s)) => to_c_string(s.as_str()),
         _ => std::ptr::null_mut(),
+    })
+}
+
+/// Build a struct Value from a GoStruct (cloned).
+///
+/// # Safety
+/// `s` must be NULL or a GoStruct pointer.
+#[no_mangle]
+pub unsafe extern "C" fn goslint_value_new_struct(s: *const Struct) -> *mut Value {
+    guard(std::ptr::null_mut(), || match s.as_ref() {
+        Some(s) => Box::into_raw(Box::new(Value::Struct(s.clone()))),
+        None => std::ptr::null_mut(),
+    })
+}
+
+/// Extract a struct from a Value (owned clone; free with goslint_struct_free),
+/// or NULL if `v` is not a struct.
+///
+/// # Safety
+/// `v` must be NULL or a Value pointer.
+#[no_mangle]
+pub unsafe extern "C" fn goslint_value_as_struct(v: *const Value) -> *mut Struct {
+    guard(std::ptr::null_mut(), || match v.as_ref() {
+        Some(Value::Struct(s)) => Box::into_raw(Box::new(s.clone())),
+        _ => std::ptr::null_mut(),
+    })
+}
+
+/// Build an enumeration Value from its type name and value.
+///
+/// # Safety
+/// `name`/`value` valid C strings.
+#[no_mangle]
+pub unsafe extern "C" fn goslint_value_new_enum(
+    name: *const c_char,
+    value: *const c_char,
+) -> *mut Value {
+    guard(std::ptr::null_mut(), || {
+        match (crate::opt_str(name), crate::opt_str(value)) {
+            (Some(n), Some(v)) => {
+                Box::into_raw(Box::new(Value::EnumerationValue(n.to_string(), v.to_string())))
+            }
+            _ => std::ptr::null_mut(),
+        }
+    })
+}
+
+/// Read an enumeration Value's type name and value into owned out-strings.
+/// Returns false if `v` is not an enumeration. (ValueType reports enums as Other,
+/// so this is the way to detect them.)
+///
+/// # Safety
+/// `v` valid; out-pointers NULL or valid.
+#[no_mangle]
+pub unsafe extern "C" fn goslint_value_as_enum(
+    v: *const Value,
+    out_name: *mut *mut c_char,
+    out_value: *mut *mut c_char,
+) -> bool {
+    guard(false, || match v.as_ref() {
+        Some(Value::EnumerationValue(n, val)) => {
+            if !out_name.is_null() {
+                *out_name = to_c_string(n);
+            }
+            if !out_value.is_null() {
+                *out_value = to_c_string(val);
+            }
+            true
+        }
+        _ => false,
     })
 }
 

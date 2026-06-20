@@ -41,6 +41,14 @@ func cvaluePtr(vals []*C.GoValue) **C.GoValue {
 	return (**C.GoValue)(unsafe.Pointer(&vals[0]))
 }
 
+// Enum is the Go representation of a Slint enumeration value. ValueType reports
+// enums as Other, so they are surfaced as this distinct type (lossless: both the
+// enum's type name and its value are kept).
+type Enum struct {
+	Type  string
+	Value string
+}
+
 // Value type codes (mirror slint_interpreter::ValueType).
 const (
 	TypeVoid   = 0
@@ -76,9 +84,56 @@ func cValue(v any) (*C.GoValue, error) {
 		cs := C.CString(x)
 		defer C.free(unsafe.Pointer(cs))
 		return C.goslint_value_new_string(cs), nil
+	case Enum:
+		cn := C.CString(x.Type)
+		defer C.free(unsafe.Pointer(cn))
+		cv := C.CString(x.Value)
+		defer C.free(unsafe.Pointer(cv))
+		return C.goslint_value_new_enum(cn, cv), nil
+	case map[string]any:
+		return cStruct(x)
 	default:
 		return nil, fmt.Errorf("slint: unsupported value type %T", v)
 	}
+}
+
+// cStruct builds a struct Value from a Go map.
+func cStruct(m map[string]any) (*C.GoValue, error) {
+	s := C.goslint_struct_new()
+	defer C.goslint_struct_free(s)
+	for k, val := range m {
+		cv, err := cValue(val)
+		if err != nil {
+			return nil, fmt.Errorf("struct field %q: %w", k, err)
+		}
+		ck := C.CString(k)
+		C.goslint_struct_set_field(s, ck, cv)
+		C.free(unsafe.Pointer(ck))
+		C.goslint_value_free(cv)
+	}
+	return C.goslint_value_new_struct(s), nil
+}
+
+// goStruct converts a struct Value into a Go map (recursively).
+func goStruct(v *C.GoValue) any {
+	s := C.goslint_value_as_struct(v)
+	if s == nil {
+		return nil
+	}
+	defer C.goslint_struct_free(s)
+	n := int(C.goslint_struct_field_count(s))
+	m := make(map[string]any, n)
+	for i := range n {
+		name := takeString(C.goslint_struct_field_name(s, C.size_t(i)))
+		ck := C.CString(name)
+		fv := C.goslint_struct_get_field(s, ck)
+		C.free(unsafe.Pointer(ck))
+		if fv != nil {
+			m[name] = goValue(fv)
+			C.goslint_value_free(fv)
+		}
+	}
+	return m
 }
 
 // goValue converts a borrowed C value into a Go value. It does not free `v`.
@@ -97,7 +152,14 @@ func goValue(v *C.GoValue) any {
 		return bool(out)
 	case TypeString:
 		return takeString(C.goslint_value_as_string(v))
+	case TypeStruct:
+		return goStruct(v)
 	default:
+		// Enums report as Other; detect via the dedicated accessor.
+		var cn, cv *C.char
+		if bool(C.goslint_value_as_enum(v, &cn, &cv)) {
+			return Enum{Type: takeString(cn), Value: takeString(cv)}
+		}
 		return nil
 	}
 }

@@ -176,4 +176,57 @@ func TestHeadlessRoundTrip(t *testing.T) {
 	if r, err := gi.InvokeGlobal("Logic", "upcase", "abc"); err != nil || r.(string) != "ABC" {
 		t.Fatalf("InvokeGlobal(upcase,abc) = %v, %v; want ABC", r, err)
 	}
+
+	// ---- structs & enums ----
+	st, err := slint.Compile(`
+		export component ST inherits Window {
+			in-out property <{name: string, age: int}> person: {name: "Ann", age: 30};
+			in-out property <TextHorizontalAlignment> align: TextHorizontalAlignment.center;
+		}`)
+	if err != nil {
+		t.Fatalf("Compile ST: %v", err)
+	}
+	defer st.Close()
+	si, err := st.Create("ST")
+	if err != nil {
+		t.Fatalf("Create ST: %v", err)
+	}
+	defer si.Close()
+
+	// struct read
+	pv, err := si.Get("person")
+	if err != nil {
+		t.Fatalf("Get(person): %v", err)
+	}
+	pm, ok := pv.(map[string]any)
+	if !ok || pm["name"].(string) != "Ann" || int(pm["age"].(float64)) != 30 {
+		t.Fatalf("person = %#v; want {name:Ann age:30}", pv)
+	}
+	// struct write + re-read
+	if err := si.Set("person", map[string]any{"name": "Bob", "age": 40}); err != nil {
+		t.Fatalf("Set(person): %v", err)
+	}
+	pv2, _ := si.Get("person")
+	pm2 := pv2.(map[string]any)
+	if pm2["name"].(string) != "Bob" || int(pm2["age"].(float64)) != 40 {
+		t.Fatalf("person after set = %#v; want {name:Bob age:40}", pv2)
+	}
+
+	// enum read
+	av, err := si.Get("align")
+	if err != nil {
+		t.Fatalf("Get(align): %v", err)
+	}
+	e, ok := av.(slint.Enum)
+	if !ok || e.Type != "TextHorizontalAlignment" || e.Value != "center" {
+		t.Fatalf("align = %#v; want Enum{TextHorizontalAlignment center}", av)
+	}
+	// enum write + re-read
+	if err := si.Set("align", slint.Enum{Type: "TextHorizontalAlignment", Value: "right"}); err != nil {
+		t.Fatalf("Set(align): %v", err)
+	}
+	av2, _ := si.Get("align")
+	if av2.(slint.Enum).Value != "right" {
+		t.Fatalf("align after set = %#v; want value right", av2)
+	}
 }

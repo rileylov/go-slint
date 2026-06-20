@@ -169,8 +169,14 @@ func (i *Instance) Str(name string) (string, error) {
 	return s, nil
 }
 
+// Enum is the Go representation of a Slint enumeration value (e.g.
+// Enum{Type: "TextHorizontalAlignment", Value: "center"}). Structs are
+// represented as map[string]any.
+type Enum = slintsys.Enum
+
 // Callback is a Go handler invoked by Slint. Its args and return use the same
-// Go value representation as properties (float64, bool, string, nil, ...).
+// Go value representation as properties (float64, bool, string, map[string]any,
+// Enum, nil, ...).
 type Callback = slintsys.CallbackFunc
 
 // OnCallback installs a handler for the named callback.

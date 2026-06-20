@@ -21,6 +21,7 @@ extern "C" {
 
 /* Opaque handles. */
 typedef struct GoValue GoValue;
+typedef struct GoStruct GoStruct;
 typedef struct GoCompiler GoCompiler;
 typedef struct GoCompilationResult GoCompilationResult;
 typedef struct GoComponentDefinition GoComponentDefinition;
@@ -102,6 +103,19 @@ char    *goslint_value_as_string(const GoValue *v);
 GoValue *goslint_value_clone(const GoValue *v);
 bool     goslint_value_eq(const GoValue *a, const GoValue *b);
 void     goslint_value_free(GoValue *v);
+
+/* ---- struct & enum values (M4) ---- */
+GoValue *goslint_value_new_struct(const GoStruct *s);
+GoStruct *goslint_value_as_struct(const GoValue *v);   /* owned; NULL if not a struct */
+GoValue *goslint_value_new_enum(const char *enum_name, const char *value);
+bool     goslint_value_as_enum(const GoValue *v, char **out_name, char **out_value);
+
+GoStruct *goslint_struct_new(void);
+void      goslint_struct_free(GoStruct *s);
+void      goslint_struct_set_field(GoStruct *s, const char *name, const GoValue *v);
+GoValue  *goslint_struct_get_field(const GoStruct *s, const char *name);
+size_t    goslint_struct_field_count(const GoStruct *s);
+char     *goslint_struct_field_name(const GoStruct *s, size_t i);
 
 #ifdef __cplusplus
 }

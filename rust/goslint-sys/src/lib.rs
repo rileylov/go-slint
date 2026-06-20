@@ -10,6 +10,7 @@
 
 mod compiler;
 mod instance;
+mod structs;
 mod value;
 
 use std::cell::RefCell;
