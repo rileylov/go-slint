@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="dev.goslint.demo"
+    android:versionCode="1"
+    android:versionName="1.0">
+
+    <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="34" />
+
+    <application
+        android:label="go-slint"
+        android:hasCode="false"
+        android:debuggable="true"
+        android:extractNativeLibs="true">
+
+        <!-- Pure-native app: the framework NativeActivity loads libgoslint.so
+             (android.app.lib_name = goslint) and calls ANativeActivity_onCreate. -->
+        <activity
+            android:name="android.app.NativeActivity"
+            android:exported="true"
+            android:configChanges="orientation|keyboardHidden|screenSize|density">
+            <meta-data android:name="android.app.lib_name" android:value="goslint" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

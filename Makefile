@@ -13,7 +13,7 @@ TARGET    := $(RUST_DIR)/target/release
 # Which upstream Slint to build against. Default tracks main; pin a tag for stability.
 SLINT_REF ?= origin/master
 
-.PHONY: lib test conformance clean update-slint lib-windows build-windows
+.PHONY: lib test conformance clean update-slint lib-windows build-windows android
 
 lib:
 	cd $(RUST_DIR) && cargo build --release
@@ -41,6 +41,12 @@ lib-windows:
 	cp $(RUST_DIR)/target/$(WIN_TARGET)/release/goslint.dll $(WIN_LIBDIR)/
 	cp $(RUST_DIR)/target/$(WIN_TARGET)/release/libgoslint.dll.a $(WIN_LIBDIR)/
 	@echo "staged Windows shim in $(WIN_LIBDIR)"
+
+# Build a signed debug APK (x86_64 + arm64-v8a) of cmd/androiddemo. Needs the NDK,
+# the rust android targets, and SDK build-tools/platform. See scripts/build-android.sh.
+android:
+	scripts/build-android.sh
+	@echo "APK: build/android/goslint-demo.apk  (adb install -r it, or open on a device)"
 
 # Cross-compile all examples to Windows .exe (proves the cgo link works). Console
 # subsystem keeps stdout visible; add `-ldflags -H=windowsgui` for a GUI-only build.

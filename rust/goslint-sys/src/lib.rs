@@ -8,6 +8,8 @@
 //     `goslint_last_error`.
 //   * Inbound `*const c_char` are borrowed (copied here).
 
+#[cfg(target_os = "android")]
+mod android;
 mod compiler;
 mod graphics;
 mod instance;

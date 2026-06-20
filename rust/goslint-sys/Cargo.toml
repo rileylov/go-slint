@@ -30,3 +30,8 @@ i-slint-backend-testing = { path = "../../slint/internal/backends/testing", feat
 # interpreter). Same path as the interpreter's dep, so Cargo unifies the crate.
 i-slint-core = { path = "../../slint/internal/core", features = ["default"] }
 spin_on = "0.1"
+
+# Android: Slint's NativeActivity backend (pulls skia). Only compiled for android,
+# so desktop builds are unaffected. android_main lives in src/android.rs.
+[target.'cfg(target_os = "android")'.dependencies]
+i-slint-backend-android-activity = { path = "../../slint/internal/backends/android-activity", features = ["native-activity", "aa-06"] }

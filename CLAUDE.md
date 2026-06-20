@@ -99,12 +99,23 @@ case dirs = 614 cases, **0 failures**). The driver sets SLINT_ENABLE_EXPERIMENTA
 noTest (no `test` bool) and 1 compileErr (`@library` import; library-paths unwired).
 `make conformance`.
 
-**M8 in progress.** **Windows cross-compile WORKS** (`make build-windows` from Linux →
-`build/windows/{hello,counter,todo,clock}.exe` + goslint.dll, all valid PE32+). Needs the
-rust target `x86_64-pc-windows-gnu` + mingw-w64 (`sudo pacman -S mingw-w64-gcc`, provides
-dlltool). Per-platform cgo via `#cgo windows,amd64 → lib/windows_amd64`. Awaiting on-device
-Windows validation. **Next in M8: Android** (the hard one — needs NDK install + the
-android-activity/NativeActivity glue + on-device testing).
+**M8 in progress.** Linux ✅. **Windows cross-compile WORKS** (`make build-windows` →
+`build/windows/*.exe` + goslint.dll; needs `x86_64-pc-windows-gnu` + mingw-w64). NOTE:
+Windows needs **femtovg** (GPU) — software renderer hits an upstream winit/softbuffer
+panic; WinBoat VM lacks GL2 so can't render either renderer (real HW will). Awaiting
+on-real-HW Windows test.
+
+**Android WORKS — verified rendering on an x86_64 emulator (screenshot).** `make android`
+→ a signed universal APK (`build/android/goslint-demo.apk`, x86_64 + arm64-v8a) via
+`scripts/build-android.sh`. App = `cmd/androiddemo`. Architecture (two .so per ABI, one
+APK): `libgoslint.so` (Rust cdylib: ANativeActivity_onCreate + android_main + skia +
+goslint_*; android_main **dlopen**s the Go lib) + `libgoslintapp.so` (Go c-shared:
+goslint_android_main; NEEDED libgoslint.so for goslint_*). Why two: Go has no c-archive on
+android, and a Go c-shared won't statically pull a Rust .a (cgo treats C syms as dynamic) —
+so dlopen breaks the circular dep cleanly. skia uses prebuilts (fast). android-activity
+build.rs needs ANDROID_HOME with a real platform (env's /opt/android-sdk is empty → script
+falls back to ~/android-sdk). Toolchain: NDK 29 at ~/android-sdk/ndk, build-tools 36.1.0,
+platform android-36, AVD Pixel_9_Pro (x86_64). User will also test on their arm64 phone.
 
 **M7 mostly done** (full corpus green, InvokeFromEventLoop, docs). Deferred: switching
 `goslint.h` to cbindgen-generated (~85 fns; hand-written works fine), wiring library-paths

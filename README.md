@@ -66,6 +66,24 @@ make build-windows                    # cross-builds goslint.dll + all examples 
 Copy `build/windows/` to a Windows machine and run an `.exe` — keep `goslint.dll`
 in the same folder (or on `PATH`).
 
+## Android
+
+Builds a signed debug APK (x86_64 + arm64-v8a) of `cmd/androiddemo`. Slint's
+Android backend (skia, via `android-activity`) renders straight to a NativeActivity.
+The app ships as two libraries: `libgoslint.so` (Rust cdylib — the NativeActivity
+entry + the `goslint_*` C ABI) and `libgoslintapp.so` (the Go app as a c-shared,
+`dlopen`'d by the Rust `android_main`).
+
+Prereqs: `rustup target add aarch64-linux-android x86_64-linux-android`, the Android
+NDK, and SDK build-tools + a platform. Point `ANDROID_HOME` at an SDK that has them.
+
+```sh
+make android                                   # -> build/android/goslint-demo.apk
+adb install -r build/android/goslint-demo.apk  # install on emulator/phone
+```
+
+Verified rendering on an x86_64 emulator (API 36); the same APK runs on arm64 phones.
+
 ## How it works
 
 Three layers (details in [`CLAUDE.md`](CLAUDE.md)):
