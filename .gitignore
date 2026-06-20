@@ -1,0 +1,11 @@
+# Rust build output
+/rust/goslint-sys/target/
+
+# Staged shim libraries (rebuild with `make lib`)
+/lib/
+/slint/
+
+# Go test binaries
+*.test
+
+# The upstream Slint checkout carries its own .git

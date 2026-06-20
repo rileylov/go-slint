@@ -1,0 +1,95 @@
+/* goslint.h — C ABI for the go-slint shim (Layer 0).
+ *
+ * Hand-written through M1; cbindgen takes over as the surface grows (PLAN.md §4).
+ *
+ * Ownership: every char* and every handle (GoValue*, GoCompiler*, ...) returned
+ * by this library is heap-owned by the library and must be released with the
+ * matching *_free (strings: goslint_string_free). A NULL handle / NULL char*
+ * return means failure; call goslint_last_error() for detail. Inbound strings
+ * are borrowed (copied internally). All component/instance/value calls are
+ * affine to a single OS thread (the UI thread). */
+#ifndef GOSLINT_H
+#define GOSLINT_H
+
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* Opaque handles. */
+typedef struct GoValue GoValue;
+typedef struct GoCompiler GoCompiler;
+typedef struct GoCompilationResult GoCompilationResult;
+typedef struct GoComponentDefinition GoComponentDefinition;
+typedef struct GoComponentInstance GoComponentInstance;
+
+/* ---- library / diagnostics-as-strings ---- */
+char *goslint_version(void);
+char *goslint_last_error(void);
+void  goslint_string_free(char *s);
+char *goslint_smoke_compile(void);
+
+/* ---- event loop & platform ---- */
+int  goslint_testing_init_headless(void);          /* 0 = ok */
+void goslint_testing_mock_elapsed_time(uint64_t ms);
+void goslint_testing_configure_fonts(void);
+int  goslint_run_event_loop(void);                 /* blocks; UI thread only */
+int  goslint_quit_event_loop(void);
+
+/* ---- compiler ---- */
+GoCompiler *goslint_compiler_new(void);
+void        goslint_compiler_free(GoCompiler *c);
+void        goslint_compiler_set_style(GoCompiler *c, const char *style);
+void        goslint_compiler_set_include_paths(GoCompiler *c, const char *const *paths, size_t n);
+GoCompilationResult *goslint_compiler_build_from_source(GoCompiler *c, const char *src, const char *path);
+GoCompilationResult *goslint_compiler_build_from_path(GoCompiler *c, const char *path);
+
+/* ---- compilation result ---- */
+bool   goslint_result_has_errors(const GoCompilationResult *r);
+size_t goslint_result_diagnostic_count(const GoCompilationResult *r);
+/* level: 0=error 1=warning 2=note. message/file are owned out-strings (free
+ * each; file may be set to NULL). Any out-pointer may be NULL to skip it. */
+void   goslint_result_diagnostic(const GoCompilationResult *r, size_t i,
+                                 int32_t *level, char **message, char **file,
+                                 uint32_t *line, uint32_t *col);
+size_t goslint_result_component_count(const GoCompilationResult *r);
+char  *goslint_result_component_name(const GoCompilationResult *r, size_t i);
+GoComponentDefinition *goslint_result_component(const GoCompilationResult *r, const char *name);
+void   goslint_result_free(GoCompilationResult *r);
+
+/* ---- component definition ---- */
+char *goslint_definition_name(const GoComponentDefinition *d);
+GoComponentInstance *goslint_definition_create(const GoComponentDefinition *d);
+void  goslint_definition_free(GoComponentDefinition *d);
+
+/* ---- component instance ---- */
+GoValue *goslint_instance_get_property(const GoComponentInstance *i, const char *name);
+int      goslint_instance_set_property(const GoComponentInstance *i, const char *name, const GoValue *v);
+int      goslint_instance_show(const GoComponentInstance *i);
+int      goslint_instance_hide(const GoComponentInstance *i);
+int      goslint_instance_run(const GoComponentInstance *i);
+void     goslint_instance_free(GoComponentInstance *i);
+
+/* ---- value (M1: scalars) ---- */
+/* type codes: 0 void, 1 number, 2 string, 3 bool, 4 model, 5 struct, 6 brush,
+ * 7 image, -1 other, -2 null pointer. */
+GoValue *goslint_value_new_void(void);
+GoValue *goslint_value_new_double(double d);
+GoValue *goslint_value_new_bool(bool b);
+GoValue *goslint_value_new_string(const char *s);
+int32_t  goslint_value_type(const GoValue *v);
+bool     goslint_value_as_double(const GoValue *v, double *out);
+bool     goslint_value_as_bool(const GoValue *v, bool *out);
+char    *goslint_value_as_string(const GoValue *v);
+GoValue *goslint_value_clone(const GoValue *v);
+bool     goslint_value_eq(const GoValue *a, const GoValue *b);
+void     goslint_value_free(GoValue *v);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* GOSLINT_H */

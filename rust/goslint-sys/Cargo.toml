@@ -1,0 +1,27 @@
+# Layer 0 — the C-ABI shim crate. See ../../PLAN.md §4.
+# Depends ONLY on the safe `slint-interpreter` Rust API; converts to/from plain C
+# types at the boundary. Does not touch Slint's internal (non-stable) FFI ABI.
+[package]
+name = "goslint-sys"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+name = "goslint"
+crate-type = ["staticlib", "cdylib"]
+
+[dependencies]
+# Path-dep on the pinned local checkout (slint/ is at the module root).
+# M1: real windowing via backend-winit + the dependency-light software renderer
+# (no OpenGL needed). femtovg/skia come later behind build features.
+slint-interpreter = { path = "../../slint/internal/interpreter", default-features = false, features = [
+    "compat-1-2",
+    "display-diagnostics",
+    "backend-winit",
+    "renderer-software",
+] }
+# Headless platform for tests (init_no_event_loop / mock time). The `internal`
+# feature exposes configure_test_fonts (embedded NotoSans for deterministic text).
+i-slint-backend-testing = { path = "../../slint/internal/backends/testing", features = ["internal"] }
+spin_on = "0.1"
