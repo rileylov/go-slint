@@ -1,0 +1,74 @@
+import { Button, HorizontalBox, VerticalBox } from "std-widgets.slint";
+
+// A throughput harness: Go pushes an SVG path string (the whole multi-series
+// waveform packed into one `commands` string) into `wave-path` as fast as the UI
+// can apply it. Crank points/series to find where Slint's path rendering — or the
+// binding — falls over. Run with SLINT_DEBUG_PERFORMANCE=refresh_full_speed,overlay
+// to see Slint's own render FPS overlaid.
+export component AppWindow inherits Window {
+    title: "Slint throughput stress";
+    preferred-width: 1000px;
+    preferred-height: 580px;
+    background: #11131a;
+
+    in property <string> wave-path;
+    in property <int> point-count: 256;
+    in property <int> series-count: 1;
+    in property <string> applied-text: "—";
+    in property <bool> running: true;
+
+    callback points-up();
+    callback points-down();
+    callback series-up();
+    callback series-down();
+    callback toggle-run();
+
+    VerticalBox {
+        Rectangle {
+            vertical-stretch: 1;
+            background: #0b0d12;
+            border-color: #1e2230;
+            border-width: 1px;
+            clip: true;
+            Path {
+                width: 100%;
+                height: 100%;
+                viewbox-width: 1000;
+                viewbox-height: 300;
+                commands: root.wave-path;
+                fill: transparent;
+                stroke: #36d399;
+                stroke-width: 1.5px;
+            }
+        }
+
+        HorizontalLayout {
+            spacing: 18px;
+            Text {
+                color: #9aa3b2;
+                vertical-alignment: center;
+                text: "load: " + root.point-count + " pts × " + root.series-count + " series = " + (root.point-count * root.series-count) + " pts/frame";
+            }
+            Text {
+                color: #36d399;
+                vertical-alignment: center;
+                font-weight: 700;
+                text: root.applied-text;
+            }
+        }
+        Text {
+            color: #667085;
+            font-size: 11px;
+            text: "render FPS: run with  SLINT_DEBUG_PERFORMANCE=refresh_full_speed,overlay";
+        }
+
+        HorizontalBox {
+            alignment: start;
+            Button { text: root.running ? "Pause" : "Run"; primary: root.running; clicked => { root.toggle-run(); } }
+            Button { text: "points −"; clicked => { root.points-down(); } }
+            Button { text: "points +"; clicked => { root.points-up(); } }
+            Button { text: "series −"; clicked => { root.series-down(); } }
+            Button { text: "series +"; clicked => { root.series-up(); } }
+        }
+    }
+}

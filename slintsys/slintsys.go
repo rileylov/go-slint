@@ -11,18 +11,20 @@ package slintsys
 
 /*
 #cgo CFLAGS: -I${SRCDIR}/../include
-// Per-platform link against the staged shim in lib/<goos>_<goarch>/. Linux: the
-// .so records its own deps; rpath finds it in dev. Windows: link the import lib
-// (libgoslint.dll.a); ship goslint.dll next to the .exe (or on PATH) at runtime.
-// Note: on android the `linux` tag is also set, so exclude it here — the android
-// build is a c-archive whose goslint_* symbols are resolved later, when the Rust
-// cdylib links this archive in (no LDFLAGS at archive-build time).
-#cgo linux,!android,amd64 LDFLAGS: -L${SRCDIR}/../lib/linux_amd64 -Wl,-rpath,${SRCDIR}/../lib/linux_amd64 -lgoslint
-#cgo windows,amd64 LDFLAGS: -L${SRCDIR}/../lib/windows_amd64 -lgoslint
 #include <stdlib.h>
 #include "goslint.h"
 */
 import "C"
+
+// The LDFLAGS that link the native shim live in build-tag-gated files so the same
+// source ships two ways:
+//   - default (in-repo dev): link the lib staged by `make lib` in lib/<goos>_<goarch>/
+//     — see link_dev.go.
+//   - `-tags goslint_pkgconfig` (the shippable path): resolve link flags via
+//     pkg-config, so `goslint setup` can point at a downloaded prebuilt — see
+//     link_pkgconfig.go.
+// On android neither applies: that build is a c-shared whose goslint_* symbols are
+// resolved later when the Rust cdylib links the archive in.
 
 import "errors"
 
