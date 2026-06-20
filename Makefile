@@ -13,7 +13,7 @@ TARGET    := $(RUST_DIR)/target/release
 # Which upstream Slint to build against. Default tracks main; pin a tag for stability.
 SLINT_REF ?= origin/master
 
-.PHONY: lib test conformance clean update-slint lib-windows build-windows android
+.PHONY: lib test conformance clean update-slint lib-windows build-windows android android-interop
 
 lib:
 	cd $(RUST_DIR) && cargo build --release
@@ -44,9 +44,16 @@ lib-windows:
 
 # Build a signed debug APK (x86_64 + arm64-v8a) of cmd/androiddemo. Needs the NDK,
 # the rust android targets, and SDK build-tools/platform. See scripts/build-android.sh.
+# Override APP_DIR to package a different app (it must export goslint_android_main).
 android:
 	scripts/build-android.sh
 	@echo "APK: build/android/goslint-demo.apk  (adb install -r it, or open on a device)"
+
+# The Go ⇄ Slint interop stress-test (goroutines/channels/mutex/callbacks/models)
+# as an APK, using its phone-stacked layout.
+android-interop:
+	APP_DIR=./cmd/examples/interop scripts/build-android.sh
+	@echo "APK: build/android/goslint-demo.apk  (interop demo)"
 
 # Cross-compile all examples to Windows .exe (proves the cgo link works). Console
 # subsystem keeps stdout visible; add `-ldflags -H=windowsgui` for a GUI-only build.

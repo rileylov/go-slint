@@ -51,7 +51,7 @@ build_abi() {
   echo ">> [$abi] Go c-shared (libgoslintapp.so)"
   env CGO_LDFLAGS="-L$libdir -lgoslint -llog" \
       GOOS=android GOARCH="$goarch" CGO_ENABLED=1 CC="$clang" \
-      go build -buildmode=c-shared -o "$libdir/libgoslintapp.so" ./cmd/androiddemo
+      go build -buildmode=c-shared -o "$libdir/libgoslintapp.so" "${APP_DIR:-./cmd/androiddemo}"
 }
 
 build_abi x86_64-linux-android  amd64 x86_64

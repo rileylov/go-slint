@@ -1,0 +1,101 @@
+import { Button, LineEdit, ListView, ProgressIndicator, VerticalBox, HorizontalBox, GroupBox } from "std-widgets.slint";
+
+// A job row, populated from Go (map[string]any -> this struct by field name).
+export struct Job {
+    name: string,
+    progress: float, // 0.0 ..= 1.0
+    status: string,
+}
+
+export component AppWindow inherits Window {
+    title: "Go ⇄ Slint Interop Lab";
+    preferred-width: 760px;
+    preferred-height: 660px;
+
+    // ---- properties driven FROM Go (backend -> frontend) ----
+    in property <string> counter-text: "0";
+    in property <string> rate-text: "idle";
+    in property <bool> hammering: false;
+    in property <int> goroutines: 0;
+    in property <[Job]> jobs;
+
+    // written by the UI from the value returned by the Go transform() callback
+    property <string> transformed;
+
+    // ---- callbacks INTO Go (frontend -> backend) ----
+    callback toggle-hammer();
+    callback add-job();
+    callback clear-done();
+    callback transform(string) -> string;
+
+    VerticalBox {
+        Text {
+            text: "Go ⇄ Slint Interop Lab";
+            font-size: 24px;
+            font-weight: 700;
+        }
+        Text {
+            text: "live goroutines: " + root.goroutines;
+            color: #888;
+        }
+
+        HorizontalBox {
+            GroupBox {
+                title: "Concurrency — 8 goroutines + sync.Mutex";
+                VerticalBox {
+                    Text { text: root.counter-text; font-size: 34px; font-weight: 700; }
+                    Text { text: root.rate-text; color: #4caf50; }
+                    Button {
+                        text: root.hammering ? "Stop" : "Start hammering";
+                        primary: !root.hammering;
+                        clicked => { root.toggle-hammer(); }
+                    }
+                }
+            }
+            GroupBox {
+                title: "Callback with return value (Go transforms text)";
+                VerticalBox {
+                    LineEdit {
+                        placeholder-text: "type something…";
+                        // frontend calls into Go and uses the RETURNED string
+                        edited(t) => { root.transformed = root.transform(t); }
+                    }
+                    Text { text: root.transformed == "" ? "(result appears here)" : root.transformed; wrap: word-wrap; }
+                }
+            }
+        }
+
+        GroupBox {
+            title: "Worker pool — goroutines → channel → model (slice of structs)";
+            VerticalBox {
+                HorizontalBox {
+                    alignment: start;
+                    Button { text: "Add job"; clicked => { root.add-job(); } }
+                    Button { text: "Clear done"; clicked => { root.clear-done(); } }
+                    Text {
+                        vertical-alignment: center;
+                        text: root.jobs.length + " jobs";
+                        color: #888;
+                    }
+                }
+                ListView {
+                    for job in root.jobs: Rectangle {
+                        height: 40px;
+                        HorizontalBox {
+                            padding: 4px;
+                            Text { text: job.name; width: 110px; vertical-alignment: center; }
+                            ProgressIndicator { progress: job.progress; }
+                            Text {
+                                text: job.status;
+                                width: 90px;
+                                horizontal-alignment: right;
+                                vertical-alignment: center;
+                                color: job.status == "done" ? #4caf50 : #2196f3;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

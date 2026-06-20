@@ -1,0 +1,85 @@
+// Phone layout for the interop demo: a single vertical stack (the desktop
+// ui.slint is two-column). Same property + callback contract as ui.slint, so the
+// shared Go code in interop.go drives either one unchanged.
+import { Button, LineEdit, ListView, ProgressIndicator, VerticalBox, HorizontalBox, GroupBox } from "std-widgets.slint";
+
+export struct Job {
+    name: string,
+    progress: float,
+    status: string,
+}
+
+export component AppWindow inherits Window {
+    title: "Go ⇄ Slint Interop Lab";
+
+    in property <string> counter-text: "0";
+    in property <string> rate-text: "idle";
+    in property <bool> hammering: false;
+    in property <int> goroutines: 0;
+    in property <[Job]> jobs;
+    property <string> transformed;
+
+    callback toggle-hammer();
+    callback add-job();
+    callback clear-done();
+    callback transform(string) -> string;
+
+    VerticalBox {
+        Text { text: "Go ⇄ Slint Interop"; font-size: 22px; font-weight: 700; horizontal-alignment: center; }
+        Text { text: "live goroutines: " + root.goroutines; color: #888; horizontal-alignment: center; }
+
+        GroupBox {
+            title: "8 goroutines + sync.Mutex";
+            VerticalBox {
+                Text { text: root.counter-text; font-size: 30px; font-weight: 700; horizontal-alignment: center; }
+                Text { text: root.rate-text; color: #4caf50; horizontal-alignment: center; }
+                Button {
+                    text: root.hammering ? "Stop" : "Start hammering";
+                    primary: !root.hammering;
+                    clicked => { root.toggle-hammer(); }
+                }
+            }
+        }
+
+        GroupBox {
+            title: "Callback → Go → return value";
+            VerticalBox {
+                LineEdit {
+                    placeholder-text: "type something…";
+                    edited(t) => { root.transformed = root.transform(t); }
+                }
+                Text { text: root.transformed == "" ? "(result appears here)" : root.transformed; wrap: word-wrap; }
+            }
+        }
+
+        GroupBox {
+            title: "Worker pool — goroutines → channel → model";
+            vertical-stretch: 1;
+            VerticalBox {
+                HorizontalBox {
+                    alignment: start;
+                    Button { text: "Add job"; clicked => { root.add-job(); } }
+                    Button { text: "Clear done"; clicked => { root.clear-done(); } }
+                    Text { text: root.jobs.length + " jobs"; color: #888; vertical-alignment: center; }
+                }
+                ListView {
+                    for job in root.jobs: Rectangle {
+                        height: 40px;
+                        HorizontalBox {
+                            padding: 4px;
+                            Text { text: job.name; width: 80px; vertical-alignment: center; }
+                            ProgressIndicator { progress: job.progress; }
+                            Text {
+                                text: job.status;
+                                width: 70px;
+                                horizontal-alignment: right;
+                                vertical-alignment: center;
+                                color: job.status == "done" ? #4caf50 : #2196f3;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
