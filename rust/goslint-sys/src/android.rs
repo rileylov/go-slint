@@ -25,6 +25,14 @@ const RTLD_NOW: c_int = 2;
 
 #[no_mangle]
 pub extern "C" fn android_main(app: i_slint_backend_android_activity::AndroidApp) {
+    // Android apps have no writable /tmp; capture the app's private data dir so the
+    // Go side can extract embedded .slint assets there. Pass it as an explicit
+    // argument (env vars don't reach Go's already-captured environ reliably).
+    let data_dir = app
+        .internal_data_path()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_default();
+
     if i_slint_core::platform::set_platform(Box::new(
         i_slint_backend_android_activity::AndroidPlatform::new(app),
     ))
@@ -44,7 +52,8 @@ pub extern "C" fn android_main(app: i_slint_backend_android_activity::AndroidApp
         if entry.is_null() {
             return;
         }
-        let entry: extern "C" fn() = std::mem::transmute(entry);
-        entry();
+        let entry: extern "C" fn(*const c_char) = std::mem::transmute(entry);
+        let c_dir = CString::new(data_dir).unwrap();
+        entry(c_dir.as_ptr()); // blocks running the event loop; c_dir outlives it
     }
 }
