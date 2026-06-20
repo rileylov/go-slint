@@ -25,16 +25,19 @@ permissions:
 jobs:
   build:
     name: build ${{ matrix.target }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { target: linux_amd64, rust: x86_64-unknown-linux-gnu, kind: static }
-          - { target: linux_arm64, rust: aarch64-unknown-linux-gnu, kind: static }
-          - { target: windows_amd64, rust: x86_64-pc-windows-gnu, kind: static }
-          - { target: android_arm64, rust: aarch64-linux-android, kind: shared }
-          - { target: android_amd64, rust: x86_64-linux-android, kind: shared }
+          # Linux targets are built natively (arm64 on an arm64 runner) so the
+          # fontconfig dev package installs without a cross-apt dance.
+          - { target: linux_amd64, runner: ubuntu-latest, rust: x86_64-unknown-linux-gnu, kind: static, apt: libfontconfig-dev }
+          - { target: linux_arm64, runner: ubuntu-24.04-arm, rust: aarch64-unknown-linux-gnu, kind: static, apt: libfontconfig-dev }
+          # Windows + Android cross-compile from x86_64 (neither uses fontconfig).
+          - { target: windows_amd64, runner: ubuntu-latest, rust: x86_64-pc-windows-gnu, kind: static, apt: gcc-mingw-w64-x86-64 }
+          - { target: android_arm64, runner: ubuntu-latest, rust: aarch64-linux-android, kind: shared, apt: "" }
+          - { target: android_amd64, runner: ubuntu-latest, rust: x86_64-linux-android, kind: shared, apt: "" }
     steps:
       - uses: actions/checkout@v4
 
@@ -58,12 +61,9 @@ jobs:
           rustup toolchain install stable --profile minimal --no-self-update
           rustup target add ${{ matrix.rust }}
 
-      - name: Install cross toolchain
-        run: |
-          case "${{ matrix.target }}" in
-            linux_arm64)   sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu ;;
-            windows_amd64) sudo apt-get update && sudo apt-get install -y gcc-mingw-w64-x86-64 ;;
-          esac
+      - name: Install build deps
+        if: matrix.apt != ''
+        run: sudo apt-get update && sudo apt-get install -y ${{ matrix.apt }}
 
       - name: Cache cargo
         uses: actions/cache@v4
@@ -78,8 +78,7 @@ jobs:
         if: matrix.kind == 'static'
         working-directory: rust/goslint-sys
         env:
-          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
-          CC_aarch64_unknown_linux_gnu: aarch64-linux-gnu-gcc
+          # Only used by the Windows cross build; ignored by native linux builds.
           CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER: x86_64-w64-mingw32-gcc
           CC_x86_64_pc_windows_gnu: x86_64-w64-mingw32-gcc
         run: |

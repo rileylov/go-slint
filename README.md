@@ -44,45 +44,41 @@ go run ./cmd/examples/todo
 
 ## Quickstart
 
-To use go-slint in your own project you need **Go** and a **C compiler** (for cgo)
-— that's all. The native Slint library is downloaded prebuilt, so you do **not**
-need Rust or a Slint checkout just to *use* the bindings.
+Everything goes through one CLI, `goslint`. You need **Go** and a **C compiler**
+(for cgo) — *not* Rust: the native Slint library is downloaded prebuilt.
 
-1. Add the module and fetch the native library for your platform:
+```sh
+go install github.com/rileylov/go-slint/cmd/goslint@latest
 
-   ```sh
-   go get github.com/rileylov/go-slint
-   go run github.com/rileylov/go-slint/cmd/goslint setup
-   ```
+goslint init myapp        # scaffold a project (go.mod + main.go + app.slint)
+cd myapp
+goslint setup             # download the native lib matching your go.mod
+goslint dev .             # run with live reload — edit app.slint, save, see it update
+```
 
-   `setup` downloads the prebuilt `libgoslint` for your OS/arch from this project's
-   [Releases](../../releases) (checksum-verified) into `~/.cache/goslint/`, and
-   writes a pkg-config file describing how to link it. Run `goslint doctor` any
-   time to check your toolchain and the cached library.
+Ship it:
 
-2. Write a `.slint` UI and a `main.go` (see [Example](#example) above), then build:
+```sh
+goslint build -o myapp .                # single self-contained binary
+goslint android build -o myapp.apk .    # signed APK (arm64-v8a + x86_64)
+```
 
-   ```sh
-   # easiest — the wrapper sets the linker flags + build tag for you:
-   go run github.com/rileylov/go-slint/cmd/goslint build -o myapp .
-   ./myapp
+How it fits together:
 
-   # …or with plain `go build`, after pointing pkg-config at the cached lib:
-   eval "$(go run github.com/rileylov/go-slint/cmd/goslint env)"
-   go build -tags goslint_pkgconfig -o myapp .
-   ```
+- **`goslint setup`** reads the go-slint version from your `go.mod` and downloads
+  the matching prebuilt `libgoslint` for your platform (checksum-verified) into
+  `~/.cache/goslint/`, writing a pkg-config file that describes how to link it.
+- **`goslint dev`** runs your app and live-reloads `.slint` edits with no Go
+  rebuild (the interpreter loads markup at runtime); it rebuilds + restarts on
+  `.go` changes.
+- **`goslint build`/`run`** wrap `go build`/`go run` with the linker flags set.
+  Prefer plain `go`? `eval "$(goslint env)"; go build -tags goslint_pkgconfig .`
+- **`goslint doctor`** checks your toolchain and the cached library.
 
-The result is a **single self-contained binary**: `libgoslint` (and the Slint
-interpreter inside it) is linked statically, leaving only ubiquitous system
-libraries as runtime dependencies — on Linux that's OpenGL and fontconfig, present
-on any desktop.
-
-> Tip: `go install github.com/rileylov/go-slint/cmd/goslint@latest` once, then call
-> `goslint setup` / `goslint build` / `goslint doctor` directly instead of via
-> `go run`.
-
-For Android, see [Android](#android) below — there the native library is bundled
-into an APK rather than linked into a desktop binary.
+The desktop result is a **single self-contained binary**: `libgoslint` (and the
+Slint interpreter inside it) is linked statically, leaving only ubiquitous system
+libraries as runtime dependencies — on Linux, OpenGL and fontconfig (the
+`fontconfig` dev package is also needed *at build time* to link).
 
 ## Platforms
 

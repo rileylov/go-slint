@@ -28,10 +28,14 @@ import (
 	"strings"
 )
 
-// libVersion is the prebuilt-library release this module expects, bumped in
-// lockstep with go-slint releases (each tied to one Slint version). Overridable
-// for testing via GOSLINT_LIB_VERSION.
-const libVersion = "v0.0.0-dev"
+// modulePath is the go-slint module; the CLI reads the version the user's project
+// pins from go.mod so the native lib it fetches always matches their bindings.
+const modulePath = "github.com/rileylov/go-slint"
+
+// defaultLibVersion is the fallback when the version can't be read from a go.mod
+// (e.g. the CLI run outside a project, or inside this repo during development).
+// Overridable via GOSLINT_LIB_VERSION.
+const defaultLibVersion = "v0.0.0-dev"
 
 // defaultBaseURL is the GitHub Releases download root. The release for libVersion
 // is expected at <defaultBaseURL>/<libVersion>/{manifest.json,<archives>}.
@@ -48,8 +52,12 @@ func main() {
 	}
 	var err error
 	switch os.Args[1] {
+	case "init":
+		err = cmdInit(os.Args[2:])
 	case "setup":
 		err = cmdSetup(os.Args[2:])
+	case "dev":
+		err = cmdDev(os.Args[2:])
 	case "build":
 		err = cmdGo("build", os.Args[2:])
 	case "run":
@@ -77,7 +85,9 @@ func usage() {
 	fmt.Fprint(os.Stderr, `goslint — native library manager for the go-slint bindings
 
 Usage:
+  goslint init [-module path] [dir]                   scaffold a new go-slint project
   goslint setup [-target <goos>_<goarch>] [-force]   download the native lib + write goslint.pc
+  goslint dev   [package]                             run with live reload (edit .slint, save)
   goslint build [go build args...]                    go build with the lib wired up
   goslint run   [go run args...]                      go run   with the lib wired up
   goslint env                                         print the PKG_CONFIG_PATH export line
@@ -109,7 +119,25 @@ func version() string {
 	if v := os.Getenv("GOSLINT_LIB_VERSION"); v != "" {
 		return v
 	}
-	return libVersion
+	if v := moduleVersion(); v != "" {
+		return v
+	}
+	return defaultLibVersion
+}
+
+// moduleVersion reports the go-slint version the current project requires, by
+// asking the Go toolchain in the working directory. Empty if not in a module that
+// requires go-slint, or if go-slint is the main module ("(devel)").
+func moduleVersion() string {
+	out, err := exec.Command("go", "list", "-m", "-f", "{{.Version}}", modulePath).Output()
+	if err != nil {
+		return ""
+	}
+	v := strings.TrimSpace(string(out))
+	if v == "" || v == "(devel)" {
+		return ""
+	}
+	return v
 }
 
 func releaseBase() string {
