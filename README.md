@@ -34,13 +34,7 @@ func main() {
 }
 ```
 
-Runnable examples in [`cmd/examples`](cmd/examples): `hello`, `counter`,
-`todo` (live model), `clock` (timer).
-
-```sh
-make lib                       # build the native shim into lib/<os>_<arch>/
-go run ./cmd/examples/todo
-```
+Check [`cmd/examples`](cmd/examples) for more examples of the bindings.
 
 ## Quickstart
 
@@ -82,30 +76,14 @@ libraries as runtime dependencies — on Linux, OpenGL and fontconfig (the
 
 ## Platforms
 
-Current platform status as of writing:
+| Platform | Status |
+| :-- | :-- |
+| Linux (amd64, arm64) | ✅ tested |
+| Android (arm64-v8a, x86_64) | ✅ tested |
+| Windows (amd64) | ⚠️ builds & cross-compiles; not yet verified on hardware |
+| macOS, iOS | ⏳ (no hardware to test on) |
 
-| Platform   | Tested           | Maintained                                                                                                  
-| :--------- | :--------------- | :---------
-| Linux      | ✅ 7.0.3-arch1-1       | ✅                                                                                            
-| Android    | ✅ CinnamonBun      | ✅                                                                                 
-| Windows    | ❌  	   | ✅
-| iOS        | ❌       | ❌                                                                                                      
-| macOS      | ❌       | ❌                                                             
-
-## Cross-compiling for Windows (from Linux)
-
-Slint cross-compiles cleanly to Windows (its text stack is pure Rust). You need the
-Rust target and the mingw-w64 toolchain:
-
-```sh
-rustup target add x86_64-pc-windows-gnu
-sudo pacman -S mingw-w64-gcc          # Arch (or: apt install gcc-mingw-w64-x86-64)
-
-make build-windows                    # cross-builds goslint.dll + all examples to build/windows/
-```
-
-Copy `build/windows/` to a Windows machine and run an `.exe` — keep `goslint.dll`
-in the same folder (or on `PATH`).
+Desktop targets build into a single self-contained binary with `goslint build`.
 
 ## Android
 
@@ -133,9 +111,6 @@ Prereqs: the Android **NDK** and SDK **build-tools** + a **platform** (point
 (a debug keystore is created automatically). Verified rendering on an x86_64
 emulator and on arm64 phones.
 
-> Contributors building the bundled demo from source can instead use
-> `make android` (it cargo-builds the shim rather than downloading it).
-
 ## How it works
 
 Three layers (details in [`CLAUDE.md`](CLAUDE.md)):
@@ -155,6 +130,7 @@ needs the **Rust toolchain** and a Slint checkout in `./slint` (the version pinn
 in `.slint-version`). This path stages the lib locally and skips `goslint setup`.
 
 ```sh
+make slint        # fetch the pinned upstream Slint source (gitignored)
 make lib          # cargo-build the shim + stage libs (do this before go build/test)
 make test         # lib, then `go test`
 make conformance  # run Slint's full .slint test corpus through the bindings

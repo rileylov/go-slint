@@ -68,8 +68,8 @@
 // Build a writable model with [NewSliceModel] (or [NewModel] for a custom
 // [Model]) and assign it to an array/model property; mutating it notifies Slint.
 //
-// See the cmd/examples directory for runnable apps (hello, counter, todo, clock)
-// and PLAN.md for the architecture.
+// See the cmd/examples directory for runnable apps (hello, counter, todo, clock,
+// interop, chartstress) and CLAUDE.md for the architecture.
 //
 // [Slint]: https://slint.dev
 package slint

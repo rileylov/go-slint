@@ -5,8 +5,9 @@
 // Threading: Slint's platform/context is thread-local. Every compiler, instance
 // and value call must happen on one OS thread (lock it with runtime.LockOSThread).
 //
-// Linking: the prebuilt shared library lives in ../lib/<goos>_<goarch>/. Build it
-// with `make lib` (cargo) before `go build`/`go test`. See ../PLAN.md §5/§7.
+// Linking: the native shim is resolved per build tag (see link_dev.go /
+// link_pkgconfig.go). For in-repo development, `make lib` stages it in
+// ../lib/<goos>_<goarch>/ before `go build`/`go test`.
 package slintsys
 
 /*
