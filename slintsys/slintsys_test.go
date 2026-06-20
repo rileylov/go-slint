@@ -1,10 +1,16 @@
 package slintsys
 
-import "testing"
+import (
+	"regexp"
+	"testing"
+)
 
+// Version is checked for shape, not an exact value, so it survives Slint bumps
+// (the pinned version lives in .slint-version).
 func TestVersion(t *testing.T) {
-	if got := Version(); got != "1.17.0" {
-		t.Fatalf("Version() = %q, want 1.17.0", got)
+	got := Version()
+	if !regexp.MustCompile(`^\d+\.\d+\.\d+`).MatchString(got) {
+		t.Fatalf("Version() = %q, want a semver-like string", got)
 	}
 }
 

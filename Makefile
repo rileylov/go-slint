@@ -80,7 +80,11 @@ update-slint:
 	cd $(SLINT_DIR) && git fetch --tags origin
 	cd $(SLINT_DIR) && git checkout --detach $(SLINT_REF)
 	cd $(SLINT_DIR) && git --no-pager log -1 --format='Slint now at %h %s'
-	git -C $(SLINT_DIR) rev-parse HEAD > .slint-version
+	@if echo "$(SLINT_REF)" | grep -qE '^v[0-9]'; then \
+		echo "$(SLINT_REF)" > .slint-version; \
+	else \
+		git -C $(SLINT_DIR) rev-parse HEAD > .slint-version; \
+	fi
 	@echo "recorded pin in .slint-version (read by the release workflow)"
 	$(MAKE) lib
 	@echo "== verifying conformance against $(SLINT_REF) =="

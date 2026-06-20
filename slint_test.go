@@ -1,6 +1,7 @@
 package slint_test
 
 import (
+	"regexp"
 	"runtime"
 	"strings"
 	"testing"
@@ -8,9 +9,11 @@ import (
 	"github.com/rileylov/go-slint"
 )
 
+// Checked for shape, not an exact value, so it survives Slint bumps (the pinned
+// version lives in .slint-version).
 func TestVersion(t *testing.T) {
-	if got := slint.Version(); got != "1.17.0" {
-		t.Fatalf("Version() = %q, want 1.17.0", got)
+	if got := slint.Version(); !regexp.MustCompile(`^\d+\.\d+\.\d+`).MatchString(got) {
+		t.Fatalf("Version() = %q, want a semver-like string", got)
 	}
 }
 
