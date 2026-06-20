@@ -169,6 +169,40 @@ func (i *Instance) Str(name string) (string, error) {
 	return s, nil
 }
 
+// Callback is a Go handler invoked by Slint. Its args and return use the same
+// Go value representation as properties (float64, bool, string, nil, ...).
+type Callback = slintsys.CallbackFunc
+
+// OnCallback installs a handler for the named callback.
+func (i *Instance) OnCallback(name string, fn Callback) error {
+	return i.inner.SetCallback(name, fn)
+}
+
+// OnGlobalCallback installs a handler for a callback on an exported global.
+func (i *Instance) OnGlobalCallback(global, name string, fn Callback) error {
+	return i.inner.SetGlobalCallback(global, name, fn)
+}
+
+// Invoke calls a callback or function, returning its result (nil for void).
+func (i *Instance) Invoke(name string, args ...any) (any, error) {
+	return i.inner.Invoke(name, args)
+}
+
+// InvokeGlobal calls a callback or function on an exported global.
+func (i *Instance) InvokeGlobal(global, name string, args ...any) (any, error) {
+	return i.inner.InvokeGlobal(global, name, args)
+}
+
+// GetGlobal reads a property of an exported global singleton.
+func (i *Instance) GetGlobal(global, name string) (any, error) {
+	return i.inner.GetGlobalProperty(global, name)
+}
+
+// SetGlobal writes a property of an exported global singleton.
+func (i *Instance) SetGlobal(global, name string, v any) error {
+	return i.inner.SetGlobalProperty(global, name, v)
+}
+
 // Show makes the window visible. Hide hides it. Run shows then runs the loop.
 func (i *Instance) Show() error { return i.inner.Show() }
 func (i *Instance) Hide() error { return i.inner.Hide() }

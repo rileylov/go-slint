@@ -73,6 +73,21 @@ int      goslint_instance_hide(const GoComponentInstance *i);
 int      goslint_instance_run(const GoComponentInstance *i);
 void     goslint_instance_free(GoComponentInstance *i);
 
+/* ---- callbacks, invoke, globals ---- */
+/* A callback receives a host handle (user_data) + borrowed args, and returns an
+ * owned GoValue (NULL == Void) that the library takes ownership of. `drop` is
+ * called with user_data when the handler is released. */
+typedef GoValue *(*GoCallback)(uintptr_t user_data, GoValue **args, size_t n);
+
+GoValue *goslint_instance_invoke(const GoComponentInstance *i, const char *name, GoValue **args, size_t n);
+int      goslint_instance_set_callback(const GoComponentInstance *i, const char *name,
+                                       GoCallback cb, uintptr_t user_data, void (*drop)(uintptr_t));
+GoValue *goslint_instance_get_global_property(const GoComponentInstance *i, const char *global, const char *name);
+int      goslint_instance_set_global_property(const GoComponentInstance *i, const char *global, const char *name, const GoValue *v);
+int      goslint_instance_set_global_callback(const GoComponentInstance *i, const char *global, const char *name,
+                                              GoCallback cb, uintptr_t user_data, void (*drop)(uintptr_t));
+GoValue *goslint_instance_invoke_global(const GoComponentInstance *i, const char *global, const char *name, GoValue **args, size_t n);
+
 /* ---- value (M1: scalars) ---- */
 /* type codes: 0 void, 1 number, 2 string, 3 bool, 4 model, 5 struct, 6 brush,
  * 7 image, -1 other, -2 null pointer. */

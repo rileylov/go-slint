@@ -11,6 +11,36 @@ import (
 	"unsafe"
 )
 
+// toCValues converts Go args to owned C values; on error it frees what it built.
+func toCValues(args []any) ([]*C.GoValue, error) {
+	out := make([]*C.GoValue, 0, len(args))
+	for _, a := range args {
+		cv, err := cValue(a)
+		if err != nil {
+			freeCValues(out)
+			return nil, err
+		}
+		out = append(out, cv)
+	}
+	return out, nil
+}
+
+func freeCValues(vals []*C.GoValue) {
+	for _, v := range vals {
+		if v != nil {
+			C.goslint_value_free(v)
+		}
+	}
+}
+
+// cvaluePtr returns a pointer to the first element (or nil for an empty slice).
+func cvaluePtr(vals []*C.GoValue) **C.GoValue {
+	if len(vals) == 0 {
+		return nil
+	}
+	return (**C.GoValue)(unsafe.Pointer(&vals[0]))
+}
+
 // Value type codes (mirror slint_interpreter::ValueType).
 const (
 	TypeVoid   = 0

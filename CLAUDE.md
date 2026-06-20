@@ -28,24 +28,27 @@ cgo links it via `#cgo LDFLAGS`. The first cargo build is slow (it compiles
 - Go callbacks cross into C only via `runtime/cgo.Handle` — never raw Go pointers.
 
 ## Current state
-**M0 + M1 + M2 complete.** Shim built with `backend-winit` + `renderer-software` +
-the headless testing backend (`internal` feature → `configure_test_fonts`).
+**M0–M3 complete.** Shim built with `backend-winit` + `renderer-software` + the
+headless testing backend (`internal` feature → `configure_test_fonts`).
 
 C ABI (`include/goslint.h`): version/last_error/string_free; testing init + mock-time
 + configure-fonts; run/quit event loop; Compiler (style, include paths,
 build_from_source/path); CompilationResult + diagnostics; ComponentDefinition
-(name/create); ComponentInstance (get/set property, show/hide/run); Value scalars
-(void/number/bool/string).
+(name/create); ComponentInstance (get/set property, show/hide/run, **invoke,
+set_callback, globals: get/set property + set_callback + invoke_global**); Value
+scalars (void/number/bool/string).
 
-Go: `slintsys` (Layer 1, 1:1 cgo) and `slint` (Layer 2: `Compile`, `Compilation.Create`,
-`Instance.Int/Float/Bool/Str/Set`, `Run/Quit`, `DiagnosticError`). Example:
-`cmd/examples/hello`. Conformance driver: `internal/conformance` mirrors Slint's
-`test-driver-interpreter` over `slint/tests/cases/**` (`make conformance`).
+**Callback model (M3):** the C ABI uses `uintptr_t user_data` (cgo.Handle pattern).
+Go stores the closure via `cgo.NewHandle`, passes the handle; one exported
+`goslintCallbackTrampoline` recovers + invokes it; `goslintDropHandle` frees it when
+Slint releases the handler. Static C bridges live in `callback_bridge.go` (a no-export
+file); the `//export` functions in `callback.go`. Never pass a raw Go pointer into C.
 
-Conformance scoreboard (default dirs types/properties/expr/bindings): 127 cases,
-0 failures. Broader 8-dir sweep: 0 failures; only non-passes are vacuous (no `test`
-bool) or gated behind Slint's experimental `interface` feature.
+Go: `slintsys` (Layer 1) and `slint` (Layer 2: `Compile`, `Compilation.Create`,
+`Instance.Int/Float/Bool/Str/Set`, `OnCallback`/`OnGlobalCallback`/`Invoke`/
+`InvokeGlobal`/`GetGlobal`/`SetGlobal`, `Run/Quit`, `DiagnosticError`). Example:
+`cmd/examples/hello`. Conformance: `internal/conformance` (`make conformance`),
+0 failures across the self-contained dirs.
 
-**Next: M3** — instance **callbacks** via `runtime/cgo.Handle` trampolines (first
-Go→Slint callback path), then structs/enums (M4) and models (M5) per PLAN.md §10.
-Introduce cbindgen when the header grows further.
+**Next: M4** — structs & enums in `Value` (get/set struct fields, enum<->string),
+then models (M5) per PLAN.md §10. Introduce cbindgen when the header grows further.

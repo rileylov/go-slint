@@ -2,6 +2,7 @@ package slint_test
 
 import (
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/rileylov/go-slint"
@@ -93,5 +94,86 @@ func TestHeadlessRoundTrip(t *testing.T) {
 	// unknown property surfaces an error
 	if _, err := inst.Int("nope"); err == nil {
 		t.Fatal("expected error reading unknown property")
+	}
+
+	// ---- callbacks (Go -> Slint and Slint -> Go) ----
+	cb, err := slint.Compile(`
+		export component CB inherits Window {
+			pure callback add(int, int) -> int;
+			callback clicked();
+			out property <int> sum: add(2, 3);
+		}`)
+	if err != nil {
+		t.Fatalf("Compile CB: %v", err)
+	}
+	defer cb.Close()
+	ci, err := cb.Create("CB")
+	if err != nil {
+		t.Fatalf("Create CB: %v", err)
+	}
+	defer ci.Close()
+
+	if err := ci.OnCallback("add", func(args []any) any {
+		return args[0].(float64) + args[1].(float64)
+	}); err != nil {
+		t.Fatalf("OnCallback add: %v", err)
+	}
+	clicks := 0
+	if err := ci.OnCallback("clicked", func(args []any) any { clicks++; return nil }); err != nil {
+		t.Fatalf("OnCallback clicked: %v", err)
+	}
+
+	// Reading `sum` evaluates the binding add(2,3) through the Go handler.
+	if n, err := ci.Int("sum"); err != nil || n != 5 {
+		t.Fatalf("Int(sum) = %d, %v; want 5", n, err)
+	}
+	// Direct invoke with a return value.
+	if r, err := ci.Invoke("add", 10, 20); err != nil || int(r.(float64)) != 30 {
+		t.Fatalf("Invoke(add,10,20) = %v, %v; want 30", r, err)
+	}
+	// Void callback capturing Go state across multiple invocations.
+	if _, err := ci.Invoke("clicked"); err != nil {
+		t.Fatalf("Invoke(clicked): %v", err)
+	}
+	_, _ = ci.Invoke("clicked")
+	if clicks != 2 {
+		t.Fatalf("clicks = %d; want 2", clicks)
+	}
+
+	// ---- globals (callback + property) ----
+	g, err := slint.Compile(`
+		export global Logic {
+			pure callback upcase(string) -> string;
+			in-out property <int> n: 1;
+		}
+		export component G inherits Window {
+			out property <string> r: Logic.upcase("hi");
+		}`)
+	if err != nil {
+		t.Fatalf("Compile G: %v", err)
+	}
+	defer g.Close()
+	gi, err := g.Create("G")
+	if err != nil {
+		t.Fatalf("Create G: %v", err)
+	}
+	defer gi.Close()
+
+	if err := gi.OnGlobalCallback("Logic", "upcase", func(args []any) any {
+		return strings.ToUpper(args[0].(string))
+	}); err != nil {
+		t.Fatalf("OnGlobalCallback: %v", err)
+	}
+	if s, err := gi.Str("r"); err != nil || s != "HI" {
+		t.Fatalf("Str(r) = %q, %v; want \"HI\"", s, err)
+	}
+	if err := gi.SetGlobal("Logic", "n", 5); err != nil {
+		t.Fatalf("SetGlobal: %v", err)
+	}
+	if v, err := gi.GetGlobal("Logic", "n"); err != nil || int(v.(float64)) != 5 {
+		t.Fatalf("GetGlobal(Logic.n) = %v, %v; want 5", v, err)
+	}
+	if r, err := gi.InvokeGlobal("Logic", "upcase", "abc"); err != nil || r.(string) != "ABC" {
+		t.Fatalf("InvokeGlobal(upcase,abc) = %v, %v; want ABC", r, err)
 	}
 }
