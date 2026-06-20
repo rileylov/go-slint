@@ -22,6 +22,7 @@ extern "C" {
 /* Opaque handles. */
 typedef struct GoValue GoValue;
 typedef struct GoStruct GoStruct;
+typedef struct GoModel GoModel;
 typedef struct GoCompiler GoCompiler;
 typedef struct GoCompilationResult GoCompilationResult;
 typedef struct GoComponentDefinition GoComponentDefinition;
@@ -116,6 +117,24 @@ void      goslint_struct_set_field(GoStruct *s, const char *name, const GoValue 
 GoValue  *goslint_struct_get_field(const GoStruct *s, const char *name);
 size_t    goslint_struct_field_count(const GoStruct *s);
 char     *goslint_struct_field_name(const GoStruct *s, size_t i);
+
+/* ---- models (M5) ---- */
+typedef size_t (*GoModelRowCount)(uintptr_t handle);
+typedef GoValue *(*GoModelRowData)(uintptr_t handle, size_t row); /* owned; NULL == no row */
+typedef void (*GoModelSetRowData)(uintptr_t handle, size_t row, GoValue *value); /* takes ownership */
+
+GoModel *goslint_model_new(uintptr_t handle, GoModelRowCount rc, GoModelRowData rd,
+                           GoModelSetRowData srd, void (*drop)(uintptr_t));
+void     goslint_model_free(GoModel *m);
+GoValue *goslint_value_new_model(const GoModel *m);
+void     goslint_model_notify_row_changed(const GoModel *m, size_t row);
+void     goslint_model_notify_row_added(const GoModel *m, size_t row, size_t count);
+void     goslint_model_notify_row_removed(const GoModel *m, size_t row, size_t count);
+void     goslint_model_notify_reset(const GoModel *m);
+
+/* read a Slint-returned model out of a Value */
+size_t   goslint_value_model_row_count(const GoValue *v);
+GoValue *goslint_value_model_row_data(const GoValue *v, size_t row);
 
 #ifdef __cplusplus
 }

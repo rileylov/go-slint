@@ -92,6 +92,8 @@ func cValue(v any) (*C.GoValue, error) {
 		return C.goslint_value_new_enum(cn, cv), nil
 	case map[string]any:
 		return cStruct(x)
+	case *ModelHandle:
+		return C.goslint_value_new_model(x.ptr), nil
 	default:
 		return nil, fmt.Errorf("slint: unsupported value type %T", v)
 	}
@@ -154,6 +156,17 @@ func goValue(v *C.GoValue) any {
 		return takeString(C.goslint_value_as_string(v))
 	case TypeStruct:
 		return goStruct(v)
+	case TypeModel:
+		n := int(C.goslint_value_model_row_count(v))
+		out := make([]any, n)
+		for i := range n {
+			rv := C.goslint_value_model_row_data(v, C.size_t(i))
+			if rv != nil {
+				out[i] = goValue(rv)
+				C.goslint_value_free(rv)
+			}
+		}
+		return out
 	default:
 		// Enums report as Other; detect via the dedicated accessor.
 		var cn, cv *C.char

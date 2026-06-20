@@ -10,6 +10,7 @@
 
 mod compiler;
 mod instance;
+mod model;
 mod structs;
 mod value;
 

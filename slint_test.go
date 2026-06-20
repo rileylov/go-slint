@@ -229,4 +229,62 @@ func TestHeadlessRoundTrip(t *testing.T) {
 	if av2.(slint.Enum).Value != "right" {
 		t.Fatalf("align after set = %#v; want value right", av2)
 	}
+
+	// ---- models (Go-backed, with live notifications) ----
+	md, err := slint.Compile(`
+		export component MD inherits Window {
+			in-out property <[string]> items;
+			out property <int> count: items.length;
+			out property <string> first: items.length > 0 ? items[0] : "<none>";
+		}`)
+	if err != nil {
+		t.Fatalf("Compile MD: %v", err)
+	}
+	defer md.Close()
+	mi, err := md.Create("MD")
+	if err != nil {
+		t.Fatalf("Create MD: %v", err)
+	}
+	defer mi.Close()
+
+	sm := slint.NewSliceModel("a", "b", "c")
+	defer sm.Close()
+	if err := mi.Set("items", sm); err != nil {
+		t.Fatalf("Set(items): %v", err)
+	}
+
+	// Slint reads the Go model: length + indexing reflect it.
+	if n, _ := mi.Int("count"); n != 3 {
+		t.Fatalf("count = %d; want 3", n)
+	}
+	if s, _ := mi.Str("first"); s != "a" {
+		t.Fatalf("first = %q; want \"a\"", s)
+	}
+
+	// Read the model back out as a snapshot.
+	iv, err := mi.Get("items")
+	if err != nil {
+		t.Fatalf("Get(items): %v", err)
+	}
+	rows, ok := iv.([]any)
+	if !ok || len(rows) != 3 || rows[0].(string) != "a" || rows[2].(string) != "c" {
+		t.Fatalf("items snapshot = %#v; want [a b c]", iv)
+	}
+
+	// Notifications propagate to derived properties.
+	sm.Append("d")
+	if n, _ := mi.Int("count"); n != 4 {
+		t.Fatalf("count after Append = %d; want 4", n)
+	}
+	sm.SetRowData(0, "z")
+	if s, _ := mi.Str("first"); s != "z" {
+		t.Fatalf("first after SetRowData = %q; want \"z\"", s)
+	}
+	sm.RemoveAt(0)
+	if n, _ := mi.Int("count"); n != 3 {
+		t.Fatalf("count after RemoveAt = %d; want 3", n)
+	}
+	if s, _ := mi.Str("first"); s != "b" {
+		t.Fatalf("first after RemoveAt = %q; want \"b\"", s)
+	}
 }

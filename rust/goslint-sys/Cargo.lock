@@ -1353,6 +1353,7 @@ name = "goslint-sys"
 version = "0.0.0"
 dependencies = [
  "i-slint-backend-testing",
+ "i-slint-core",
  "slint-interpreter",
  "spin_on",
 ]

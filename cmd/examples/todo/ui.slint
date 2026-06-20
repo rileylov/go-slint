@@ -1,0 +1,39 @@
+import { Button, LineEdit, ListView, VerticalBox, HorizontalBox } from "std-widgets.slint";
+
+export component TodoApp inherits Window {
+    title: "go-slint todo";
+    preferred-width: 420px;
+    preferred-height: 520px;
+
+    in-out property <[string]> items;
+    in-out property <string> new-text;
+    callback add(string);
+    callback remove(int);
+
+    VerticalBox {
+        HorizontalBox {
+            input := LineEdit {
+                placeholder-text: "What needs doing?";
+                text <=> root.new-text;
+                accepted => { root.add(self.text); }
+            }
+            Button {
+                text: "Add";
+                clicked => { root.add(input.text); }
+            }
+        }
+        ListView {
+            for item[idx] in root.items: HorizontalBox {
+                Text {
+                    text: item;
+                    vertical-alignment: center;
+                }
+                Rectangle { } // spacer
+                Button {
+                    text: "Delete";
+                    clicked => { root.remove(idx); }
+                }
+            }
+        }
+    }
+}

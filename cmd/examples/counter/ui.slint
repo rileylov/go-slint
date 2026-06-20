@@ -1,0 +1,28 @@
+import { Button, VerticalBox } from "std-widgets.slint";
+
+export component Counter inherits Window {
+    title: "go-slint counter";
+    preferred-width: 280px;
+    preferred-height: 180px;
+
+    in-out property <int> value: 0;
+    callback increment();
+    callback reset();
+
+    VerticalBox {
+        alignment: center;
+        Text {
+            text: "Count: " + root.value;
+            font-size: 28px;
+            horizontal-alignment: center;
+        }
+        Button {
+            text: "Increment";
+            clicked => { root.increment(); }
+        }
+        Button {
+            text: "Reset";
+            clicked => { root.reset(); }
+        }
+    }
+}

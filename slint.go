@@ -53,24 +53,41 @@ type Compilation struct {
 	result *slintsys.Result
 }
 
+// Option configures a compilation.
+type Option func(*slintsys.Compiler)
+
+// WithStyle selects the widget style (e.g. "fluent", "material", "cupertino").
+// Required for `.slint` files that import "std-widgets.slint".
+func WithStyle(style string) Option {
+	return func(c *slintsys.Compiler) { c.SetStyle(style) }
+}
+
+// WithIncludePaths sets the paths used to resolve `.slint` imports.
+func WithIncludePaths(paths ...string) Option {
+	return func(c *slintsys.Compiler) { c.SetIncludePaths(paths) }
+}
+
 // Compile compiles `.slint` source. It returns a [*DiagnosticError] if the
 // source has errors.
-func Compile(source string) (*Compilation, error) {
-	return finish(build(func(c *slintsys.Compiler) *slintsys.Result {
+func Compile(source string, opts ...Option) (*Compilation, error) {
+	return finish(build(opts, func(c *slintsys.Compiler) *slintsys.Result {
 		return c.BuildFromSource(source, "")
 	}))
 }
 
 // CompileFile compiles a `.slint` file from disk.
-func CompileFile(path string) (*Compilation, error) {
-	return finish(build(func(c *slintsys.Compiler) *slintsys.Result {
+func CompileFile(path string, opts ...Option) (*Compilation, error) {
+	return finish(build(opts, func(c *slintsys.Compiler) *slintsys.Result {
 		return c.BuildFromPath(path)
 	}))
 }
 
-func build(f func(*slintsys.Compiler) *slintsys.Result) *slintsys.Result {
+func build(opts []Option, f func(*slintsys.Compiler) *slintsys.Result) *slintsys.Result {
 	c := slintsys.NewCompiler()
 	defer c.Free()
+	for _, o := range opts {
+		o(c)
+	}
 	return f(c)
 }
 
@@ -115,7 +132,7 @@ type Instance struct {
 func (i *Instance) Get(name string) (any, error) { return i.inner.GetProperty(name) }
 
 // Set writes a property from a Go value.
-func (i *Instance) Set(name string, v any) error { return i.inner.SetProperty(name, v) }
+func (i *Instance) Set(name string, v any) error { return i.inner.SetProperty(name, toSys(v)) }
 
 // Int reads a numeric property as an int.
 func (i *Instance) Int(name string) (int, error) {
@@ -179,6 +196,85 @@ type Enum = slintsys.Enum
 // Enum, nil, ...).
 type Callback = slintsys.CallbackFunc
 
+// Model is a data source backing a Slint model property / `for` loop.
+type Model = slintsys.Model
+
+// ModelHandle binds a Model for use as a property value; report data changes via
+// its Notify* methods. Obtain one with NewModel or SliceModel.Handle.
+type ModelHandle = slintsys.ModelHandle
+
+// NewModel binds a custom Model implementation so it can be assigned to a property.
+func NewModel(m Model) *ModelHandle { return slintsys.NewModelHandle(m) }
+
+// SliceModel is a built-in slice-backed Model whose mutators auto-notify Slint.
+type SliceModel struct {
+	items  []any
+	handle *slintsys.ModelHandle
+}
+
+// NewSliceModel creates a slice-backed model from the given items.
+func NewSliceModel(items ...any) *SliceModel {
+	s := &SliceModel{items: append([]any(nil), items...)}
+	s.handle = slintsys.NewModelHandle(s)
+	return s
+}
+
+func (s *SliceModel) RowCount() int { return len(s.items) }
+
+func (s *SliceModel) RowData(row int) any {
+	if row < 0 || row >= len(s.items) {
+		return nil
+	}
+	return s.items[row]
+}
+
+func (s *SliceModel) SetRowData(row int, v any) {
+	if row >= 0 && row < len(s.items) {
+		s.items[row] = v
+		s.handle.NotifyRowChanged(row)
+	}
+}
+
+// Append adds an item and notifies Slint.
+func (s *SliceModel) Append(v any) {
+	s.items = append(s.items, v)
+	s.handle.NotifyRowAdded(len(s.items)-1, 1)
+}
+
+// RemoveAt removes the item at row and notifies Slint.
+func (s *SliceModel) RemoveAt(row int) {
+	if row < 0 || row >= len(s.items) {
+		return
+	}
+	s.items = append(s.items[:row], s.items[row+1:]...)
+	s.handle.NotifyRowRemoved(row, 1)
+}
+
+// Len reports the number of rows.
+func (s *SliceModel) Len() int { return len(s.items) }
+
+// Handle returns the binding handle (also accepted directly by property setters).
+func (s *SliceModel) Handle() *ModelHandle { return s.handle }
+
+// Close releases the model's binding handle.
+func (s *SliceModel) Close() { s.handle.Free() }
+
+// toSys maps Go-facing model wrappers to values the cgo layer understands.
+func toSys(v any) any {
+	if s, ok := v.(*SliceModel); ok {
+		return s.handle
+	}
+	return v
+}
+
+func mapToSys(args []any) []any {
+	out := make([]any, len(args))
+	for k, a := range args {
+		out[k] = toSys(a)
+	}
+	return out
+}
+
 // OnCallback installs a handler for the named callback.
 func (i *Instance) OnCallback(name string, fn Callback) error {
 	return i.inner.SetCallback(name, fn)
@@ -191,12 +287,12 @@ func (i *Instance) OnGlobalCallback(global, name string, fn Callback) error {
 
 // Invoke calls a callback or function, returning its result (nil for void).
 func (i *Instance) Invoke(name string, args ...any) (any, error) {
-	return i.inner.Invoke(name, args)
+	return i.inner.Invoke(name, mapToSys(args))
 }
 
 // InvokeGlobal calls a callback or function on an exported global.
 func (i *Instance) InvokeGlobal(global, name string, args ...any) (any, error) {
-	return i.inner.InvokeGlobal(global, name, args)
+	return i.inner.InvokeGlobal(global, name, mapToSys(args))
 }
 
 // GetGlobal reads a property of an exported global singleton.
@@ -206,7 +302,7 @@ func (i *Instance) GetGlobal(global, name string) (any, error) {
 
 // SetGlobal writes a property of an exported global singleton.
 func (i *Instance) SetGlobal(global, name string, v any) error {
-	return i.inner.SetGlobalProperty(global, name, v)
+	return i.inner.SetGlobalProperty(global, name, toSys(v))
 }
 
 // Show makes the window visible. Hide hides it. Run shows then runs the loop.
