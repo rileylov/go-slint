@@ -64,6 +64,37 @@ pub unsafe extern "C" fn goslint_compiler_set_include_paths(
     })
 }
 
+/// Set the library paths for `@library` imports, as parallel name/path arrays.
+///
+/// # Safety
+/// `c` must be a valid compiler pointer; `names` and `paths` arrays of `n` valid
+/// C strings each.
+#[no_mangle]
+pub unsafe extern "C" fn goslint_compiler_set_library_paths(
+    c: *mut Compiler,
+    names: *const *const c_char,
+    paths: *const *const c_char,
+    n: usize,
+) {
+    guard((), || {
+        let c = match c.as_mut() {
+            Some(c) => c,
+            None => return,
+        };
+        let mut m = std::collections::HashMap::with_capacity(n);
+        if !names.is_null() && !paths.is_null() {
+            for i in 0..n {
+                let name = unsafe { *names.add(i) };
+                let path = unsafe { *paths.add(i) };
+                if let (Some(nm), Some(p)) = (opt_str(name), opt_str(path)) {
+                    m.insert(nm.to_string(), PathBuf::from(p));
+                }
+            }
+        }
+        c.set_library_paths(m);
+    })
+}
+
 /// Compile `.slint` source. Always returns a result handle (check
 /// `goslint_result_has_errors`); NULL only on a hard failure (e.g. NULL args).
 ///

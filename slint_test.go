@@ -1,6 +1,8 @@
 package slint_test
 
 import (
+	"os"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
@@ -8,6 +10,33 @@ import (
 
 	"github.com/rileylov/go-slint"
 )
+
+// TestLibraryPaths covers WithLibraryPaths resolving an `@library` import.
+func TestLibraryPaths(t *testing.T) {
+	dir := t.TempDir()
+	lib := `export component LibBox inherits Rectangle { in property <string> label; }`
+	if err := os.WriteFile(filepath.Join(dir, "widgets.slint"), []byte(lib), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	src := `
+		import { LibBox } from "@mylib/widgets.slint";
+		export component App inherits Window {
+			lb := LibBox { label: "hi"; }
+			out property <string> lbl: lb.label;
+		}`
+
+	// Without the library mapping the @library import can't resolve.
+	if _, err := slint.Compile(src); err == nil {
+		t.Fatal("expected compile failure without WithLibraryPaths")
+	}
+
+	// With it, the import resolves and the component compiles.
+	app, err := slint.Compile(src, slint.WithLibraryPaths(map[string]string{"mylib": dir}))
+	if err != nil {
+		t.Fatalf("Compile with WithLibraryPaths: %v", err)
+	}
+	app.Close()
+}
 
 // Checked for shape, not an exact value, so it survives Slint bumps (the pinned
 // version lives in .slint-version).

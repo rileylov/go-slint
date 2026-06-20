@@ -65,6 +65,13 @@ func WithIncludePaths(paths ...string) Option {
 	return func(c *slintsys.Compiler) { c.SetIncludePaths(paths) }
 }
 
+// WithLibraryPaths maps `@library` import names to their paths, e.g.
+// WithLibraryPaths(map[string]string{"mylib": "./libs/mylib"}) resolves
+// `import { Foo } from "@mylib/foo.slint"`.
+func WithLibraryPaths(libs map[string]string) Option {
+	return func(c *slintsys.Compiler) { c.SetLibraryPaths(libs) }
+}
+
 // Compile compiles `.slint` source. It returns a [*DiagnosticError] if the
 // source has errors.
 func Compile(source string, opts ...Option) (*Compilation, error) {

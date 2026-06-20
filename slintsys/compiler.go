@@ -47,6 +47,30 @@ func (c *Compiler) SetIncludePaths(paths []string) {
 	C.goslint_compiler_set_include_paths(c.ptr, (**C.char)(unsafe.Pointer(&arr[0])), C.size_t(len(arr)))
 }
 
+// SetLibraryPaths sets the library paths for `@library` imports (name -> path).
+func (c *Compiler) SetLibraryPaths(libs map[string]string) {
+	if len(libs) == 0 {
+		return
+	}
+	names := make([]*C.char, 0, len(libs))
+	paths := make([]*C.char, 0, len(libs))
+	for name, path := range libs {
+		names = append(names, C.CString(name))
+		paths = append(paths, C.CString(path))
+	}
+	defer func() {
+		for i := range names {
+			C.free(unsafe.Pointer(names[i]))
+			C.free(unsafe.Pointer(paths[i]))
+		}
+	}()
+	// These slices hold C pointers (not Go pointers), so passing &x[0] is allowed.
+	C.goslint_compiler_set_library_paths(c.ptr,
+		(**C.char)(unsafe.Pointer(&names[0])),
+		(**C.char)(unsafe.Pointer(&paths[0])),
+		C.size_t(len(names)))
+}
+
 // BuildFromSource compiles `.slint` source. The returned Result is always
 // non-nil unless a hard failure occurred (check Result.Valid).
 func (c *Compiler) BuildFromSource(src, path string) *Result {
