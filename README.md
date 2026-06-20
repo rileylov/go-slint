@@ -51,6 +51,21 @@ make lib                       # build the native shim into lib/<os>_<arch>/
 go run ./cmd/examples/todo
 ```
 
+## Cross-compiling for Windows (from Linux)
+
+Slint cross-compiles cleanly to Windows (its text stack is pure Rust). You need the
+Rust target and the mingw-w64 toolchain:
+
+```sh
+rustup target add x86_64-pc-windows-gnu
+sudo pacman -S mingw-w64-gcc          # Arch (or: apt install gcc-mingw-w64-x86-64)
+
+make build-windows                    # cross-builds goslint.dll + all examples to build/windows/
+```
+
+Copy `build/windows/` to a Windows machine and run an `.exe` — keep `goslint.dll`
+in the same folder (or on `PATH`).
+
 ## How it works
 
 Three layers (details in [`CLAUDE.md`](CLAUDE.md)):
@@ -73,6 +88,23 @@ make conformance  # run Slint's full .slint test corpus through the bindings
 
 The conformance suite runs Slint's own 600+ `.slint` cases through the Go API
 (mirroring Slint's interpreter test driver): currently 0 failures.
+
+## Staying in sync with Slint
+
+The bindings sit on `slint-interpreter`'s stable public Rust API, so tracking
+upstream is one command — it bumps the pinned checkout, rebuilds, and verifies
+against the full conformance corpus:
+
+```sh
+make update-slint                    # track main (latest origin/master)
+make update-slint SLINT_REF=v1.18.0  # pin to a release tag (recommended for stability)
+```
+
+If an upstream change actually affects us, `make lib` fails with a localized Rust
+compile error (pointing at the exact function) before anything is staged — a
+broken update can't ship silently. In practice the shim builds unchanged across
+Slint versions (verified compiling clean and conformance-green on both 1.16.1 and
+1.17.0-dev).
 
 ## License
 

@@ -13,12 +13,14 @@ crate-type = ["staticlib", "cdylib"]
 
 [dependencies]
 # Path-dep on the pinned local checkout (slint/ is at the module root).
-# M1: real windowing via backend-winit + the dependency-light software renderer
-# (no OpenGL needed). femtovg/skia come later behind build features.
+# Renderers: femtovg (GPU, Slint's desktop default) with software as fallback.
+# femtovg renders straight to the window (no softbuffer CPU buffer to mis-size,
+# which the software-only path hit on Windows). Needs OpenGL at build+run time.
 slint-interpreter = { path = "../../slint/internal/interpreter", default-features = false, features = [
     "compat-1-2",
     "display-diagnostics",
     "backend-winit",
+    "renderer-femtovg",
     "renderer-software",
 ] }
 # Headless platform for tests (init_no_event_loop / mock time). The `internal`

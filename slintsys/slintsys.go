@@ -11,7 +11,11 @@ package slintsys
 
 /*
 #cgo CFLAGS: -I${SRCDIR}/../include
+// Per-platform link against the staged shim in lib/<goos>_<goarch>/. Linux: the
+// .so records its own deps; rpath finds it in dev. Windows: link the import lib
+// (libgoslint.dll.a); ship goslint.dll next to the .exe (or on PATH) at runtime.
 #cgo linux,amd64 LDFLAGS: -L${SRCDIR}/../lib/linux_amd64 -Wl,-rpath,${SRCDIR}/../lib/linux_amd64 -lgoslint
+#cgo windows,amd64 LDFLAGS: -L${SRCDIR}/../lib/windows_amd64 -lgoslint
 #include <stdlib.h>
 #include "goslint.h"
 */

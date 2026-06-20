@@ -9,3 +9,6 @@
 *.test
 
 # The upstream Slint checkout carries its own .git
+
+# Cross-build output
+/build/

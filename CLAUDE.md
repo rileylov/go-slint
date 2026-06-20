@@ -14,8 +14,14 @@ the C-ABI contract, the milestone plan, and the rationale.
 ## Build & test
 ```sh
 make lib     # cargo build the shim + stage libgoslint.{a,so} into lib/<os>_<arch>/
-make test    # make lib, then: go test . ./slintsys/
+make test    # make lib, then: go test . ./slintsys/ ./internal/conformance/
+make update-slint               # bump pinned slint/ to origin/master, rebuild, verify
+make update-slint SLINT_REF=v1.18.0   # pin a release tag instead
 ```
+Updating Slint is low-friction by design (shim binds only the stable
+`slint-interpreter` API): a breaking change shows up as a localized Rust compile
+error in `make lib`, not a silent runtime break. Verified building clean +
+conformance-green on both 1.16.1 and 1.17.0-dev.
 The Rust lib MUST be staged in `lib/<os>_<arch>/` before `go build`/`go test`, because
 cgo links it via `#cgo LDFLAGS`. The first cargo build is slow (it compiles
 `i-slint-compiler`).
@@ -29,8 +35,11 @@ cgo links it via `#cgo LDFLAGS`. The first cargo build is slow (it compiles
 
 ## Current state
 **M0–M6 complete + M7 mostly done.** Shim built with `backend-winit` +
-`renderer-software` + the headless testing backend (`internal` feature →
-`configure_test_fonts`).
+`renderer-femtovg` (GPU, desktop default) + `renderer-software` (fallback) + the
+headless testing backend (`internal` feature → `configure_test_fonts`).
+NOTE: software-renderer-only hit a winit/softbuffer buffer-size panic on Windows
+(`software/lib.rs:584`, "buffer too small") — femtovg renders straight to the window
+and avoids it. femtovg loads OpenGL at runtime (build needs libGL/opengl32).
 
 C ABI (`include/goslint.h`): version/last_error/string_free; testing init + mock-time
 + configure-fonts; run/quit event loop; Compiler (style, include paths,
@@ -89,6 +98,13 @@ case dirs = 614 cases, **0 failures**). The driver sets SLINT_ENABLE_EXPERIMENTA
 + configure-fonts + OS=Windows to match Slint's interpreter test driver. Non-passes are
 noTest (no `test` bool) and 1 compileErr (`@library` import; library-paths unwired).
 `make conformance`.
+
+**M8 in progress.** **Windows cross-compile WORKS** (`make build-windows` from Linux →
+`build/windows/{hello,counter,todo,clock}.exe` + goslint.dll, all valid PE32+). Needs the
+rust target `x86_64-pc-windows-gnu` + mingw-w64 (`sudo pacman -S mingw-w64-gcc`, provides
+dlltool). Per-platform cgo via `#cgo windows,amd64 → lib/windows_amd64`. Awaiting on-device
+Windows validation. **Next in M8: Android** (the hard one — needs NDK install + the
+android-activity/NativeActivity glue + on-device testing).
 
 **M7 mostly done** (full corpus green, InvokeFromEventLoop, docs). Deferred: switching
 `goslint.h` to cbindgen-generated (~85 fns; hand-written works fine), wiring library-paths
