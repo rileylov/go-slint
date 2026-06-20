@@ -1,11 +1,4 @@
-// Package slint provides idiomatic Go bindings for the Slint UI toolkit.
-//
-// This is the public, Go-facing API (Layer 2), wrapping the low-level cgo
-// package slintsys. See PLAN.md for the overall design.
-//
-// Threading: Slint is thread-affine. Create and use a [Compilation] / [Instance]
-// (and call [Run]) from a single OS thread — lock it with runtime.LockOSThread
-// at the start of your main goroutine before touching any UI.
+// The package overview lives in doc.go.
 package slint
 
 import (
@@ -31,6 +24,11 @@ func Run() error { return slintsys.RunEventLoop() }
 
 // Quit asks the running event loop to exit.
 func Quit() error { return slintsys.QuitEventLoop() }
+
+// InvokeFromEventLoop posts fn to run once on the event-loop (UI) thread. Safe to
+// call from any goroutine; it is the only safe way to touch UI state (properties,
+// models, callbacks) from a background goroutine.
+func InvokeFromEventLoop(fn func()) error { return slintsys.InvokeFromEventLoop(fn) }
 
 // DiagnosticError reports one or more compiler errors.
 type DiagnosticError struct {

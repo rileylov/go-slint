@@ -28,8 +28,21 @@ import (
 
 var includeRe = regexp.MustCompile(`//include_path:\s*(.+)`)
 
-// Self-contained dirs by default; the corpus is ~94% import-free here.
-var defaultDirs = []string{"types", "properties", "expr", "bindings"}
+// defaultDirs is every category under the cases root (the full corpus).
+func defaultDirs(root string) []string {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return nil
+	}
+	var dirs []string
+	for _, e := range entries {
+		if e.IsDir() {
+			dirs = append(dirs, e.Name())
+		}
+	}
+	sort.Strings(dirs)
+	return dirs
+}
 
 type outcome int
 
@@ -52,16 +65,19 @@ func TestConformance(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
+	// Match the interpreter test driver's environment.
+	os.Setenv("SLINT_ENABLE_EXPERIMENTAL_FEATURES", "1")
 	if err := slintsys.InitHeadless(); err != nil {
 		t.Fatalf("InitHeadless: %v", err)
 	}
 	slintsys.ConfigureTestFonts()
+	slintsys.SetTestingOSWindows()
 
 	root := casesRoot()
 	if abs, err := filepath.Abs(root); err == nil {
 		root = abs // absolute paths make @image-url and include paths resolve correctly
 	}
-	dirs := defaultDirs
+	dirs := defaultDirs(root)
 	if v := os.Getenv("SLINT_CONFORMANCE_DIRS"); v != "" {
 		dirs = strings.Split(v, ",")
 	}
@@ -91,7 +107,7 @@ func TestConformance(t *testing.T) {
 
 	// Compile/create errors are usually unimplemented features (includes,
 	// library paths, OS override) rather than regressions — log a sample.
-	const sample = 15
+	const sample = 100
 	for i, e := range errored {
 		if i >= sample {
 			t.Logf("  ... and %d more compile/create errors", len(errored)-sample)

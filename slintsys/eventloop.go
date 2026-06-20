@@ -16,6 +16,10 @@ func MockElapsedTime(ms uint64) { C.goslint_testing_mock_elapsed_time(C.uint64_t
 // InitHeadless). Matches Slint's interpreter test driver.
 func ConfigureTestFonts() { C.goslint_testing_configure_fonts() }
 
+// SetTestingOSWindows forces the reported OS to Windows (for OS-dependent cases
+// like dialog button order). Matches Slint's interpreter test driver.
+func SetTestingOSWindows() { C.goslint_testing_set_os_windows() }
+
 // RunEventLoop runs the Slint event loop until quit / last window closed.
 // Blocks; must be called on the UI thread.
 func RunEventLoop() error { return rc(C.goslint_run_event_loop(), "run event loop") }

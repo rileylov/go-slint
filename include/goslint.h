@@ -41,8 +41,10 @@ int  goslint_testing_init_headless(void);          /* 0 = ok */
 int  goslint_testing_init_integration(void);       /* simple loop, system time */
 void goslint_testing_mock_elapsed_time(uint64_t ms);
 void goslint_testing_configure_fonts(void);
+void goslint_testing_set_os_windows(void);
 int  goslint_run_event_loop(void);                 /* blocks; UI thread only */
 int  goslint_quit_event_loop(void);
+int  goslint_invoke_from_event_loop(void (*cb)(uintptr_t), uintptr_t handle, void (*drop)(uintptr_t));
 
 /* ---- compiler ---- */
 GoCompiler *goslint_compiler_new(void);

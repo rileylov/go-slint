@@ -28,7 +28,7 @@ cgo links it via `#cgo LDFLAGS`. The first cargo build is slow (it compiles
 - Go callbacks cross into C only via `runtime/cgo.Handle` — never raw Go pointers.
 
 ## Current state
-**M0–M6 complete** (data layer + graphics/timers). Shim built with `backend-winit` +
+**M0–M6 complete + M7 mostly done.** Shim built with `backend-winit` +
 `renderer-software` + the headless testing backend (`internal` feature →
 `configure_test_fonts`).
 
@@ -81,9 +81,16 @@ display needed).
 Go: `slintsys` (Layer 1) and `slint` (Layer 2: `Compile`, `Compilation.Create`,
 `Instance.Int/Float/Bool/Str/Set`, `OnCallback`/`OnGlobalCallback`/`Invoke`/
 `InvokeGlobal`/`GetGlobal`/`SetGlobal`, `Run/Quit`, `DiagnosticError`). Example:
-`cmd/examples/hello`. Conformance: `internal/conformance` (`make conformance`),
-0 failures across the self-contained dirs.
+`cmd/examples/hello`. Also `Run/Quit`, `InvokeFromEventLoop` (cross-goroutine → UI),
+package docs in `doc.go`, `README.md`.
 
-**Next: M7** — idiomatic polish + docs + a full `tests/cases` green run + (optionally)
-switch `goslint.h` to cbindgen-generated (~80 functions now). Then M8 (cross-platform
-packaging: prebuilt libs, build tags, CI). PLAN.md §10.
+**Conformance: FULL corpus by default** (`internal/conformance` auto-discovers all 27
+case dirs = 614 cases, **0 failures**). The driver sets SLINT_ENABLE_EXPERIMENTAL_FEATURES
++ configure-fonts + OS=Windows to match Slint's interpreter test driver. Non-passes are
+noTest (no `test` bool) and 1 compileErr (`@library` import; library-paths unwired).
+`make conformance`.
+
+**M7 mostly done** (full corpus green, InvokeFromEventLoop, docs). Deferred: switching
+`goslint.h` to cbindgen-generated (~85 fns; hand-written works fine), wiring library-paths
+(1 case), Window API (title/size from Go). **Next: M8** — cross-platform packaging
+(Windows/macOS libs, build tags, CI). PLAN.md §10. Licensing posture still open.

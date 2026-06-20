@@ -60,4 +60,20 @@ func TestTimers(t *testing.T) {
 	if atomic.LoadInt32(&shot) != 1 {
 		t.Fatal("single-shot timer did not fire")
 	}
+
+	// invoke from a background goroutine -> runs on the loop thread
+	var invoked int32
+	go func() {
+		_ = slintsys.InvokeFromEventLoop(func() {
+			atomic.StoreInt32(&invoked, 1)
+			_ = slintsys.QuitEventLoop()
+		})
+	}()
+	backstop(5 * time.Second)
+	if err := slintsys.RunEventLoop(); err != nil {
+		t.Fatalf("RunEventLoop (invoke): %v", err)
+	}
+	if atomic.LoadInt32(&invoked) != 1 {
+		t.Fatal("InvokeFromEventLoop callback did not run")
+	}
 }

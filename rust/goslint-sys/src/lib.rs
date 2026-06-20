@@ -127,6 +127,16 @@ pub extern "C" fn goslint_testing_configure_fonts() {
     guard((), i_slint_backend_testing::configure_test_fonts)
 }
 
+/// Force the reported OS to Windows (thread-local), matching the interpreter test
+/// driver — needed for OS-dependent cases like dialog button order.
+#[no_mangle]
+pub extern "C" fn goslint_testing_set_os_windows() {
+    guard((), || {
+        i_slint_core::OPERATING_SYSTEM_OVERRIDE
+            .with(|os| os.set(Some(i_slint_core::OperatingSystemType::Windows)));
+    })
+}
+
 /// Run the Slint event loop until quit / last window closed. Blocks; UI thread only.
 #[no_mangle]
 pub extern "C" fn goslint_run_event_loop() -> i32 {
@@ -135,6 +145,54 @@ pub extern "C" fn goslint_run_event_loop() -> i32 {
         Err(e) => {
             set_last_error(e.to_string());
             1
+        }
+    })
+}
+
+/// A one-shot foreign callback posted to the event loop. Fields are all Send, so
+/// the struct (and the closure capturing it) is Send as `invoke_from_event_loop`
+/// requires.
+struct OnceCallback {
+    handle: usize,
+    cb: extern "C" fn(usize),
+    drop: Option<extern "C" fn(usize)>,
+}
+
+impl Drop for OnceCallback {
+    fn drop(&mut self) {
+        if let Some(d) = self.drop {
+            d(self.handle);
+        }
+    }
+}
+
+impl OnceCallback {
+    // A method (not field access) so the closure captures the whole struct; see
+    // the disjoint-capture note in timer.rs.
+    fn call(&self) {
+        (self.cb)(self.handle)
+    }
+}
+
+/// Post a callback to run once on the event-loop thread. Safe to call from any
+/// thread. Returns 0 on success.
+///
+/// # Safety
+/// `cb` must be a valid function pointer.
+#[no_mangle]
+pub unsafe extern "C" fn goslint_invoke_from_event_loop(
+    cb: extern "C" fn(usize),
+    handle: usize,
+    drop: Option<extern "C" fn(usize)>,
+) -> i32 {
+    guard(1, || {
+        let data = OnceCallback { handle, cb, drop };
+        match i_slint_core::api::invoke_from_event_loop(move || data.call()) {
+            Ok(()) => 0,
+            Err(e) => {
+                set_last_error(e.to_string());
+                1
+            }
         }
     })
 }
