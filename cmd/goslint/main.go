@@ -58,6 +58,8 @@ func main() {
 		err = cmdEnv(os.Args[2:])
 	case "doctor":
 		err = cmdDoctor(os.Args[2:])
+	case "android":
+		err = cmdAndroid(os.Args[2:])
 	case "help", "-h", "--help":
 		usage()
 	default:
@@ -80,6 +82,7 @@ Usage:
   goslint run   [go run args...]                      go run   with the lib wired up
   goslint env                                         print the PKG_CONFIG_PATH export line
   goslint doctor                                      check the toolchain and cached lib
+  goslint android build [flags] <package>            build a signed APK of a Go package
 
 Environment:
   GOSLINT_BASE_URL     override the release base (e.g. file:///path/to/release)
@@ -98,7 +101,8 @@ type manifest struct {
 type target struct {
 	Archive string `json:"archive"` // filename under the release base
 	SHA256  string `json:"sha256"`
-	Libs    string `json:"libs"` // native-static-libs for this target
+	Libs    string `json:"libs"` // native-static-libs (static targets only)
+	Kind    string `json:"kind"` // "static" (desktop .a, default) or "shared" (android .so)
 }
 
 func version() string {
@@ -135,50 +139,74 @@ func cmdSetup(args []string) error {
 	force := fs.Bool("force", false, "re-download even if cached")
 	_ = fs.Parse(args)
 
-	base := releaseBase()
-	m, err := fetchManifest(base)
+	t, libpath, slint, err := provision(*tgt, *force)
 	if err != nil {
 		return err
 	}
-	t, ok := m.Targets[*tgt]
-	if !ok {
-		return fmt.Errorf("no prebuilt for target %q at %s (available: %s)", *tgt, base, strings.Join(sortedKeys(m.Targets), ", "))
+
+	if t.Kind == "shared" {
+		fmt.Printf("\n✓ go-slint native lib cached for %s (Slint %s)\n  lib: %s\n", *tgt, slint, libpath)
+		fmt.Println("\nThis is an Android target — build an APK with:")
+		fmt.Println("  goslint android build <your-package>")
+		return nil
 	}
 
-	libdir := filepath.Join(cacheDir(*tgt), "lib")
 	pcdir := pkgconfigDir(*tgt)
-	if err := os.MkdirAll(libdir, 0o755); err != nil {
-		return err
-	}
 	if err := os.MkdirAll(pcdir, 0o755); err != nil {
 		return err
 	}
-	libpath := filepath.Join(libdir, "libgoslint.a")
-
-	if *force || !fileHasSHA(libpath, t.SHA256) {
-		url := base + "/" + t.Archive
-		fmt.Printf("downloading %s …\n", url)
-		if err := download(url, libpath); err != nil {
-			return err
-		}
-		if !fileHasSHA(libpath, t.SHA256) {
-			return fmt.Errorf("checksum mismatch for %s (expected %s)", t.Archive, t.SHA256)
-		}
-	} else {
-		fmt.Println("up to date:", libpath)
-	}
-
 	pcpath := filepath.Join(pcdir, "goslint.pc")
-	if err := os.WriteFile(pcpath, []byte(buildPC(libdir, t.Libs, m.Slint)), 0o644); err != nil {
+	if err := os.WriteFile(pcpath, []byte(buildPC(filepath.Dir(libpath), t.Libs, slint)), 0o644); err != nil {
 		return err
 	}
 
-	fmt.Printf("\n✓ go-slint native lib ready for %s (Slint %s)\n", *tgt, m.Slint)
+	fmt.Printf("\n✓ go-slint native lib ready for %s (Slint %s)\n", *tgt, slint)
 	fmt.Printf("  lib: %s\n  pc:  %s\n\n", libpath, pcpath)
 	fmt.Println("Build your app either way:")
 	fmt.Printf("  goslint build ./...                              # wrapper sets everything\n")
 	fmt.Printf("  PKG_CONFIG_PATH=%q go build -tags %s ./...\n", pcdir, buildTag)
 	return nil
+}
+
+// provision ensures the prebuilt native lib for tgt is cached (downloading +
+// checksum-verifying from the release base if missing or -force), and returns its
+// manifest entry, the cached lib path, and the Slint version. Shared returns the
+// .so; static returns the .a.
+func provision(tgt string, force bool) (target, string, string, error) {
+	base := releaseBase()
+	m, err := fetchManifest(base)
+	if err != nil {
+		return target{}, "", "", err
+	}
+	t, ok := m.Targets[tgt]
+	if !ok {
+		return target{}, "", "", fmt.Errorf("no prebuilt for target %q at %s (available: %s)", tgt, base, strings.Join(sortedKeys(m.Targets), ", "))
+	}
+	libdir := filepath.Join(cacheDir(tgt), "lib")
+	if err := os.MkdirAll(libdir, 0o755); err != nil {
+		return target{}, "", "", err
+	}
+	// static targets ship libgoslint.a (linked into the binary); shared targets
+	// (android) ship libgoslint.so (bundled into the APK).
+	libname := "libgoslint.a"
+	if t.Kind == "shared" {
+		libname = "libgoslint.so"
+	}
+	libpath := filepath.Join(libdir, libname)
+
+	if force || !fileHasSHA(libpath, t.SHA256) {
+		url := base + "/" + t.Archive
+		fmt.Printf("downloading %s …\n", url)
+		if err := download(url, libpath); err != nil {
+			return target{}, "", "", err
+		}
+		if !fileHasSHA(libpath, t.SHA256) {
+			return target{}, "", "", fmt.Errorf("checksum mismatch for %s (expected %s)", t.Archive, t.SHA256)
+		}
+	} else {
+		fmt.Println("up to date:", libpath)
+	}
+	return t, libpath, m.Slint, nil
 }
 
 func buildPC(libdir, libs, slint string) string {

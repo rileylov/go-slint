@@ -1,0 +1,169 @@
+# Builds the native Slint shim (libgoslint) for every shippable target and
+# publishes them — plus a manifest.json the `goslint setup` tool consumes — to a
+# GitHub Release. Everything cross-compiles from a single Linux runner.
+#
+#   - tag push  vX.Y.Z  -> build all targets + publish the release
+#   - manual run        -> build all targets only (no publish), to test the matrix
+#
+# IMPORTANT before tagging a real release: bump `libVersion` in cmd/goslint/main.go
+# to match the tag, so `goslint setup` looks under the right release.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      slint_ref:
+        description: "Slint git ref to build against (default: .slint-version)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write # create releases / upload assets
+
+jobs:
+  build:
+    name: build ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: linux_amd64, rust: x86_64-unknown-linux-gnu, kind: static }
+          - { target: linux_arm64, rust: aarch64-unknown-linux-gnu, kind: static }
+          - { target: windows_amd64, rust: x86_64-pc-windows-gnu, kind: static }
+          - { target: android_arm64, rust: aarch64-linux-android, kind: shared }
+          - { target: android_amd64, rust: x86_64-linux-android, kind: shared }
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve Slint ref
+        id: slint
+        run: |
+          ref="${{ github.event.inputs.slint_ref }}"
+          [ -z "$ref" ] && ref="$(cat .slint-version)"
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+          echo "Building against Slint $ref"
+
+      - name: Fetch Slint source
+        run: |
+          git init -q slint
+          git -C slint remote add origin https://github.com/slint-ui/slint
+          git -C slint fetch --depth 1 origin "${{ steps.slint.outputs.ref }}"
+          git -C slint checkout -q FETCH_HEAD
+
+      - name: Install Rust + target
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup target add ${{ matrix.rust }}
+
+      - name: Install cross toolchain
+        run: |
+          case "${{ matrix.target }}" in
+            linux_arm64)   sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu ;;
+            windows_amd64) sudo apt-get update && sudo apt-get install -y gcc-mingw-w64-x86-64 ;;
+          esac
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/goslint-sys/target
+          key: cargo-${{ matrix.target }}-${{ steps.slint.outputs.ref }}-${{ hashFiles('rust/goslint-sys/Cargo.toml') }}
+
+      - name: Build static lib (desktop)
+        if: matrix.kind == 'static'
+        working-directory: rust/goslint-sys
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+          CC_aarch64_unknown_linux_gnu: aarch64-linux-gnu-gcc
+          CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER: x86_64-w64-mingw32-gcc
+          CC_x86_64_pc_windows_gnu: x86_64-w64-mingw32-gcc
+        run: |
+          cargo build --release --target ${{ matrix.rust }}
+          libs="$(cargo rustc --release --target ${{ matrix.rust }} --crate-type staticlib -- \
+                    --print native-static-libs 2>&1 | sed -n 's/.*native-static-libs: //p' | tail -1)"
+          echo "LIBS=$libs" >> "$GITHUB_ENV"
+          mkdir -p "$GITHUB_WORKSPACE/dist"
+          cp "target/${{ matrix.rust }}/release/libgoslint.a" \
+             "$GITHUB_WORKSPACE/dist/libgoslint-${{ matrix.target }}.a"
+
+      - name: Build shared lib (android)
+        if: matrix.kind == 'shared'
+        working-directory: rust/goslint-sys
+        run: |
+          NDK="$ANDROID_NDK_LATEST_HOME"
+          BIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          API=24
+          clang="$BIN/${{ matrix.rust }}$API-clang"
+          ar="$BIN/llvm-ar"
+          upper="$(echo ${{ matrix.rust }} | tr 'a-z-' 'A-Z_')"
+          under="$(echo ${{ matrix.rust }} | tr '-' '_')"
+          export "CARGO_TARGET_${upper}_LINKER=$clang" "CC_${under}=$clang" \
+                 "CXX_${under}=${clang}++" "AR_${under}=$ar"
+          cargo build --release --target ${{ matrix.rust }}
+          mkdir -p "$GITHUB_WORKSPACE/dist"
+          cp "target/${{ matrix.rust }}/release/libgoslint.so" \
+             "$GITHUB_WORKSPACE/dist/libgoslint-${{ matrix.target }}.so"
+
+      - name: Write target metadata
+        working-directory: dist
+        run: |
+          file="$(ls libgoslint-${{ matrix.target }}.*)"
+          sha="$(sha256sum "$file" | cut -d' ' -f1)"
+          cat > "meta-${{ matrix.target }}.json" <<EOF
+          {"target":"${{ matrix.target }}","archive":"$file","sha256":"$sha","libs":"${LIBS:-}","kind":"${{ matrix.kind }}"}
+          EOF
+          cat "meta-${{ matrix.target }}.json"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.target }}
+          path: dist/*
+
+  release:
+    name: publish release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: dist-*
+          merge-multiple: true
+
+      - name: Assemble manifest.json + SHA256SUMS
+        working-directory: dist
+        run: |
+          slint_ref="$(cat "$GITHUB_WORKSPACE/.slint-version")"
+          targets="$(jq -s 'map({(.target): {archive,sha256,libs,kind}}) | add' meta-*.json)"
+          jq -n --arg v "$GITHUB_REF_NAME" --arg s "$slint_ref" --argjson t "$targets" \
+             '{version:$v, slint:$s, targets:$t}' > manifest.json
+          rm -f meta-*.json
+          sha256sum libgoslint-* manifest.json > SHA256SUMS
+          echo "=== manifest.json ==="; cat manifest.json
+
+      - name: Publish to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/libgoslint-*
+            dist/manifest.json
+            dist/SHA256SUMS
+          fail_on_unmatched_files: true
+          body: |
+            Prebuilt `libgoslint` native libraries for the go-slint bindings.
+
+            Install with the bindings:
+            ```sh
+            go get github.com/rileylov/go-slint@${{ github.ref_name }}
+            go run github.com/rileylov/go-slint/cmd/goslint setup
+            go run github.com/rileylov/go-slint/cmd/goslint build ./...
+            ```
+            Built against Slint `${{ github.sha }}` (see `.slint-version`).
