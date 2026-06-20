@@ -9,11 +9,12 @@
 //
 //   - "applied/s" is how many full-frame property updates the binding + event loop
 //     sustain per second: the BINDING throughput ceiling.
-//   - Slint's own render FPS is separate; surface it with
-//       SLINT_DEBUG_PERFORMANCE=refresh_full_speed,overlay go run ./cmd/examples/chartstress
 //
-//	go run ./cmd/examples/chartstress                 # interactive (buttons)
-//	GOSLINT_BENCH=1 go run ./cmd/examples/chartstress # auto-ramp the load, log throughput
+//   - Slint's own render FPS is separate; surface it with
+//     SLINT_DEBUG_PERFORMANCE=refresh_full_speed,overlay go run ./cmd/examples/chartstress
+//
+//     go run ./cmd/examples/chartstress                 # interactive (buttons)
+//     GOSLINT_BENCH=1 go run ./cmd/examples/chartstress # auto-ramp the load, log throughput
 //
 // The same logic runs on Android via app_android.go (shares chartstress.go).
 package main

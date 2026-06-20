@@ -44,11 +44,11 @@ func runApp(uiSource, style string, bench bool, hold time.Duration) error {
 	defer win.Close()
 
 	c := &chart{
-		win:    win,
-		points: envInt("GOSLINT_POINTS", 256),
-		series: envInt("GOSLINT_SERIES", 1),
+		win:     win,
+		points:  envInt("GOSLINT_POINTS", 256),
+		series:  envInt("GOSLINT_SERIES", 1),
 		running: true,
-		hold:   hold,
+		hold:    hold,
 	}
 	win.Set("point-count", float64(c.points))
 	win.Set("series-count", float64(c.series))

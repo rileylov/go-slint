@@ -1,0 +1,61 @@
+# Runs formatting, vet, and the test suite (including Slint's conformance corpus)
+# on every push to main and every pull request. Builds the native shim from source
+# so the cgo packages link.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l $(git ls-files '*.go'))"
+          if [ -n "$unformatted" ]; then
+            echo "These files are not gofmt'd:"; echo "$unformatted"; exit 1
+          fi
+
+      - name: Fetch Slint source
+        run: |
+          ref="$(cat .slint-version)"
+          git init -q slint
+          git -C slint remote add origin https://github.com/slint-ui/slint
+          git -C slint fetch --depth 1 origin "$ref"
+          git -C slint checkout -q FETCH_HEAD
+
+      - name: Install build deps
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig-dev
+
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal --no-self-update
+
+      - name: Cache cargo + target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/goslint-sys/target
+          key: cargo-ci-${{ hashFiles('.slint-version', 'rust/goslint-sys/Cargo.toml') }}
+
+      - name: Build native shim
+        run: make lib
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...
