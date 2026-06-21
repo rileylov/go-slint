@@ -76,8 +76,10 @@ func main() {
 
 **4. Run it:** `goslint dev .` (or `goslint run .`).
 
-Put `//go:generate goslint generate -o ui/app.slint.go -package ui app.slint` atop
-`main.go` and run `go generate ./...` whenever you change the `.slint`'s interface.
+The scaffold puts a `//go:generate goslint generate …` directive atop `main.go`, and
+`goslint dev`/`run`/`build` run it for you — so you can just edit `app.slint` and
+see your changes. (Manual `goslint generate` is only needed if you build outside
+those commands.)
 
 ---
 
@@ -244,12 +246,14 @@ built binary is still self-contained — no `.slint` tree is needed at run time.
 
 `goslint dev .` runs your app and watches the project:
 
-- editing a **`.slint`** triggers a fast **restart** (the generated code reads its
-  markup from disk, so cosmetic changes show up without a Go rebuild);
-- editing a **`.go`** triggers a **rebuild**.
+- editing a **`.slint`** re-runs `go generate` (refreshing the typed wrapper from
+  the markup), then rebuilds and restarts — so **both** cosmetic changes and
+  *interface* changes (new/renamed properties and callbacks) show up automatically;
+- editing a **`.go`** rebuilds and restarts.
 
-When you change a `.slint`'s *interface* (add/rename a property or callback), run
-`go generate ./...` to refresh the typed methods.
+`goslint build` and `goslint run` regenerate first too, so a produced binary always
+reflects the current `.slint`. You rarely need to run `goslint generate` by hand —
+do it only when generating outside these commands (e.g. for editor completion).
 
 ---
 

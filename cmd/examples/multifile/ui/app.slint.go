@@ -3,10 +3,8 @@
 package ui
 
 import (
-	"os"
 	pathpkg "path"
 	"path/filepath"
-	"runtime"
 	"sync"
 
 	slint "github.com/rileylov/go-slint"
@@ -14,10 +12,8 @@ import (
 
 var generatedSource = "import { VerticalBox, Button } from \"std-widgets.slint\";\nimport { Card } from \"components/card.slint\";\n\nexport component AppWindow inherits Window {\n    in-out property <int> count: 0;\n    callback bump();\n\n    title: \"Multi-file\";\n    preferred-width: 320px;\n    preferred-height: 220px;\n\n    VerticalBox {\n        Card { title: \"Counter\"; value: root.count; }\n        Button { text: \"Bump\"; clicked => { root.bump(); } }\n    }\n}\n"
 
-var generatedSourceRel = "../app.slint"
-
-// generatedEntryName is the entry .slint's base name; it's the path the
-// embedded file-loader treats imports as relative to.
+// generatedEntryName is the entry .slint's base name; the embedded file-loader
+// treats imports as relative to it.
 var generatedEntryName = "app.slint"
 
 // generatedFiles holds every imported .slint, keyed relative to the entry's
@@ -32,21 +28,6 @@ var (
 	compileErr  error
 )
 
-// sourcePath locates the .slint next to the generated file at runtime, so
-// relative imports resolve from disk. Returns false if it isn't there (e.g. a
-// shipped binary), in which case the embedded source is used.
-func sourcePath() (string, bool) {
-	_, file, _, ok := runtime.Caller(0)
-	if !ok {
-		return "", false
-	}
-	p := filepath.Join(filepath.Dir(file), filepath.FromSlash(generatedSourceRel))
-	if _, err := os.Stat(p); err != nil {
-		return "", false
-	}
-	return p, true
-}
-
 // embeddedLoader resolves imports from generatedFiles (the requested path is
 // relative to the entry's directory).
 func embeddedLoader(path string) (string, bool) {
@@ -56,11 +37,7 @@ func embeddedLoader(path string) (string, bool) {
 
 func compile() (*slint.Compilation, error) {
 	compileOnce.Do(func() {
-		if p, ok := sourcePath(); ok {
-			compiled, compileErr = slint.CompileSource(p, generatedSource, slint.WithStyle("fluent"), slint.WithIncludePaths(filepath.Dir(p)))
-		} else {
-			compiled, compileErr = slint.CompileSource(generatedEntryName, generatedSource, slint.WithStyle("fluent"), slint.WithFileLoader(embeddedLoader))
-		}
+		compiled, compileErr = slint.CompileSource(generatedEntryName, generatedSource, slint.WithStyle("fluent"), slint.WithFileLoader(embeddedLoader))
 	})
 	return compiled, compileErr
 }

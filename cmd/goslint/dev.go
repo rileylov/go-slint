@@ -12,13 +12,10 @@ import (
 )
 
 // cmdDev builds and runs a go-slint package, then watches for changes:
-//   - a .slint edit triggers a fast restart (no Go rebuild): generated typed code
-//     reads its .slint from disk at runtime, so a restart re-renders the new
-//     markup; dynamic apps using slint.LiveReload (GOSLINT_DEV) reload in-process.
-//   - a .go edit triggers a rebuild + restart.
-//
-// After changing a .slint's *interface* (adding/renaming a property or callback),
-// run `go generate ./...` to refresh the typed wrapper's methods.
+//   - a .slint edit re-runs `go generate` (refreshing the typed wrapper from the
+//     markup), then rebuilds + restarts — so both cosmetic and interface changes
+//     show up;
+//   - a .go edit rebuilds + restarts.
 func cmdDev(args []string) error {
 	fs := flag.NewFlagSet("dev", flag.ExitOnError)
 	_ = fs.Parse(args)
@@ -38,6 +35,16 @@ func cmdDev(args []string) error {
 		"PKG_CONFIG_PATH="+prependPath(pcdir),
 		"GOSLINT_DEV=1",
 	)
+
+	// genDir is where `go generate ./...` runs to refresh typed wrappers.
+	genDir := pkg
+	if fi, err := os.Stat(pkg); err == nil && !fi.IsDir() {
+		genDir = filepath.Dir(pkg)
+	}
+	gen := func() error {
+		fmt.Println(">> generating")
+		return runGoGenerate(genDir)
+	}
 
 	build := func() error {
 		fmt.Println(">> building")
@@ -65,6 +72,9 @@ func cmdDev(args []string) error {
 		}
 	}
 
+	if err := gen(); err != nil {
+		fmt.Fprintln(os.Stderr, "generate failed (using existing generated code):", err)
+	}
 	if err := build(); err != nil {
 		return err
 	}
@@ -74,9 +84,12 @@ func cmdDev(args []string) error {
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt)
 
-	fmt.Println(">> running — edit .slint to restart, edit .go to rebuild; Ctrl-C to stop")
+	fmt.Println(">> running — edit .slint or .go to rebuild; Ctrl-C to stop")
 	lastGo := newestExt(pkg, ".go")
 	lastSlint := newestExt(pkg, ".slint")
+	// refresh records lastGo/lastSlint together (generate rewrites .go, so both must
+	// be re-sampled after a rebuild to avoid an immediate re-trigger).
+	refresh := func() { lastGo, lastSlint = newestExt(pkg, ".go"), newestExt(pkg, ".slint") }
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 	for {
@@ -87,20 +100,33 @@ func cmdDev(args []string) error {
 		case <-ticker.C:
 			g, s := newestExt(pkg, ".go"), newestExt(pkg, ".slint")
 			switch {
+			case s.After(lastSlint):
+				// .slint changed: regenerate (keep the app running if it fails),
+				// then rebuild + restart. This also covers any concurrent .go edit.
+				fmt.Println(">> .slint change — regenerating")
+				if err := gen(); err != nil {
+					fmt.Fprintln(os.Stderr, "generate failed:", err)
+					lastSlint = newestExt(pkg, ".slint")
+					continue
+				}
+				stop()
+				if err := build(); err != nil {
+					fmt.Fprintln(os.Stderr, "build failed:", err)
+					refresh()
+					continue
+				}
+				start()
+				refresh()
 			case g.After(lastGo):
-				lastGo, lastSlint = g, s
 				fmt.Println(">> .go change — rebuilding")
 				stop()
 				if err := build(); err != nil {
 					fmt.Fprintln(os.Stderr, "build failed:", err)
+					refresh()
 					continue
 				}
 				start()
-			case s.After(lastSlint):
-				lastSlint = s
-				fmt.Println(">> .slint change — restarting")
-				stop()
-				start()
+				refresh()
 			}
 		}
 	}

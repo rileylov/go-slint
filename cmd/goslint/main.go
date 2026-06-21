@@ -266,11 +266,51 @@ func cmdGo(sub string, args []string) error {
 	if _, err := os.Stat(filepath.Join(pcdir, "goslint.pc")); err != nil {
 		return fmt.Errorf("not set up for %s — run: goslint setup", tgt)
 	}
+	// Refresh generated typed wrappers from their .slint first, so build/run always
+	// reflect the current markup (the embedded source is the source of truth).
+	if err := runGoGenerate(""); err != nil {
+		return err
+	}
 	goArgs := append([]string{sub, "-tags", buildTag}, args...)
 	cmd := exec.Command("go", goArgs...)
 	cmd.Env = append(os.Environ(), "PKG_CONFIG_PATH="+prependPath(pcdir))
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	return cmd.Run()
+}
+
+// runGoGenerate runs `go generate ./...` in dir (CWD if empty) so //go:generate
+// directives — i.e. `goslint generate ...` — refresh the typed wrappers from their
+// .slint before a build/run/dev. It puts this goslint binary's directory on PATH so
+// the directive resolves to the same executable the user invoked.
+func runGoGenerate(dir string) error {
+	cmd := exec.Command("go", "generate", "./...")
+	cmd.Dir = dir
+	cmd.Env = withGoslintOnPath(os.Environ())
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	return cmd.Run()
+}
+
+// withGoslintOnPath returns env with this executable's directory prepended to PATH.
+func withGoslintOnPath(env []string) []string {
+	exe, err := os.Executable()
+	if err != nil {
+		return env
+	}
+	dir := filepath.Dir(exe)
+	out := make([]string, 0, len(env)+1)
+	found := false
+	for _, e := range env {
+		if strings.HasPrefix(e, "PATH=") {
+			out = append(out, "PATH="+dir+string(os.PathListSeparator)+e[len("PATH="):])
+			found = true
+		} else {
+			out = append(out, e)
+		}
+	}
+	if !found {
+		out = append(out, "PATH="+dir)
+	}
+	return out
 }
 
 func cmdEnv(args []string) error {

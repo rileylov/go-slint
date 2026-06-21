@@ -3,9 +3,6 @@
 package ui
 
 import (
-	"os"
-	"path/filepath"
-	"runtime"
 	"sync"
 
 	slint "github.com/rileylov/go-slint"
@@ -13,36 +10,15 @@ import (
 
 var generatedSource = "import { Button, VerticalBox } from \"std-widgets.slint\";\n\nexport global Logic {\n    pure callback greeting(string) -> string;\n}\n\nexport component AppWindow inherits Window {\n    in-out property <string> name: \"World\";\n    in-out property <int> clicks: 0;\n    in-out property <[string]> log;\n    callback clicked();\n\n    title: \"Typed Hello\";\n    preferred-width: 340px;\n    preferred-height: 260px;\n\n    VerticalBox {\n        alignment: center;\n        spacing: 10px;\n        Text { text: Logic.greeting(root.name); horizontal-alignment: center; font-size: 22px; }\n        Text { text: \"clicks: \" + root.clicks; horizontal-alignment: center; color: #888; }\n        Button { text: \"Click me\"; clicked => { root.clicked(); } }\n        for entry in root.log : Text { text: entry; horizontal-alignment: center; color: #44aa88; }\n    }\n}\n"
 
-var generatedSourceRel = "../app.slint"
-
 var (
 	compileOnce sync.Once
 	compiled    *slint.Compilation
 	compileErr  error
 )
 
-// sourcePath locates the .slint next to the generated file at runtime, so
-// relative imports resolve from disk. Returns false if it isn't there (e.g. a
-// shipped single-file binary), in which case the embedded source is used.
-func sourcePath() (string, bool) {
-	_, file, _, ok := runtime.Caller(0)
-	if !ok {
-		return "", false
-	}
-	p := filepath.Join(filepath.Dir(file), filepath.FromSlash(generatedSourceRel))
-	if _, err := os.Stat(p); err != nil {
-		return "", false
-	}
-	return p, true
-}
-
 func compile() (*slint.Compilation, error) {
 	compileOnce.Do(func() {
-		if p, ok := sourcePath(); ok {
-			compiled, compileErr = slint.CompileSource(p, generatedSource, slint.WithStyle("fluent"), slint.WithIncludePaths(filepath.Dir(p)))
-		} else {
-			compiled, compileErr = slint.Compile(generatedSource, slint.WithStyle("fluent"))
-		}
+		compiled, compileErr = slint.Compile(generatedSource, slint.WithStyle("fluent"))
 	})
 	return compiled, compileErr
 }

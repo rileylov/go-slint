@@ -43,7 +43,7 @@ go install github.com/rileylov/go-slint/cmd/goslint@latest
 goslint init myapp     # scaffold go.mod + app.slint + main.go + ui/
 cd myapp
 goslint setup          # download the native lib matching your go.mod
-goslint dev .          # run; edit app.slint → restart, edit .go → rebuild
+goslint dev .          # run; edit app.slint or .go → auto-regenerate & reload
 ```
 
 Ship it:
