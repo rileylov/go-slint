@@ -58,7 +58,7 @@ go install github.com/rileylov/go-slint/cmd/goslint@latest
 goslint init myapp        # scaffold a project (go.mod + main.go + app.slint)
 cd myapp
 goslint setup             # download the native lib matching your go.mod
-goslint dev .             # run with live reload — edit app.slint, save, see it update
+goslint dev .             # run; edit app.slint → fast restart, edit .go → rebuild
 ```
 
 Ship it:
@@ -77,10 +77,12 @@ How it fits together:
   property/callback names, typed args, generated structs & enums) over the dynamic
   runtime — e.g. `win.SetName("Gophers")`, `win.Logic().OnMakeGreeting(func(s string) string {…})`.
   Use it directly or as `//go:generate goslint generate -o ui/app.slint.go app.slint`.
-- **`goslint dev`** rebuilds and reruns your app on file changes (after editing
-  `app.slint`, re-run `go generate` to refresh the typed wrapper). It also sets
-  `GOSLINT_DEV`, which the dynamic [live-reload API](#dynamic-low-level-api) uses
-  for no-rebuild markup reloading.
+- **`goslint dev`** watches your project: a `.slint` edit triggers a fast
+  **restart** (the generated code reads its markup from disk, so no Go rebuild is
+  needed to see cosmetic changes), and a `.go` edit triggers a **rebuild**. After
+  changing a `.slint`'s *interface* (a new/renamed property or callback), run
+  `go generate ./...` to refresh the typed wrapper. (Dynamic apps using
+  `slint.LiveReload` reload in-process via `GOSLINT_DEV`.)
 - **`goslint build`/`run`** wrap `go build`/`go run` with the linker flags set.
   Prefer plain `go`? `eval "$(goslint env)"; go build -tags goslint_pkgconfig .`
 - **`goslint doctor`** checks your toolchain and the cached library; **`goslint
