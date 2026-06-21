@@ -87,6 +87,16 @@ func CompileFile(path string, opts ...Option) (*Compilation, error) {
 	}))
 }
 
+// CompileSource compiles markup from a string while treating it as if it lived at
+// `path`, so relative imports (and @image-url) resolve from path's directory on
+// disk. Generated typed code uses this so multi-file components work; for a single
+// embedded file with no relative imports, plain [Compile] is enough.
+func CompileSource(path, source string, opts ...Option) (*Compilation, error) {
+	return finish(build(opts, func(c *slintsys.Compiler) *slintsys.Result {
+		return c.BuildFromSource(source, path)
+	}))
+}
+
 func build(opts []Option, f func(*slintsys.Compiler) *slintsys.Result) *slintsys.Result {
 	c := slintsys.NewCompiler()
 	defer c.Free()

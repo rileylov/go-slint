@@ -79,7 +79,17 @@ func main() {
 		fatal(fmt.Errorf("parse type info: %w", err))
 	}
 
-	code, err := generate(&iface, *pkg, *style, string(src))
+	// relative path from the generated file's dir to the .slint, used at runtime
+	// (via runtime.Caller) to resolve the entry + its relative imports from disk.
+	outAbs, _ := filepath.Abs(*out)
+	inAbs, _ := filepath.Abs(in)
+	rel, relErr := filepath.Rel(filepath.Dir(outAbs), inAbs)
+	if relErr != nil {
+		rel = filepath.Base(inAbs)
+	}
+	rel = filepath.ToSlash(rel)
+
+	code, err := generate(&iface, *pkg, *style, string(src), rel)
 	if err != nil {
 		fatal(err)
 	}

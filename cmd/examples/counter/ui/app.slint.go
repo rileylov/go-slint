@@ -3,6 +3,9 @@
 package ui
 
 import (
+	"os"
+	"path/filepath"
+	"runtime"
 	"sync"
 
 	slint "github.com/rileylov/go-slint"
@@ -10,15 +13,36 @@ import (
 
 var generatedSource = "import { Button, VerticalBox } from \"std-widgets.slint\";\n\nexport component Counter inherits Window {\n    title: \"go-slint counter\";\n    preferred-width: 280px;\n    preferred-height: 180px;\n\n    in-out property <int> value: 0;\n    callback increment();\n    callback reset();\n\n    VerticalBox {\n        alignment: center;\n        Text {\n            text: \"Count: \" + root.value;\n            font-size: 28px;\n            horizontal-alignment: center;\n        }\n        Button {\n            text: \"Increment\";\n            clicked => { root.increment(); }\n        }\n        Button {\n            text: \"Reset\";\n            clicked => { root.reset(); }\n        }\n    }\n}\n"
 
+var generatedSourceRel = "../app.slint"
+
 var (
 	compileOnce sync.Once
 	compiled    *slint.Compilation
 	compileErr  error
 )
 
+// sourcePath locates the .slint next to the generated file at runtime, so
+// relative imports resolve from disk. Returns false if it isn't there (e.g. a
+// shipped single-file binary), in which case the embedded source is used.
+func sourcePath() (string, bool) {
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		return "", false
+	}
+	p := filepath.Join(filepath.Dir(file), filepath.FromSlash(generatedSourceRel))
+	if _, err := os.Stat(p); err != nil {
+		return "", false
+	}
+	return p, true
+}
+
 func compile() (*slint.Compilation, error) {
 	compileOnce.Do(func() {
-		compiled, compileErr = slint.Compile(generatedSource, slint.WithStyle("fluent"))
+		if p, ok := sourcePath(); ok {
+			compiled, compileErr = slint.CompileSource(p, generatedSource, slint.WithStyle("fluent"), slint.WithIncludePaths(filepath.Dir(p)))
+		} else {
+			compiled, compileErr = slint.Compile(generatedSource, slint.WithStyle("fluent"))
+		}
 	})
 	return compiled, compileErr
 }

@@ -25,7 +25,7 @@ func TestGenerate(t *testing.T) {
 		Enums:   map[string]EnumInfo{"Mode": {Values: []string{"idle", "active"}}},
 	}
 	// generate runs go/format internally, so a nil error means the output is valid Go.
-	code, err := generate(iface, "ui", "fluent", "export component AppWindow inherits Window {}")
+	code, err := generate(iface, "ui", "fluent", "export component AppWindow inherits Window {}", "../app.slint")
 	if err != nil {
 		t.Fatalf("generate produced invalid Go: %v\n%s", err, code)
 	}
