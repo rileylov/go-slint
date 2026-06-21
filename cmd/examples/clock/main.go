@@ -1,32 +1,28 @@
-// Command clock is an interactive go-slint example: a repeating Timer driven
-// from Go updates the UI once per second.
+// Command clock is an interactive go-slint example using the TYPED API: a
+// repeating Timer driven from Go updates the typed `ticks` property once a
+// second. (The Timer is part of the dynamic runtime — typed components and the
+// runtime API compose freely.)
 //
-//	make lib && go run ./cmd/examples/clock
+//	make lib
+//	go run ./cmd/examples/clock
 package main
 
+//go:generate goslint generate -o ui/app.slint.go -package ui app.slint
+
 import (
-	_ "embed"
 	"fmt"
 	"log"
 	"runtime"
 
 	"github.com/rileylov/go-slint"
+	"github.com/rileylov/go-slint/cmd/examples/clock/ui"
 )
 
 // Slint is thread-affine: pin the main goroutine.
 func init() { runtime.LockOSThread() }
 
-//go:embed ui.slint
-var ui string
-
 func main() {
-	app, err := slint.Compile(ui, slint.WithStyle("fluent"))
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer app.Close()
-
-	win, err := app.Create("Clock")
+	win, err := ui.NewClock()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -35,9 +31,9 @@ func main() {
 	timer := slint.NewTimer()
 	defer timer.Free()
 	timer.Start(slint.TimerRepeated, 1000, func() {
-		n, _ := win.Int("ticks")
+		n, _ := win.Ticks()
 		fmt.Println(n + 1)
-		win.Set("ticks", n+1)
+		_ = win.SetTicks(n + 1)
 	})
 
 	if err := win.Run(); err != nil {

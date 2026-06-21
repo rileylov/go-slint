@@ -4,37 +4,45 @@ Go bindings for the [Slint](https://slint.dev) declarative UI toolkit.
 
 ## Example
 
+Write your UI in `.slint`, generate a typed Go API from it with
+`goslint generate`, and drive it with compile-checked methods:
+
+```slint
+// app.slint
+export component AppWindow inherits Window {
+    in-out property <int> counter: 0;
+    callback clicked();
+}
+```
+
 ```go
+// main.go  (//go:generate goslint generate -o ui/app.slint.go app.slint)
 package main
 
 import (
-	_ "embed"
 	"runtime"
 
-	"github.com/rileylov/go-slint"
+	"myapp/ui"
 )
 
 func init() { runtime.LockOSThread() } // Slint is thread-affine
 
-//go:embed app.slint
-var ui string
-
 func main() {
-	app, _ := slint.Compile(ui, slint.WithStyle("fluent"))
-	defer app.Close()
-	win, _ := app.Create("AppWindow")
+	win, _ := ui.NewAppWindow()
 	defer win.Close()
 
-	win.OnCallback("clicked", func([]any) any {
-		n, _ := win.Int("counter")
-		win.Set("counter", n+1)
-		return nil
+	win.OnClicked(func() {
+		n, _ := win.Counter()
+		_ = win.SetCounter(n + 1)
 	})
 	win.Run()
 }
 ```
 
-Check [`cmd/examples`](cmd/examples) for more examples of the bindings.
+Property and callback names are real Go methods, checked by the compiler. A
+lower-level [dynamic API](#dynamic-low-level-api) is also available for runtime
+loading. Both are in [`cmd/examples`](cmd/examples) (typed: `typed`, `counter`,
+`clock`).
 
 ## Quickstart
 
@@ -69,9 +77,10 @@ How it fits together:
   property/callback names, typed args, generated structs & enums) over the dynamic
   runtime — e.g. `win.SetName("Gophers")`, `win.Logic().OnMakeGreeting(func(s string) string {…})`.
   Use it directly or as `//go:generate goslint generate -o ui/app.slint.go app.slint`.
-- **`goslint dev`** runs your app and live-reloads `.slint` edits with no Go
-  rebuild (the interpreter loads markup at runtime); it rebuilds + restarts on
-  `.go` changes.
+- **`goslint dev`** rebuilds and reruns your app on file changes (after editing
+  `app.slint`, re-run `go generate` to refresh the typed wrapper). It also sets
+  `GOSLINT_DEV`, which the dynamic [live-reload API](#dynamic-low-level-api) uses
+  for no-rebuild markup reloading.
 - **`goslint build`/`run`** wrap `go build`/`go run` with the linker flags set.
   Prefer plain `go`? `eval "$(goslint env)"; go build -tags goslint_pkgconfig .`
 - **`goslint doctor`** checks your toolchain and the cached library; **`goslint
@@ -120,6 +129,21 @@ Prereqs: the Android **NDK** and SDK **build-tools** + a **platform** (point
 `-package`, `-label`, `-abi`, `-min-sdk`, a custom `-manifest`, `-keystore`, etc.
 (a debug keystore is created automatically). Verified rendering on an x86_64
 emulator and on arm64 phones.
+
+## Dynamic (low-level) API
+
+The typed API is generated *on top of* a dynamic runtime that the `slint` package
+exposes directly: `slint.Compile`/`Create`, then `win.Set("x", v)` /
+`win.Get` / `win.OnCallback(...)`. Reach for it when you need things codegen
+can't give you:
+
+- **runtime loading** — compile `.slint` chosen/edited at runtime (themes, plugin
+  UIs, a viewer) and **live reload** (`slint.LiveReload`, used by `goslint dev`);
+- **dynamic models** and gradient brushes (the typed layer maps these to `any`);
+- maximum flexibility without a generate step.
+
+Typed is the recommended default for app UIs; the dynamic API is the escape hatch.
+Examples using it: `hello`, `todo`, `window`, `gradient`, `interop`, `chartstress`.
 
 ## How it works
 

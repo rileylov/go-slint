@@ -8,8 +8,10 @@ import (
 	"path/filepath"
 )
 
-// cmdInit scaffolds a new go-slint project: go.mod, main.go (embeds app.slint for
-// release, hot-reloads from disk under `goslint dev`), and a starter app.slint.
+// cmdInit scaffolds a new go-slint project using the TYPED API: app.slint, a
+// pre-generated ui/app.slint.go (so it builds right after `goslint setup`),
+// app.go (shared wiring + a //go:generate directive to regenerate), and the
+// desktop + Android entry points.
 func cmdInit(args []string) error {
 	fs := flag.NewFlagSet("init", flag.ExitOnError)
 	module := fs.String("module", "", "Go module path (default: directory name)")
@@ -31,11 +33,11 @@ func cmdInit(args []string) error {
 		*module = name
 	}
 
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, "ui"), 0o755); err != nil {
 		return err
 	}
-	if exists(filepath.Join(dir, "main.go")) {
-		return fmt.Errorf("%s already contains main.go — refusing to overwrite", dir)
+	if exists(filepath.Join(dir, "app.go")) {
+		return fmt.Errorf("%s already contains app.go — refusing to overwrite", dir)
 	}
 
 	if !exists(filepath.Join(dir, "go.mod")) {
@@ -47,14 +49,17 @@ func cmdInit(args []string) error {
 		return err
 	}
 
-	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte(mainTemplate), 0o644); err != nil {
-		return err
+	files := map[string]string{
+		"app.slint":       appSlintTemplate,
+		"ui/app.slint.go": uiTemplate,
+		"app.go":          fmt.Sprintf(appGoTemplate, *module),
+		"main.go":         mainTemplate,
+		"app_android.go":  androidTemplate,
 	}
-	if err := os.WriteFile(filepath.Join(dir, "app_android.go"), []byte(androidTemplate), 0o644); err != nil {
-		return err
-	}
-	if err := os.WriteFile(filepath.Join(dir, "app.slint"), []byte(fmt.Sprintf(slintTemplate, name)), 0o644); err != nil {
-		return err
+	for rel, content := range files {
+		if err := os.WriteFile(filepath.Join(dir, rel), []byte(content), 0o644); err != nil {
+			return err
+		}
 	}
 
 	// best-effort: pull the dependency (needs the module to be reachable)
@@ -62,13 +67,14 @@ func cmdInit(args []string) error {
 		fmt.Printf("\nnote: `go mod tidy` failed (is %s published/reachable yet?). Run it once it is.\n", modulePath)
 	}
 
-	fmt.Printf("\n✓ scaffolded %q in %s\n\nNext:\n", name, dir)
+	fmt.Printf("\n✓ scaffolded %q (typed API) in %s\n\nNext:\n", name, dir)
 	if dir != "." {
 		fmt.Printf("  cd %s\n", dir)
 	}
 	fmt.Println("  goslint setup            # fetch the native lib for this platform")
-	fmt.Println("  goslint dev .            # run with live reload — edit app.slint and save")
-	fmt.Println("  goslint android build .  # build a signed APK (app_android.go is the entry)")
+	fmt.Println("  goslint run .            # build + run")
+	fmt.Println("  goslint android build .  # build a signed APK")
+	fmt.Println("\nEdit app.slint, then `go generate ./...` to regenerate ui/app.slint.go.")
 	return nil
 }
 
@@ -79,102 +85,15 @@ func runIn(dir, name string, args ...string) error {
 	return cmd.Run()
 }
 
-const mainTemplate = `package main
-
-import (
-	_ "embed"
-	"os"
-	"runtime"
-
-	"github.com/rileylov/go-slint"
-)
-
-func init() { runtime.LockOSThread() } // Slint is thread-affine
-
-//go:embed app.slint
-var ui string
-
-// wire binds callbacks and initial state. It runs on the freshly created window
-// and re-runs on every live reload, so set everything up here.
-func wire(win *slint.Instance) error {
-	win.OnCallback("increment", func([]any) any {
-		n, _ := win.Int("count")
-		win.Set("count", n+1)
-		return nil
-	})
-	return nil
-}
-
-func main() {
-	// ` + "`goslint dev`" + ` sets GOSLINT_DEV: load app.slint from disk and hot-reload on save.
-	if os.Getenv("GOSLINT_DEV") != "" {
-		if err := slint.LiveReload("app.slint", "AppWindow", wire, slint.WithStyle("fluent")); err != nil {
-			panic(err)
-		}
-		return
-	}
-
-	// release: the markup is embedded in the binary.
-	app, err := slint.Compile(ui, slint.WithStyle("fluent"))
-	if err != nil {
-		panic(err)
-	}
-	defer app.Close()
-	win, err := app.Create("AppWindow")
-	if err != nil {
-		panic(err)
-	}
-	defer win.Close()
-	if err := wire(win); err != nil {
-		panic(err)
-	}
-	win.Run()
-}
-`
-
-const androidTemplate = `//go:build android
-
-package main
-
-import "C"
-
-import (
-	"runtime"
-
-	"github.com/rileylov/go-slint"
-)
-
-// goslint_android_main is the Android entry point: the native side dlopen's this
-// Go library and calls it. Build an APK with ` + "`goslint android build .`" + `.
-// It reuses the embedded ` + "`ui`" + ` and ` + "`wire`" + ` from main.go.
-//
-//export goslint_android_main
-func goslint_android_main(_ *C.char) {
-	runtime.LockOSThread()
-	app, err := slint.Compile(ui, slint.WithStyle("material")) // material = Android-native
-	if err != nil {
-		return
-	}
-	defer app.Close()
-	win, err := app.Create("AppWindow")
-	if err != nil {
-		return
-	}
-	defer win.Close()
-	_ = wire(win)
-	win.Run()
-}
-`
-
-const slintTemplate = `import { Button, VerticalBox } from "std-widgets.slint";
+const appSlintTemplate = `import { Button, VerticalBox } from "std-widgets.slint";
 
 export component AppWindow inherits Window {
-    title: "%s";
-    preferred-width: 360px;
-    preferred-height: 240px;
-
     in-out property <int> count: 0;
     callback increment();
+
+    title: "go-slint app";
+    preferred-width: 320px;
+    preferred-height: 200px;
 
     VerticalBox {
         alignment: center;
@@ -189,5 +108,136 @@ export component AppWindow inherits Window {
             clicked => { root.increment(); }
         }
     }
+}
+`
+
+// appGoTemplate holds the shared wiring (used by both desktop and Android). %s is
+// the module path (for the ui import).
+const appGoTemplate = `package main
+
+//go:generate goslint generate -o ui/app.slint.go -package ui app.slint
+
+import (
+	"%s/ui"
+)
+
+// wire binds callbacks and initial state on the typed window.
+func wire(win *ui.AppWindow) error {
+	return win.OnIncrement(func() {
+		n, _ := win.Count()
+		_ = win.SetCount(n + 1)
+	})
+}
+
+func run() error {
+	win, err := ui.NewAppWindow()
+	if err != nil {
+		return err
+	}
+	defer win.Close()
+	if err := wire(win); err != nil {
+		return err
+	}
+	return win.Run()
+}
+`
+
+const mainTemplate = `//go:build !android
+
+package main
+
+import "runtime"
+
+func init() { runtime.LockOSThread() } // Slint is thread-affine
+
+func main() {
+	if err := run(); err != nil {
+		panic(err)
+	}
+}
+`
+
+const androidTemplate = `//go:build android
+
+package main
+
+import "C"
+
+import "runtime"
+
+//export goslint_android_main
+func goslint_android_main(_ *C.char) {
+	runtime.LockOSThread()
+	_ = run()
+}
+
+func main() {} // required for c-shared; unused (entry is goslint_android_main)
+`
+
+// uiTemplate is the typed wrapper for the scaffold's app.slint, pre-generated by
+// goslint-gen so the project builds before the user runs `go generate`.
+const uiTemplate = "// Code generated by goslint. DO NOT EDIT.\n\n" + `package ui
+
+import (
+	"sync"
+
+	slint "github.com/rileylov/go-slint"
+)
+
+var generatedSource = "import { Button, VerticalBox } from \"std-widgets.slint\";\n\nexport component AppWindow inherits Window {\n    in-out property <int> count: 0;\n    callback increment();\n\n    title: \"go-slint app\";\n    preferred-width: 320px;\n    preferred-height: 200px;\n\n    VerticalBox {\n        alignment: center;\n        spacing: 12px;\n        Text {\n            text: \"Count: \" + root.count;\n            font-size: 28px;\n            horizontal-alignment: center;\n        }\n        Button {\n            text: \"Increment\";\n            clicked => { root.increment(); }\n        }\n    }\n}\n"
+
+var (
+	compileOnce sync.Once
+	compiled    *slint.Compilation
+	compileErr  error
+)
+
+func compile() (*slint.Compilation, error) {
+	compileOnce.Do(func() {
+		compiled, compileErr = slint.Compile(generatedSource, slint.WithStyle("fluent"))
+	})
+	return compiled, compileErr
+}
+
+// AppWindow is a typed wrapper around the "AppWindow" component.
+type AppWindow struct{ inner *slint.Instance }
+
+// NewAppWindow compiles (once) and instantiates the component.
+func NewAppWindow() (*AppWindow, error) {
+	app, err := compile()
+	if err != nil {
+		return nil, err
+	}
+	inner, err := app.Create("AppWindow")
+	if err != nil {
+		return nil, err
+	}
+	return &AppWindow{inner: inner}, nil
+}
+
+func (c *AppWindow) Inner() *slint.Instance { return c.inner }
+func (c *AppWindow) Show() error            { return c.inner.Show() }
+func (c *AppWindow) Hide() error            { return c.inner.Hide() }
+func (c *AppWindow) Run() error             { return c.inner.Run() }
+func (c *AppWindow) Close()                 { c.inner.Close() }
+
+func (c *AppWindow) Count() (int, error) {
+	v, err := c.inner.Get("count")
+	if err != nil {
+		var zero int
+		return zero, err
+	}
+	return int(v.(float64)), nil
+}
+
+func (c *AppWindow) SetCount(value int) error {
+	return c.inner.Set("count", value)
+}
+
+func (c *AppWindow) OnIncrement(handler func()) error {
+	return c.inner.OnCallback("increment", func(args []any) any {
+		handler()
+		return nil
+	})
 }
 `
