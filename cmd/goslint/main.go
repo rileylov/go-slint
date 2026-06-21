@@ -24,6 +24,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"sort"
 	"strings"
 )
@@ -32,10 +33,11 @@ import (
 // pins from go.mod so the native lib it fetches always matches their bindings.
 const modulePath = "github.com/rileylov/go-slint"
 
-// defaultLibVersion is the fallback when the version can't be read from a go.mod
-// (e.g. the CLI run outside a project, or inside this repo during development).
-// Overridable via GOSLINT_LIB_VERSION.
-const defaultLibVersion = "v0.3.3"
+// defaultLibVersion is the LAST-resort fallback, only hit for a locally-built CLI
+// (`go build`/`go run`, where the module version is "(devel)") that's also run
+// outside a go-slint project. Released binaries derive their version from the
+// install tag via selfVersion(), so this no longer needs bumping per release.
+const defaultLibVersion = "v0.3.4"
 
 // defaultBaseURL is the GitHub Releases download root. The release for libVersion
 // is expected at <defaultBaseURL>/<libVersion>/{manifest.json,<archives>}.
@@ -123,6 +125,12 @@ type target struct {
 	Kind    string `json:"kind"` // "static" (desktop .a, default) or "shared" (android .so)
 }
 
+// version resolves which prebuilt lib version to use, in priority order:
+//  1. GOSLINT_LIB_VERSION — explicit override;
+//  2. the go-slint version the current project's go.mod requires (must match the
+//     module's ABI when building inside a project);
+//  3. selfVersion — the tag this goslint binary was installed at (`go install …@vX`);
+//  4. defaultLibVersion — only for a local devel build run outside a project.
 func version() string {
 	if v := os.Getenv("GOSLINT_LIB_VERSION"); v != "" {
 		return v
@@ -130,7 +138,32 @@ func version() string {
 	if v := moduleVersion(); v != "" {
 		return v
 	}
+	if v := selfVersion(); v != "" {
+		return v
+	}
 	return defaultLibVersion
+}
+
+// selfVersion reports the module version this goslint binary was installed at
+// (e.g. "v0.3.4" for `go install …/cmd/goslint@v0.3.4`). It returns "" for a local
+// source-tree build: those carry VCS build settings and get a stamped version like
+// "v0.3.3+dirty" (not a real release tag), whereas a binary installed from the
+// module proxy has a clean tag and no VCS info.
+func selfVersion() string {
+	bi, ok := debug.ReadBuildInfo()
+	if !ok {
+		return ""
+	}
+	for _, s := range bi.Settings {
+		if strings.HasPrefix(s.Key, "vcs") {
+			return "" // local build from the source tree
+		}
+	}
+	v := bi.Main.Version
+	if v == "" || v == "(devel)" || strings.Contains(v, "+") {
+		return ""
+	}
+	return v
 }
 
 // moduleVersion reports the go-slint version the current project requires, by

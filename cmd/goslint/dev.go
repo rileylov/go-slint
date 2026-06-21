@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"time"
 )
 
@@ -34,6 +35,9 @@ func cmdDev(args []string) error {
 	}
 
 	bin := filepath.Join(os.TempDir(), "goslint-dev-"+sanitizeID(filepath.Base(absOr(pkg))))
+	if runtime.GOOS == "windows" {
+		bin += ".exe" // Windows needs the extension to build to and to exec
+	}
 	env = append(env, "GOSLINT_DEV=1")
 
 	// genDir is where `go generate ./...` runs to refresh typed wrappers.
