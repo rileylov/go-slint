@@ -35,7 +35,7 @@ const modulePath = "github.com/rileylov/go-slint"
 // defaultLibVersion is the fallback when the version can't be read from a go.mod
 // (e.g. the CLI run outside a project, or inside this repo during development).
 // Overridable via GOSLINT_LIB_VERSION.
-const defaultLibVersion = "v0.3.0"
+const defaultLibVersion = "v0.3.2"
 
 // defaultBaseURL is the GitHub Releases download root. The release for libVersion
 // is expected at <defaultBaseURL>/<libVersion>/{manifest.json,<archives>}.
@@ -355,6 +355,9 @@ func runGoGenerate(dir string) error {
 }
 
 // withGoslintOnPath returns env with this executable's directory prepended to PATH.
+// The PATH key is matched case-insensitively and its original casing preserved —
+// on Windows it's "Path", and adding a second "PATH=" entry would shadow the real
+// one (Windows env vars are case-insensitive), wiping the user's PATH.
 func withGoslintOnPath(env []string) []string {
 	exe, err := os.Executable()
 	if err != nil {
@@ -364,8 +367,8 @@ func withGoslintOnPath(env []string) []string {
 	out := make([]string, 0, len(env)+1)
 	found := false
 	for _, e := range env {
-		if strings.HasPrefix(e, "PATH=") {
-			out = append(out, "PATH="+dir+string(os.PathListSeparator)+e[len("PATH="):])
+		if k, v, ok := strings.Cut(e, "="); ok && strings.EqualFold(k, "PATH") {
+			out = append(out, k+"="+dir+string(os.PathListSeparator)+v)
 			found = true
 		} else {
 			out = append(out, e)
