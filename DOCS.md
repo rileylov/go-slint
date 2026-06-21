@@ -1,0 +1,345 @@
+# go-slint — Guide
+
+How to build a UI with go-slint, step by step.
+
+You write your UI in the **`.slint`** language, run **`goslint generate`** to turn
+it into a typed Go package, and drive it with normal Go methods. Property and
+callback names become compile-checked methods; structs and enums become Go types.
+Under the hood a small Rust shim runs Slint's interpreter, so `.slint` is compiled
+at run time — but `goslint generate` embeds the markup, so you still ship one
+self-contained binary.
+
+> New to the `.slint` language itself? See the
+> [Slint Language Documentation](https://slint.dev/docs/slint).
+
+---
+
+## Quick start
+
+**1. Scaffold a project** (creates `go.mod`, `app.slint`, `main.go`, and the
+generated `ui/` package):
+
+```sh
+go install github.com/rileylov/go-slint/cmd/goslint@latest
+goslint init myapp && cd myapp
+goslint setup          # download the prebuilt native lib for your platform
+```
+
+**2. Write `app.slint`:**
+
+```slint
+import { Button, VerticalBox } from "std-widgets.slint";
+
+export component AppWindow inherits Window {
+    in-out property <int> counter: 0;
+    callback increment();
+
+    VerticalBox {
+        Text { text: "Counter: " + root.counter; }
+        Button { text: "+1"; clicked => { root.increment(); } }
+    }
+}
+```
+
+**3. Generate the typed API and write `main.go`:**
+
+```sh
+goslint generate -o ui/app.slint.go -package ui app.slint
+```
+
+```go
+package main
+
+import (
+	"runtime"
+
+	"myapp/ui"
+)
+
+func init() { runtime.LockOSThread() } // Slint is thread-affine
+
+func main() {
+	win, err := ui.NewAppWindow()
+	if err != nil {
+		panic(err)
+	}
+	defer win.Close()
+
+	win.OnIncrement(func() {
+		n, _ := win.Counter()
+		_ = win.SetCounter(n + 1)
+	})
+
+	win.Run()
+}
+```
+
+**4. Run it:** `goslint dev .` (or `goslint run .`).
+
+Put `//go:generate goslint generate -o ui/app.slint.go -package ui app.slint` atop
+`main.go` and run `go generate ./...` whenever you change the `.slint`'s interface.
+
+---
+
+## API overview
+
+For a component named `AppWindow`, the generated package gives you:
+
+### Instantiating a component
+
+`New<Component>` compiles the markup once and creates an instance.
+
+```go
+win, err := ui.NewAppWindow()
+defer win.Close()
+
+win.Show()   // show without blocking
+win.Run()    // show and run the event loop (blocks until the window closes)
+win.Hide()
+```
+
+Each exported component that inherits `Window` gets its own `New…` constructor.
+
+### Properties
+
+`in`, `out`, and `in-out` properties become a typed getter and (unless `out`) a
+setter. Getters return `(value, error)`; setters return `error`.
+
+```slint
+in-out property <string> name;
+```
+
+```go
+name, err := win.Name()
+err = win.SetName("Gophers")
+```
+
+### Callbacks
+
+A `callback` becomes an `On<Name>` method taking a typed handler. Arguments are
+positional (`a0`, `a1`, …); a return type maps to the handler's return.
+
+```slint
+callback increment();
+callback validate(string) -> bool;
+```
+
+```go
+win.OnIncrement(func() { /* … */ })
+win.OnValidate(func(a0 string) bool { return a0 != "" })
+```
+
+### Functions
+
+A `function` (or `pure function`) becomes a method you **call** (not `On…`). It
+returns `(result, error)`, or just `error` when it returns nothing.
+
+```slint
+pure function area(a: int, b: int) -> int { return a * b; }
+```
+
+```go
+a, err := win.Area(3, 4) // a == 12
+```
+
+### Globals
+
+A `global` becomes an accessor returning a typed handle with the same
+property/callback/function methods.
+
+```slint
+export global Logic {
+    in-out property <int> score;
+    pure callback greeting(string) -> string;
+}
+```
+
+```go
+win.Logic().SetScore(10)
+win.Logic().OnGreeting(func(a0 string) string { return "Hi " + a0 })
+```
+
+### Type mappings
+
+| `.slint` type | Go type |
+| --- | --- |
+| `int` | `int` |
+| `float`, `length`, `physical-length`, `duration`, `angle` | `float64` |
+| `string` | `string` |
+| `bool` | `bool` |
+| `color` | `slint.Color` |
+| `image` | `*slint.Image` |
+| `[T]` (array) | `[]T` |
+| struct | a generated struct type (e.g. `ui.Point`) |
+| enum | a generated string type (e.g. `ui.Mode`) |
+| `brush` | `any` — a `slint.Color` or `slint.Gradient` (see [Dynamic API](#dynamic-runtime-api)) |
+
+### Arrays
+
+Array properties map to Go slices. The setter takes a whole slice (a snapshot);
+the getter returns a snapshot.
+
+```slint
+in-out property <[string]> items;
+```
+
+```go
+win.SetItems([]string{"a", "b", "c"})
+items, _ := win.Items()
+```
+
+For lists that update row-by-row at runtime (insert/remove/edit while shown), use a
+live model via the [dynamic API](#dynamic-runtime-api).
+
+### Structs
+
+An exported `struct` becomes a Go struct with exported fields. Build it with a
+struct literal and pass it to a setter.
+
+```slint
+export struct Point { x: int, y: int }
+export component AppWindow inherits Window {
+    in-out property <Point> origin;
+}
+```
+
+```go
+win.SetOrigin(ui.Point{X: 1, Y: 2})
+p, _ := win.Origin() // p.X, p.Y
+```
+
+### Enums
+
+An exported `enum` becomes a string-typed constant set.
+
+```slint
+export enum Mode { idle, active }
+export component AppWindow inherits Window {
+    in-out property <Mode> mode;
+}
+```
+
+```go
+win.SetMode(ui.ModeActive)
+```
+
+---
+
+## Multi-file projects
+
+A `.slint` may import other `.slint` files:
+
+```slint
+import { Card } from "components/card.slint";
+```
+
+`goslint generate` walks the import graph and **embeds every imported file**, so the
+built binary is still self-contained — no `.slint` tree is needed at run time.
+(`@library` imports are the exception: they still resolve via library paths.) See
+[`cmd/examples/multifile`](cmd/examples/multifile).
+
+---
+
+## Live development
+
+`goslint dev .` runs your app and watches the project:
+
+- editing a **`.slint`** triggers a fast **restart** (the generated code reads its
+  markup from disk, so cosmetic changes show up without a Go rebuild);
+- editing a **`.go`** triggers a **rebuild**.
+
+When you change a `.slint`'s *interface* (add/rename a property or callback), run
+`go generate ./...` to refresh the typed methods.
+
+---
+
+## Dynamic (runtime) API
+
+The typed API is generated on top of a dynamic runtime in the `slint` package. Use
+it directly when you need things codegen can't give you: compiling `.slint` chosen
+or edited **at run time**, **live, mutating models**, or gradient **brushes**.
+
+```go
+app, _ := slint.Compile(markup)        // or CompileFile / CompileSource
+win, _ := app.Create("AppWindow")
+defer win.Close()
+
+win.Set("counter", 42)                  // values are mapped automatically
+n, _ := win.Int("counter")              // typed read helpers: Int/Float/Bool/Str
+win.OnCallback("increment", func(args []any) any { return nil })
+win.Run()
+```
+
+Value mapping: numbers ↔ `float64`, `string`, `bool`, struct ↔ `map[string]any`,
+enum ↔ `slint.Enum`, color ↔ `slint.Color`, image ↔ `*slint.Image`, array ↔ `[]any`
+(read) / `slint.SliceModel` (live, write).
+
+**Live models.** Back a list with a `slint.SliceModel` (or implement `slint.Model`)
+and mutate it while the UI is shown:
+
+```go
+m := slint.NewSliceModel("a", "b")
+win.Set("items", m)
+m.Append("c")        // the view updates
+```
+
+**Brushes.** A `brush` property accepts a `slint.Color` or a `slint.Gradient`:
+
+```go
+win.Set("bg", slint.Gradient{Angle: 90, Stops: []slint.GradientStop{
+	{Pos: 0, Color: slint.Color{R: 0, G: 0, B: 0, A: 255}},
+	{Pos: 1, Color: slint.Color{R: 0, G: 120, B: 255, A: 255}},
+}})
+```
+
+Globals and functions have `…Global` variants: `GetGlobal`/`SetGlobal`,
+`OnGlobalCallback`, `InvokeGlobal`.
+
+---
+
+## Window, timers, and threading
+
+```go
+win.SetWindowSize(800, 600)
+win.SetFullscreen(true)            // also SetMaximized / SetMinimized
+win.RequestRedraw()
+```
+
+Timers run on the event loop:
+
+```go
+slint.SingleShot(500, func() { /* once, after 500ms */ })
+
+t := slint.NewTimer()
+t.Start(slint.TimerRepeated, 1000, func() { /* every second */ })
+```
+
+**Threading.** Slint's context is thread-local. Call `runtime.LockOSThread()` in
+`init` (the scaffold does this), and marshal any UI change made from another
+goroutine through `slint.InvokeFromEventLoop(func(){ … })`.
+
+---
+
+## Shipping
+
+```sh
+goslint build -o myapp .                 # one self-contained desktop binary
+goslint android build -o myapp.apk .     # signed APK (arm64-v8a + x86_64)
+```
+
+Prefer plain `go`? `eval "$(goslint env)"; go build -tags goslint_pkgconfig .`
+
+**Android.** Your package needs a `//go:build android` entry exporting
+`goslint_android_main`; `goslint init` scaffolds it (`app_android.go`). The build
+downloads the prebuilt `libgoslint.so` per ABI, cross-builds your package as a
+c-shared, and packages + signs. Point `ANDROID_HOME`/`ANDROID_NDK_HOME` at your SDK
+and NDK; flags set `-package`, `-label`, `-abi`, `-min-sdk`, `-keystore`, etc. (a
+debug keystore is created automatically).
+
+---
+
+## Reference
+
+- [`cmd/examples`](cmd/examples) — runnable examples (typed: `counter`, `clock`,
+  `typed`, `multifile`; dynamic: `todo`, `window`, `gradient`, `interop`).
+- [README.md](README.md) — overview, install, platform support, license.
