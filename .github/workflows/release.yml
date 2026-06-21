@@ -85,10 +85,45 @@ jobs:
           cargo build --release --target ${{ matrix.rust }}
           libs="$(cargo rustc --release --target ${{ matrix.rust }} --crate-type staticlib -- \
                     --print native-static-libs 2>&1 | sed -n 's/.*native-static-libs: //p' | tail -1)"
-          echo "LIBS=$libs" >> "$GITHUB_ENV"
           mkdir -p "$GITHUB_WORKSPACE/dist"
-          cp "target/${{ matrix.rust }}/release/libgoslint.a" \
-             "$GITHUB_WORKSPACE/dist/libgoslint-${{ matrix.target }}.a"
+          dest="$GITHUB_WORKSPACE/dist/libgoslint-${{ matrix.target }}.a"
+          cp "target/${{ matrix.rust }}/release/libgoslint.a" "$dest"
+
+          # Windows: the `windows` crate (via winit) needs umbrella import libs like
+          # `-lwindows.0.52.0`, whose .a files ship inside the windows_*_gnu crate and
+          # are NOT present on a user's machine. Merge them INTO libgoslint.a so the
+          # shipped archive is self-contained, and drop the -lwindows.* tokens from the
+          # published link line (their symbols now live in libgoslint.a).
+          if [ "${{ matrix.target }}" = "windows_amd64" ]; then
+            artool=x86_64-w64-mingw32-ar
+            newlibs=""
+            merge=""
+            for tok in $libs; do
+              case "$tok" in
+                -lwindows.*)
+                  name="lib${tok#-l}.a"
+                  path="$(find "$HOME/.cargo/registry/src" "$PWD/target" -name "$name" 2>/dev/null | head -1)"
+                  if [ -n "$path" ]; then
+                    merge="$merge $path"
+                  else
+                    echo "WARN: $name not found; keeping $tok on the link line" >&2
+                    newlibs="$newlibs $tok"
+                  fi
+                  ;;
+                *) newlibs="$newlibs $tok" ;;
+              esac
+            done
+            if [ -n "$merge" ]; then
+              # Write the MRI script via echo so the ar commands have no leading space.
+              { echo "OPEN $dest"; for p in $merge; do echo "ADDLIB $p"; done; echo "SAVE"; echo "END"; } > merge.mri
+              cat merge.mri
+              "$artool" -M < merge.mri
+              echo "merged windows import libs:$merge"
+            fi
+            libs="$(echo "$newlibs" | xargs)"
+          fi
+
+          echo "LIBS=$libs" >> "$GITHUB_ENV"
 
       - name: Build shared lib (android)
         if: matrix.kind == 'shared'

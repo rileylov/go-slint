@@ -82,6 +82,12 @@ cdylib `.so`; `goslint android build` cross-builds the user's package as a
 c-shared, bundles both `.so` per ABI, and signs the APK (Go has no c-archive on
 android, so the Rust `android_main` `dlopen`s the Go lib).
 
+**Windows static lib:** the `windows` crate (via winit) lists umbrella import libs
+(`-lwindows.0.52.0` …) in `native-static-libs`; those `.a` files live inside the
+`windows_*_gnu` crate and aren't on a user's machine. The release step merges them
+into `libgoslint.a` (an `ar -M` MRI `ADDLIB`) and strips the `-lwindows.*` tokens
+from the published link line, so the shipped archive is self-contained.
+
 ## Tests
 
 `internal/conformance` runs Slint's full `.slint` corpus (auto-discovers all case

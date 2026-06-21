@@ -35,7 +35,7 @@ const modulePath = "github.com/rileylov/go-slint"
 // defaultLibVersion is the fallback when the version can't be read from a go.mod
 // (e.g. the CLI run outside a project, or inside this repo during development).
 // Overridable via GOSLINT_LIB_VERSION.
-const defaultLibVersion = "v0.3.2"
+const defaultLibVersion = "v0.3.3"
 
 // defaultBaseURL is the GitHub Releases download root. The release for libVersion
 // is expected at <defaultBaseURL>/<libVersion>/{manifest.json,<archives>}.
