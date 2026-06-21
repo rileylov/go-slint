@@ -56,6 +56,8 @@ func main() {
 		err = cmdInit(os.Args[2:])
 	case "setup":
 		err = cmdSetup(os.Args[2:])
+	case "generate":
+		err = cmdGenerate(os.Args[2:])
 	case "dev":
 		err = cmdDev(os.Args[2:])
 	case "build":
@@ -89,6 +91,7 @@ func usage() {
 Usage:
   goslint init [-module path] [dir]                   scaffold a new go-slint project
   goslint setup [-target <goos>_<goarch>] [-force]   download the native lib + write goslint.pc
+  goslint generate [-o out.go] [-package p] <in.slint>  generate a typed Go API from a .slint
   goslint dev   [package]                             run with live reload (edit .slint, save)
   goslint build [go build args...]                    go build with the lib wired up
   goslint run   [go run args...]                      go run   with the lib wired up

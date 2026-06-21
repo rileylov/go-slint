@@ -1,0 +1,153 @@
+// Command goslint-gen generates a typed Go API from a .slint file. It compiles
+// the markup (so it needs the native lib — run it in-project via `goslint
+// generate`, which sets the linker env), introspects the component's interface,
+// and emits typed wrappers over the dynamic slint runtime.
+//
+//	goslint generate -o ui/app.slint.go app.slint
+//
+// or as a directive:  //go:generate goslint generate -o ui/app.slint.go app.slint
+package main
+
+import (
+	"encoding/json"
+	"flag"
+	"fmt"
+	"go/format"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/rileylov/go-slint/slintsys"
+)
+
+func main() {
+	out := flag.String("o", "", "output .go file (default <input>.go)")
+	pkg := flag.String("package", "", "package name (default: output directory name)")
+	component := flag.String("component", "", "component to wrap (default: last exported)")
+	style := flag.String("style", "fluent", "widget style baked into the generated compile()")
+	flag.Parse()
+	in := flag.Arg(0)
+	if in == "" {
+		fmt.Fprintln(os.Stderr, "usage: goslint generate [-o out.go] [-package p] [-component C] <input.slint>")
+		os.Exit(2)
+	}
+	if *out == "" {
+		*out = strings.TrimSuffix(in, filepath.Ext(in)) + ".go"
+	}
+	if *pkg == "" {
+		abs, _ := filepath.Abs(*out)
+		*pkg = sanitizePkg(filepath.Base(filepath.Dir(abs)))
+	}
+
+	src, err := os.ReadFile(in)
+	if err != nil {
+		fatal(err)
+	}
+
+	// compile + introspect
+	c := slintsys.NewCompiler()
+	defer c.Free()
+	c.SetStyle(*style)
+	c.SetIncludePaths([]string{filepath.Dir(in)})
+	r := c.BuildFromSource(string(src), in)
+	defer r.Free()
+	if r.HasErrors() {
+		var msgs []string
+		for _, d := range r.Diagnostics() {
+			if d.Level == 0 {
+				msgs = append(msgs, d.Message)
+			}
+		}
+		fatal(fmt.Errorf("compile %s:\n  %s", in, strings.Join(msgs, "\n  ")))
+	}
+	name := *component
+	if name == "" {
+		names := r.ComponentNames()
+		if len(names) == 0 {
+			fatal(fmt.Errorf("%s exports no components", in))
+		}
+		name = names[len(names)-1]
+	}
+	def := r.Component(name)
+	if def == nil {
+		fatal(fmt.Errorf("component %q not found in %s", name, in))
+	}
+	defer def.Free()
+
+	var iface Interface
+	if err := json.Unmarshal([]byte(def.TypeInfoJSON()), &iface); err != nil {
+		fatal(fmt.Errorf("parse type info: %w", err))
+	}
+
+	code, err := generate(&iface, *pkg, *style, string(src))
+	if err != nil {
+		fatal(err)
+	}
+	if err := os.WriteFile(*out, code, 0o644); err != nil {
+		fatal(err)
+	}
+	fmt.Printf("generated %s (%s.%s)\n", *out, *pkg, exported(iface.Component))
+}
+
+func fatal(err error) { fmt.Fprintln(os.Stderr, "goslint-gen:", err); os.Exit(1) }
+
+func sanitizePkg(s string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(s) {
+		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' {
+			b.WriteRune(r)
+		}
+	}
+	if b.Len() == 0 {
+		return "ui"
+	}
+	return b.String()
+}
+
+// ---- introspection JSON (mirrors rust/goslint-sys/src/introspect.rs) ----
+
+type TypeInfo struct {
+	Kind string    `json:"kind"`
+	Elem *TypeInfo `json:"elem,omitempty"`
+	Name string    `json:"name,omitempty"`
+}
+type Prop struct {
+	Name string   `json:"name"`
+	Ty   TypeInfo `json:"ty"`
+}
+type Callable struct {
+	Name     string     `json:"name"`
+	Args     []TypeInfo `json:"args"`
+	ArgNames []string   `json:"arg_names"`
+	Ret      TypeInfo   `json:"ret"`
+}
+type GlobalInfo struct {
+	Name       string     `json:"name"`
+	Properties []Prop     `json:"properties"`
+	Callbacks  []Callable `json:"callbacks"`
+	Functions  []Callable `json:"functions"`
+}
+type StructInfo struct {
+	Fields []Prop `json:"fields"`
+}
+type EnumInfo struct {
+	Values []string `json:"values"`
+}
+type Interface struct {
+	Component  string                `json:"component"`
+	Properties []Prop                `json:"properties"`
+	Callbacks  []Callable            `json:"callbacks"`
+	Functions  []Callable            `json:"functions"`
+	Globals    []GlobalInfo          `json:"globals"`
+	Structs    map[string]StructInfo `json:"structs"`
+	Enums      map[string]EnumInfo   `json:"enums"`
+}
+
+func format_(code string) ([]byte, error) {
+	b, err := format.Source([]byte(code))
+	if err != nil {
+		// return the unformatted source too, to aid debugging
+		return []byte(code), fmt.Errorf("generated code did not parse: %w", err)
+	}
+	return b, nil
+}

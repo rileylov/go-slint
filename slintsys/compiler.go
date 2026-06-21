@@ -156,6 +156,11 @@ type Definition struct{ ptr *C.GoComponentDefinition }
 
 func (d *Definition) Name() string { return takeString(C.goslint_definition_name(d.ptr)) }
 
+// TypeInfoJSON returns the component's typed interface as JSON (for codegen).
+func (d *Definition) TypeInfoJSON() string {
+	return takeString(C.goslint_definition_type_info(d.ptr))
+}
+
 func (d *Definition) Create() (*Instance, error) {
 	p := C.goslint_definition_create(d.ptr)
 	if p == nil {

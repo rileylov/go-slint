@@ -65,6 +65,10 @@ How it fits together:
 - **`goslint setup`** reads the go-slint version from your `go.mod` and downloads
   the matching prebuilt `libgoslint` for your platform (checksum-verified) into
   `~/.cache/goslint/`, writing a pkg-config file that describes how to link it.
+- **`goslint generate`** emits a **typed Go API** from a `.slint` (compile-checked
+  property/callback names, typed args, generated structs & enums) over the dynamic
+  runtime — e.g. `win.SetName("Gophers")`, `win.Logic().OnMakeGreeting(func(s string) string {…})`.
+  Use it directly or as `//go:generate goslint generate -o ui/app.slint.go app.slint`.
 - **`goslint dev`** runs your app and live-reloads `.slint` edits with no Go
   rebuild (the interpreter loads markup at runtime); it rebuilds + restarts on
   `.go` changes.

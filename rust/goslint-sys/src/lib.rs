@@ -13,6 +13,7 @@ mod android;
 mod compiler;
 mod graphics;
 mod instance;
+mod introspect;
 mod model;
 mod structs;
 mod timer;

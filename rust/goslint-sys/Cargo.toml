@@ -22,6 +22,8 @@ slint-interpreter = { path = "../../slint/internal/interpreter", default-feature
     "backend-winit",
     "renderer-femtovg",
     "renderer-software",
+    # exposes properties_and_callbacks() (rich langtype::Type) for `goslint generate`
+    "internal",
 ] }
 # Headless platform for tests (init_no_event_loop / mock time). The `internal`
 # feature exposes configure_test_fonts (embedded NotoSans for deterministic text).
@@ -30,6 +32,13 @@ i-slint-backend-testing = { path = "../../slint/internal/backends/testing", feat
 # interpreter). Same path as the interpreter's dep, so Cargo unifies the crate.
 i-slint-core = { path = "../../slint/internal/core", features = ["default"] }
 spin_on = "0.1"
+# For `goslint generate` introspection only: read the rich langtype::Type exposed
+# by the interpreter's properties_and_callbacks() to emit a typed-codegen JSON.
+# This is the one place we touch the compiler's (less-stable) internal types — it's
+# isolated to introspect.rs and only affects `goslint generate`, not the runtime.
+i-slint-compiler = { path = "../../slint/internal/compiler" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 
 # Android: Slint's NativeActivity backend (pulls skia). Only compiled for android,
 # so desktop builds are unaffected. android_main lives in src/android.rs.

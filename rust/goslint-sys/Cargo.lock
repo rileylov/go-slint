@@ -1428,7 +1428,10 @@ dependencies = [
  "i-slint-backend-android-activity",
  "i-slint-backend-selector",
  "i-slint-backend-testing",
+ "i-slint-compiler",
  "i-slint-core",
+ "serde",
+ "serde_json",
  "slint-interpreter",
  "spin_on",
 ]

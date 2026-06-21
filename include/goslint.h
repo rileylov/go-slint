@@ -66,6 +66,8 @@ void   goslint_result_diagnostic(const GoCompilationResult *r, size_t i,
 size_t goslint_result_component_count(const GoCompilationResult *r);
 char  *goslint_result_component_name(const GoCompilationResult *r, size_t i);
 GoComponentDefinition *goslint_result_component(const GoCompilationResult *r, const char *name);
+/* JSON of a component's typed interface (for `goslint generate`); owned string */
+char *goslint_definition_type_info(const GoComponentDefinition *d);
 void   goslint_result_free(GoCompilationResult *r);
 
 /* ---- component definition ---- */
