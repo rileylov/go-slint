@@ -42,8 +42,10 @@ const defaultLibVersion = "v0.3.0"
 // Override the whole base (e.g. a local file:// dir) with GOSLINT_BASE_URL.
 const defaultBaseURL = "https://github.com/rileylov/go-slint/releases/download"
 
-// buildTag selects the pkg-config link path in the slintsys package.
-const buildTag = "goslint_pkgconfig"
+// buildTag selects slintsys' link path for the CLI: goslint_extlib takes its link
+// flags from CGO_LDFLAGS (which the CLI sets), so no pkg-config is needed. The
+// goslint_pkgconfig tag remains available for plain `go build` users who prefer it.
+const buildTag = "goslint_extlib"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -193,12 +195,18 @@ func cmdSetup(args []string) error {
 	if err := os.WriteFile(pcpath, []byte(buildPC(filepath.Dir(libpath), t.Libs, slint)), 0o644); err != nil {
 		return err
 	}
+	// Also write the raw cgo link line so the CLI can build without pkg-config.
+	ldpath := filepath.Join(pcdir, "cgo_ldflags")
+	if err := os.WriteFile(ldpath, []byte(linkLine(filepath.Dir(libpath), t.Libs)), 0o644); err != nil {
+		return err
+	}
 
 	fmt.Printf("\n✓ go-slint native lib ready for %s (Slint %s)\n", *tgt, slint)
 	fmt.Printf("  lib: %s\n  pc:  %s\n\n", libpath, pcpath)
-	fmt.Println("Build your app either way:")
-	fmt.Printf("  goslint build ./...                              # wrapper sets everything\n")
-	fmt.Printf("  PKG_CONFIG_PATH=%q go build -tags %s ./...\n", pcdir, buildTag)
+	fmt.Println("Build & run with the wrapper (no pkg-config needed):")
+	fmt.Println("  goslint run .      # or: goslint dev .   /   goslint build -o app .")
+	fmt.Println("\nPrefer plain go? Run `eval \"$(goslint env)\"` first, then:")
+	fmt.Printf("  go build -tags %s ./...\n", buildTag)
 	return nil
 }
 
@@ -262,9 +270,12 @@ Libs: -L${libdir} -Wl,--start-group -l:libgoslint.a %s -Wl,--end-group
 
 func cmdGo(sub string, args []string) error {
 	tgt := hostTarget()
-	pcdir := pkgconfigDir(tgt)
-	if _, err := os.Stat(filepath.Join(pcdir, "goslint.pc")); err != nil {
-		return fmt.Errorf("not set up for %s — run: goslint setup", tgt)
+	env, err := wrapperEnv(tgt)
+	if err != nil {
+		return err
+	}
+	if err := ensureCC(); err != nil {
+		return err
 	}
 	// Refresh generated typed wrappers from their .slint first, so build/run always
 	// reflect the current markup (the embedded source is the source of truth).
@@ -273,9 +284,62 @@ func cmdGo(sub string, args []string) error {
 	}
 	goArgs := append([]string{sub, "-tags", buildTag}, args...)
 	cmd := exec.Command("go", goArgs...)
-	cmd.Env = append(os.Environ(), "PKG_CONFIG_PATH="+prependPath(pcdir))
+	cmd.Env = env
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	return cmd.Run()
+}
+
+// wrapperEnv returns the process env plus the cgo settings that link the prebuilt
+// shim without pkg-config: CGO_ENABLED=1 and CGO_LDFLAGS pointing at the lib that
+// `goslint setup` downloaded. Errors if the target isn't set up yet.
+func wrapperEnv(tgt string) ([]string, error) {
+	ld, err := cgoLDFLAGS(tgt)
+	if err != nil {
+		return nil, err
+	}
+	return append(os.Environ(), "CGO_ENABLED=1", "CGO_LDFLAGS="+ld), nil
+}
+
+// cgoLDFLAGS returns the link line for the cached static shim (read from the file
+// `goslint setup` writes). Forward slashes keep it valid for MinGW on Windows.
+func cgoLDFLAGS(tgt string) (string, error) {
+	b, err := os.ReadFile(filepath.Join(pkgconfigDir(tgt), "cgo_ldflags"))
+	if err != nil {
+		return "", fmt.Errorf("not set up for %s — run: goslint setup", tgt)
+	}
+	return strings.TrimSpace(string(b)), nil
+}
+
+// linkLine builds the CGO_LDFLAGS for the static shim in libdir with libs being the
+// native-static-libs the manifest records.
+func linkLine(libdir, libs string) string {
+	return fmt.Sprintf("-L%s -Wl,--start-group -l:libgoslint.a %s -Wl,--end-group",
+		filepath.ToSlash(libdir), libs)
+}
+
+// ensureCC verifies a C compiler is available (cgo needs one) and returns an
+// actionable, OS-specific error if not. It does not run the compiler.
+func ensureCC() error {
+	candidates := []string{os.Getenv("CC"), "cc", "gcc", "clang"}
+	if runtime.GOOS == "windows" {
+		candidates = []string{os.Getenv("CC"), "gcc", "x86_64-w64-mingw32-gcc", "cc", "clang"}
+	}
+	for _, c := range candidates {
+		if c != "" && inPath(c) {
+			return nil
+		}
+	}
+	hint := "install a C compiler and ensure it's on PATH"
+	switch runtime.GOOS {
+	case "windows":
+		hint = "install MinGW-w64 gcc and ensure it's on PATH (e.g. `winget install BrechtSanders.WinLibs.POSIX.UCRT.Base`, or via MSYS2/scoop/choco). " +
+			"The prebuilt lib uses the GNU toolchain, so use MinGW gcc — not MSVC."
+	case "darwin":
+		hint = "install the Xcode command-line tools: xcode-select --install"
+	case "linux":
+		hint = "install gcc or clang and the fontconfig dev headers (e.g. `apt install build-essential libfontconfig-dev`)"
+	}
+	return fmt.Errorf("no C compiler found — cgo needs one.\n  → %s", hint)
 }
 
 // runGoGenerate runs `go generate ./...` in dir (CWD if empty) so //go:generate
@@ -285,7 +349,7 @@ func cmdGo(sub string, args []string) error {
 func runGoGenerate(dir string) error {
 	cmd := exec.Command("go", "generate", "./...")
 	cmd.Dir = dir
-	cmd.Env = withGoslintOnPath(os.Environ())
+	cmd.Env = append(withGoslintOnPath(os.Environ()), "CGO_ENABLED=1")
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	return cmd.Run()
 }
@@ -313,8 +377,16 @@ func withGoslintOnPath(env []string) []string {
 	return out
 }
 
+// cmdEnv prints shell exports so a plain `go build -tags goslint_extlib` links the
+// shim without pkg-config. (PKG_CONFIG_PATH is also printed for the goslint_pkgconfig
+// tag, if you prefer it.)
 func cmdEnv(args []string) error {
-	fmt.Printf("export PKG_CONFIG_PATH=%q\n", prependPath(pkgconfigDir(hostTarget())))
+	tgt := hostTarget()
+	if ld, err := cgoLDFLAGS(tgt); err == nil {
+		fmt.Println("export CGO_ENABLED=1")
+		fmt.Printf("export CGO_LDFLAGS=%q\n", ld)
+	}
+	fmt.Printf("export PKG_CONFIG_PATH=%q\n", prependPath(pkgconfigDir(tgt)))
 	return nil
 }
 
@@ -332,29 +404,27 @@ func cmdDoctor(args []string) error {
 	fmt.Printf("target:        %s\nexpected lib:  %s\nrelease base:  %s\n\n", tgt, version(), releaseBase())
 
 	report("go toolchain", inPath("go"))
-	cc := os.Getenv("CC")
-	if cc == "" {
-		cc = map[string]string{"windows": "gcc"}[runtime.GOOS]
-		if cc == "" {
-			cc = "cc"
-		}
-	}
-	report("C compiler ("+cc+")", inPath(cc))
-	havePC := inPath("pkg-config")
-	report("pkg-config", havePC)
 
-	pc := filepath.Join(pkgconfigDir(tgt), "goslint.pc")
-	if _, err := os.Stat(pc); err == nil {
-		report("native lib (goslint.pc)", true)
-		if havePC {
-			out, err := exec.Command("pkg-config", "--libs", "goslint").Output()
-			if err == nil {
-				fmt.Printf("               links: %s", out)
-			}
-		}
+	// C compiler (required for cgo). Surface the actionable hint if missing.
+	if err := ensureCC(); err != nil {
+		report("C compiler", false)
+		fmt.Printf("               → %s\n", strings.TrimPrefix(err.Error(), "no C compiler found — cgo needs one.\n  → "))
 	} else {
-		report("native lib (goslint.pc)", false)
+		report("C compiler", true)
+	}
+
+	if _, err := cgoLDFLAGS(tgt); err == nil {
+		report("native lib", true)
+	} else {
+		report("native lib", false)
 		fmt.Println("               → run: goslint setup")
+	}
+
+	// pkg-config is optional — only for `go build -tags goslint_pkgconfig`.
+	if inPath("pkg-config") {
+		report("pkg-config (optional)", true)
+	} else {
+		fmt.Println("  – pkg-config (optional; not needed — goslint sets CGO_LDFLAGS directly)")
 	}
 	return nil
 }

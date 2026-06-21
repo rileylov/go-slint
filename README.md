@@ -34,8 +34,10 @@ available for compiling `.slint` at runtime. **→ See the [Guide](DOCS.md).**
 
 ## Quickstart
 
-You need **Go** and a **C compiler** (for cgo) — *not* Rust; the native Slint
-library is downloaded prebuilt.
+You need **Go** and a **C compiler** for cgo — gcc/clang on Linux, the Xcode
+command-line tools on macOS, **MinGW-w64 gcc on Windows** (not MSVC). You do *not*
+need Rust or pkg-config; the native Slint library is downloaded prebuilt. Run
+`goslint doctor` to check your toolchain.
 
 ```sh
 go install github.com/rileylov/go-slint/cmd/goslint@latest
@@ -62,7 +64,7 @@ goslint android build -o myapp.apk .    # signed APK (arm64-v8a + x86_64)
 | :-- | :-- |
 | Linux (amd64, arm64) | ✅ tested |
 | Android (arm64-v8a, x86_64) | ✅ tested |
-| Windows (amd64) | ⚠️ builds & cross-compiles; not yet verified on hardware |
+| Windows (amd64) | ⚠️ builds with MinGW-w64 gcc; rendering not yet verified on hardware |
 | macOS, iOS | ❌ (no hardware to test on) |
 
 Desktop targets link `libgoslint` (and the Slint interpreter) statically, leaving

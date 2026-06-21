@@ -27,9 +27,14 @@ make conformance
 make update-slint [SLINT_REF=v1.x]   # bump the pin, rebuild, verify, record .slint-version
 ```
 
-In-repo builds link the staged lib via the default build tag (`link_dev.go`); the
-shipped path uses `-tags goslint_pkgconfig` + pkg-config (`link_pkgconfig.go`),
-which `goslint setup`/`build` drive. Updating Slint is low-friction: the shim binds
+Three link modes (one cgo file each, tag-gated): `link_dev.go` (default, no tag —
+links the lib `make lib` stages, for in-repo build/test); `link_extlib.go` (`-tags
+goslint_extlib` — link flags come from `CGO_LDFLAGS`, which the `goslint` CLI sets
+from the downloaded lib; **this is what build/run/dev/generate use**, so no
+pkg-config is needed on any platform); `link_pkgconfig.go` (`-tags goslint_pkgconfig`
+— `#cgo pkg-config: goslint`, for users who prefer pkg-config). `goslint setup`
+writes both `goslint.pc` and a `cgo_ldflags` file; the CLI reads the latter and
+exports `CGO_ENABLED=1` + `CGO_LDFLAGS`. Updating Slint is low-friction: the shim binds
 only the stable `slint-interpreter` API, so a breaking change surfaces as a
 localized Rust compile error in `make lib`, not a silent runtime break.
 

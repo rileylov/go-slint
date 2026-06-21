@@ -16,6 +16,11 @@ self-contained binary.
 
 ## Quick start
 
+**Prerequisites:** Go and a **C compiler** for cgo — gcc/clang on Linux, the Xcode
+command-line tools on macOS, **MinGW-w64 gcc on Windows** (the prebuilt lib uses the
+GNU toolchain, so MSVC won't link). You do *not* need Rust or pkg-config. `goslint
+doctor` checks all of this.
+
 **1. Scaffold a project** (creates `go.mod`, `app.slint`, `main.go`, and the
 generated `ui/` package):
 
@@ -331,7 +336,10 @@ goslint build -o myapp .                 # one self-contained desktop binary
 goslint android build -o myapp.apk .     # signed APK (arm64-v8a + x86_64)
 ```
 
-Prefer plain `go`? `eval "$(goslint env)"; go build -tags goslint_pkgconfig .`
+Prefer plain `go`? `eval "$(goslint env)"` exports `CGO_LDFLAGS`, then
+`go build -tags goslint_extlib .` — no pkg-config required. (If you'd rather use
+pkg-config, the `goslint_pkgconfig` tag still works with the `goslint.pc` that
+`setup` also writes.)
 
 **Android.** Your package needs a `//go:build android` entry exporting
 `goslint_android_main`; `goslint init` scaffolds it (`app_android.go`). The build

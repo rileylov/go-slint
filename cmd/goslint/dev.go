@@ -25,16 +25,16 @@ func cmdDev(args []string) error {
 	}
 
 	tgt := hostTarget()
-	pcdir := pkgconfigDir(tgt)
-	if !exists(filepath.Join(pcdir, "goslint.pc")) {
-		return fmt.Errorf("not set up for %s — run: goslint setup", tgt)
+	env, err := wrapperEnv(tgt)
+	if err != nil {
+		return err
+	}
+	if err := ensureCC(); err != nil {
+		return err
 	}
 
 	bin := filepath.Join(os.TempDir(), "goslint-dev-"+sanitizeID(filepath.Base(absOr(pkg))))
-	env := append(os.Environ(),
-		"PKG_CONFIG_PATH="+prependPath(pcdir),
-		"GOSLINT_DEV=1",
-	)
+	env = append(env, "GOSLINT_DEV=1")
 
 	// genDir is where `go generate ./...` runs to refresh typed wrappers.
 	genDir := pkg
