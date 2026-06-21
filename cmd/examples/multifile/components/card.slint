@@ -1,0 +1,17 @@
+import { VerticalBox } from "std-widgets.slint";
+
+// Card is a reusable component imported by app.slint, demonstrating that the typed
+// generator embeds every imported .slint so the binary is self-contained.
+export component Card inherits Rectangle {
+    in property <string> title;
+    in property <int> value;
+
+    background: #2a2a2a;
+    border-radius: 8px;
+    height: 96px;
+
+    VerticalBox {
+        Text { text: root.title; font-size: 14px; color: #999; }
+        Text { text: root.value; font-size: 34px; horizontal-alignment: center; }
+    }
+}

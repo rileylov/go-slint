@@ -73,7 +73,11 @@ struct Registry {
 }
 
 fn simple(kind: &'static str) -> TypeInfo {
-    TypeInfo { kind, elem: None, name: None }
+    TypeInfo {
+        kind,
+        elem: None,
+        name: None,
+    }
 }
 
 fn type_info(ty: &LangType, reg: &mut Registry) -> TypeInfo {
@@ -104,7 +108,11 @@ fn type_info(ty: &LangType, reg: &mut Registry) -> TypeInfo {
             reg.enums.entry(name.clone()).or_insert_with(|| EnumInfo {
                 values: e.values.iter().map(|v| v.to_string()).collect(),
             });
-            TypeInfo { kind: "enum", elem: None, name: Some(name) }
+            TypeInfo {
+                kind: "enum",
+                elem: None,
+                name: Some(name),
+            }
         }
         // anonymous structs, styled-text, path data, etc. -> dynamic fallback
         _ => simple("other"),
@@ -121,11 +129,18 @@ fn named_struct(s: &LangStruct, reg: &mut Registry) -> TypeInfo {
                 let fields = s
                     .fields
                     .iter()
-                    .map(|(k, t)| Property { name: k.to_string(), ty: type_info(t, reg) })
+                    .map(|(k, t)| Property {
+                        name: k.to_string(),
+                        ty: type_info(t, reg),
+                    })
                     .collect();
                 reg.structs.insert(name.clone(), StructInfo { fields });
             }
-            TypeInfo { kind: "struct", elem: None, name: Some(name) }
+            TypeInfo {
+                kind: "struct",
+                elem: None,
+                name: Some(name),
+            }
         }
         None => simple("other"), // anonymous struct -> dynamic
     }
@@ -151,7 +166,10 @@ fn classify(
     match ty {
         LangType::Callback(f) => cbs.push(callable(name, f, reg)),
         LangType::Function(f) => fns.push(callable(name, f, reg)),
-        _ => props.push(Property { name, ty: type_info(ty, reg) }),
+        _ => props.push(Property {
+            name,
+            ty: type_info(ty, reg),
+        }),
     }
 }
 
@@ -161,7 +179,9 @@ fn classify(
 /// # Safety
 /// `d` must be NULL or a definition pointer.
 #[no_mangle]
-pub unsafe extern "C" fn goslint_definition_type_info(d: *const ComponentDefinition) -> *mut c_char {
+pub unsafe extern "C" fn goslint_definition_type_info(
+    d: *const ComponentDefinition,
+) -> *mut c_char {
     guard(std::ptr::null_mut(), || {
         let def = match d.as_ref() {
             Some(d) => d,
@@ -188,7 +208,12 @@ pub unsafe extern "C" fn goslint_definition_type_info(d: *const ComponentDefinit
                     classify(name, &ty, &mut reg, &mut gp, &mut gc, &mut gf);
                 }
             }
-            globals.push(GlobalInfo { name: g, properties: gp, callbacks: gc, functions: gf });
+            globals.push(GlobalInfo {
+                name: g,
+                properties: gp,
+                callbacks: gc,
+                functions: gf,
+            });
         }
 
         let iface = Interface {

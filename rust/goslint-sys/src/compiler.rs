@@ -3,11 +3,17 @@
 // heap-owned and freed with their matching `_free`.
 
 use crate::{guard, opt_str, set_last_error, to_c_string};
-use slint_interpreter::{
-    CompilationResult, Compiler, ComponentDefinition, DiagnosticLevel,
-};
-use std::ffi::c_char;
-use std::path::PathBuf;
+use slint_interpreter::{CompilationResult, Compiler, ComponentDefinition, DiagnosticLevel};
+use std::ffi::{c_char, c_void, CStr, CString};
+use std::future::{ready, Future};
+use std::path::{Path, PathBuf};
+use std::pin::Pin;
+
+extern "C" {
+    // The Go-returned source string is a C-heap (malloc) string; free it with the
+    // matching C free, not Rust's allocator.
+    fn free(ptr: *mut c_void);
+}
 
 #[no_mangle]
 pub extern "C" fn goslint_compiler_new() -> *mut Compiler {
@@ -92,6 +98,70 @@ pub unsafe extern "C" fn goslint_compiler_set_library_paths(
             }
         }
         c.set_library_paths(m);
+    })
+}
+
+/// A Go-backed fallback loader for `.slint` imports. `load(handle, path)` returns
+/// owned C-heap source (this side frees it) or NULL for "not found".
+struct GoFileLoader {
+    handle: usize,
+    load: extern "C" fn(usize, *const c_char) -> *mut c_char,
+    drop: Option<extern "C" fn(usize)>,
+}
+
+impl GoFileLoader {
+    // A *method* on the whole struct, so the closure capturing `self` keeps the
+    // Drop guard alive across the call (Rust 2021 disjoint-capture gotcha — see
+    // CLAUDE.md). Returns None on a NULL/failed lookup.
+    fn fetch(&self, path: &Path) -> Option<String> {
+        let c = CString::new(path.to_string_lossy().as_bytes()).ok()?;
+        let raw = (self.load)(self.handle, c.as_ptr());
+        if raw.is_null() {
+            return None;
+        }
+        let s = unsafe { CStr::from_ptr(raw) }
+            .to_string_lossy()
+            .into_owned();
+        unsafe { free(raw as *mut c_void) };
+        Some(s)
+    }
+}
+
+impl Drop for GoFileLoader {
+    fn drop(&mut self) {
+        if let Some(d) = self.drop {
+            d(self.handle);
+        }
+    }
+}
+
+/// Set a fallback loader for `.slint` imports not found via the include paths. The
+/// interpreter calls `load` with the resolved import path; returning source lets a
+/// multi-file component compile entirely from memory (no files on disk), while NULL
+/// lets normal resolution proceed. Builtins (e.g. std-widgets) never reach it.
+///
+/// # Safety
+/// `c` must be a valid compiler pointer. `load` must return a C-heap (malloc)
+/// string or NULL. `drop`, if non-NULL, is called once with `handle` when the
+/// loader is released (the compiler is freed).
+#[no_mangle]
+pub unsafe extern "C" fn goslint_compiler_set_file_loader(
+    c: *mut Compiler,
+    handle: usize,
+    load: extern "C" fn(usize, *const c_char) -> *mut c_char,
+    drop: Option<extern "C" fn(usize)>,
+) {
+    guard((), || {
+        let c = match c.as_mut() {
+            Some(c) => c,
+            None => return,
+        };
+        let loader = GoFileLoader { handle, load, drop };
+        c.set_file_loader(
+            move |path| -> Pin<Box<dyn Future<Output = Option<std::io::Result<String>>>>> {
+                Box::pin(ready(loader.fetch(path).map(Ok)))
+            },
+        );
     })
 }
 

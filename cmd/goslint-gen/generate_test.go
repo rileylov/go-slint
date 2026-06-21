@@ -27,7 +27,7 @@ func TestGenerate(t *testing.T) {
 		Enums:   map[string]EnumInfo{"Mode": {Values: []string{"idle", "active"}}},
 	}
 	// generate runs go/format internally, so a nil error means the output is valid Go.
-	code, err := generate(iface, "ui", "fluent", "export component AppWindow inherits Window {}", "../app.slint")
+	code, err := generate(iface, "ui", "fluent", "export component AppWindow inherits Window {}", "../app.slint", nil)
 	if err != nil {
 		t.Fatalf("generate produced invalid Go: %v\n%s", err, code)
 	}
@@ -46,6 +46,40 @@ func TestGenerate(t *testing.T) {
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("generated code missing: %s", want)
+		}
+	}
+	// single-file mode (files=nil) must NOT emit the embedded-loader machinery.
+	if strings.Contains(s, "generatedFiles") || strings.Contains(s, "WithFileLoader") {
+		t.Errorf("single-file output should not embed a file map")
+	}
+}
+
+// TestGenerateMultiFile checks the embed-all path: when imported files are passed,
+// the output embeds them and compiles from memory via a file loader.
+func TestGenerateMultiFile(t *testing.T) {
+	iface := &Interface{Component: "App"}
+	files := map[string]string{
+		"components/widget.slint": `export component Widget {}`,
+		"shared/base.slint":       `export component Base {}`,
+	}
+	code, err := generate(iface, "ui", "fluent",
+		`import { Widget } from "components/widget.slint"; export component App inherits Window {}`,
+		"../app.slint", files)
+	if err != nil {
+		t.Fatalf("generate produced invalid Go: %v\n%s", err, code)
+	}
+	s := string(code)
+	for _, want := range []string{
+		`var generatedEntryName = "app.slint"`,
+		"var generatedFiles = map[string]string{",
+		`"components/widget.slint":`,
+		`"shared/base.slint":`,
+		"func embeddedLoader(path string) (string, bool)",
+		"slint.WithFileLoader(embeddedLoader)",
+		`pathpkg "path"`,
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("multi-file output missing: %s", want)
 		}
 	}
 }

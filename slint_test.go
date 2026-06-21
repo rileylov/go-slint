@@ -2,6 +2,7 @@ package slint_test
 
 import (
 	"os"
+	pathpkg "path"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -487,6 +488,55 @@ func TestSnapshotArraySet(t *testing.T) {
 		t.Fatalf("pts[1] = %#v; want x=8", prows[1])
 	}
 }
+
+// TestFileLoaderEmbedded compiles a multi-file component entirely from in-memory
+// source (no files on disk): the entry imports a nested file, which itself imports
+// a deeper one, all resolved via WithFileLoader. This is the mechanism the typed
+// codegen uses for self-contained multi-file binaries.
+func TestFileLoaderEmbedded(t *testing.T) {
+	files := map[string]string{
+		"components/widget.slint": `import { Base } from "../shared/base.slint";
+			export component Widget inherits Base {
+				in-out property <int> doubled: root.value * 2;
+			}`,
+		"shared/base.slint": `export component Base {
+				in-out property <int> value: 0;
+			}`,
+	}
+	entry := `import { Widget } from "components/widget.slint";
+		export component App inherits Window {
+			in-out property <int> n <=> w.value;
+			out property <int> result: w.doubled;
+			w := Widget {}
+		}`
+
+	var requested []string
+	app, err := slint.CompileSource("app.slint", entry, slint.WithFileLoader(
+		func(path string) (string, bool) {
+			requested = append(requested, path)
+			s, ok := files[pathClean(path)]
+			return s, ok
+		}))
+	if err != nil {
+		t.Fatalf("CompileSource (embedded): %v\nloader saw: %v", err, requested)
+	}
+	defer app.Close()
+	inst, err := app.Create("App")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	defer inst.Close()
+
+	if err := inst.Set("n", 21); err != nil {
+		t.Fatalf("Set(n): %v", err)
+	}
+	if got, _ := inst.Int("result"); got != 42 {
+		t.Fatalf("result = %d; want 42 (loader saw: %v)", got, requested)
+	}
+}
+
+// pathClean normalizes a loader path to a slash-form key, OS-independently.
+func pathClean(p string) string { return pathpkg.Clean(filepath.ToSlash(p)) }
 
 func mustColor(t *testing.T, inst *slint.Instance, name string) slint.Color {
 	t.Helper()

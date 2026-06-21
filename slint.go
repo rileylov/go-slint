@@ -72,6 +72,18 @@ func WithLibraryPaths(libs map[string]string) Option {
 	return func(c *slintsys.Compiler) { c.SetLibraryPaths(libs) }
 }
 
+// FileLoader resolves a `.slint` import path to source; ok=false means "not found"
+// (normal include-path/disk resolution then proceeds). Builtins like std-widgets
+// are handled internally and never passed to it.
+type FileLoader = slintsys.FileLoader
+
+// WithFileLoader installs a fallback resolver for `.slint` imports, letting a
+// multi-file component compile entirely from in-memory source (no files on disk).
+// Generated typed code uses this to embed every imported file.
+func WithFileLoader(fn FileLoader) Option {
+	return func(c *slintsys.Compiler) { c.SetFileLoader(fn) }
+}
+
 // Compile compiles `.slint` source. It returns a [*DiagnosticError] if the
 // source has errors.
 func Compile(source string, opts ...Option) (*Compilation, error) {

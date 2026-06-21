@@ -401,7 +401,11 @@ pub unsafe extern "C" fn goslint_instance_set_callback(
             Some(n) => n,
             None => return 1,
         };
-        let data = GoCallbackData { user_data, drop, cb };
+        let data = GoCallbackData {
+            user_data,
+            drop,
+            cb,
+        };
         match inst.set_callback(name, move |args| data.call(args)) {
             Ok(()) => 0,
             Err(e) => {
@@ -522,7 +526,11 @@ pub unsafe extern "C" fn goslint_instance_set_global_callback(
             (Some(g), Some(n)) => (g, n),
             _ => return 1,
         };
-        let data = GoCallbackData { user_data, drop, cb };
+        let data = GoCallbackData {
+            user_data,
+            drop,
+            cb,
+        };
         match inst.set_global_callback(g, nm, move |args| data.call(args)) {
             Ok(()) => 0,
             Err(e) => {

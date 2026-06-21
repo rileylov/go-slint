@@ -42,7 +42,11 @@ func main() {
 Property and callback names are real Go methods, checked by the compiler. A
 lower-level [dynamic API](#dynamic-low-level-api) is also available for runtime
 loading. Both are in [`cmd/examples`](cmd/examples) (typed: `typed`, `counter`,
-`clock`).
+`clock`, `multifile`).
+
+Imports are embedded too: a `.slint` that imports other `.slint` files generates a
+**self-contained binary** — every imported file is baked in, so nothing but the
+executable ships (see the `multifile` example).
 
 ## Quickstart
 
@@ -74,9 +78,11 @@ How it fits together:
   the matching prebuilt `libgoslint` for your platform (checksum-verified) into
   `~/.cache/goslint/`, writing a pkg-config file that describes how to link it.
 - **`goslint generate`** emits a **typed Go API** from a `.slint` (compile-checked
-  property/callback names, typed args, generated structs & enums) over the dynamic
-  runtime — e.g. `win.SetName("Gophers")`, `win.Logic().OnMakeGreeting(func(s string) string {…})`.
-  Use it directly or as `//go:generate goslint generate -o ui/app.slint.go app.slint`.
+  property/callback names, typed args including `[]T` arrays, generated structs &
+  enums) over the dynamic runtime — e.g. `win.SetName("Gophers")`,
+  `win.Logic().OnMakeGreeting(func(s string) string {…})`. Imported `.slint` files
+  are embedded, so multi-file UIs still produce a self-contained binary. Use it
+  directly or as `//go:generate goslint generate -o ui/app.slint.go app.slint`.
 - **`goslint dev`** watches your project: a `.slint` edit triggers a fast
   **restart** (the generated code reads its markup from disk, so no Go rebuild is
   needed to see cosmetic changes), and a `.go` edit triggers a **rebuild**. After
@@ -100,7 +106,7 @@ libraries as runtime dependencies — on Linux, OpenGL and fontconfig (the
 | Linux (amd64, arm64) | ✅ tested |
 | Android (arm64-v8a, x86_64) | ✅ tested |
 | Windows (amd64) | ⚠️ builds & cross-compiles; not yet verified on hardware |
-| macOS, iOS | ⏳ (no hardware to test on) |
+| macOS, iOS | ❌ (no hardware to test on) |
 
 Desktop targets build into a single self-contained binary with `goslint build`.
 

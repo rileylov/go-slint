@@ -52,6 +52,9 @@ void        goslint_compiler_free(GoCompiler *c);
 void        goslint_compiler_set_style(GoCompiler *c, const char *style);
 void        goslint_compiler_set_include_paths(GoCompiler *c, const char *const *paths, size_t n);
 void        goslint_compiler_set_library_paths(GoCompiler *c, const char *const *names, const char *const *paths, size_t n);
+/* fallback import loader: returns malloc'd source (freed by the library) or NULL */
+typedef char *(*GoFileLoaderLoad)(uintptr_t handle, const char *path);
+void        goslint_compiler_set_file_loader(GoCompiler *c, uintptr_t handle, GoFileLoaderLoad load, void (*drop)(uintptr_t));
 GoCompilationResult *goslint_compiler_build_from_source(GoCompiler *c, const char *src, const char *path);
 GoCompilationResult *goslint_compiler_build_from_path(GoCompiler *c, const char *path);
 

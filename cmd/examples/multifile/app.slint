@@ -1,0 +1,16 @@
+import { VerticalBox, Button } from "std-widgets.slint";
+import { Card } from "components/card.slint";
+
+export component AppWindow inherits Window {
+    in-out property <int> count: 0;
+    callback bump();
+
+    title: "Multi-file";
+    preferred-width: 320px;
+    preferred-height: 220px;
+
+    VerticalBox {
+        Card { title: "Counter"; value: root.count; }
+        Button { text: "Bump"; clicked => { root.bump(); } }
+    }
+}

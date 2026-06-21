@@ -25,7 +25,9 @@ fn type_code(t: ValueType) -> i32 {
 
 #[no_mangle]
 pub extern "C" fn goslint_value_new_void() -> *mut Value {
-    guard(std::ptr::null_mut(), || Box::into_raw(Box::new(Value::Void)))
+    guard(std::ptr::null_mut(), || {
+        Box::into_raw(Box::new(Value::Void))
+    })
 }
 
 #[no_mangle]
@@ -147,9 +149,10 @@ pub unsafe extern "C" fn goslint_value_new_enum(
 ) -> *mut Value {
     guard(std::ptr::null_mut(), || {
         match (crate::opt_str(name), crate::opt_str(value)) {
-            (Some(n), Some(v)) => {
-                Box::into_raw(Box::new(Value::EnumerationValue(n.to_string(), v.to_string())))
-            }
+            (Some(n), Some(v)) => Box::into_raw(Box::new(Value::EnumerationValue(
+                n.to_string(),
+                v.to_string(),
+            ))),
             _ => std::ptr::null_mut(),
         }
     })
@@ -185,7 +188,9 @@ pub unsafe extern "C" fn goslint_value_as_enum(
 #[no_mangle]
 pub extern "C" fn goslint_value_new_color(r: u8, g: u8, b: u8, a: u8) -> *mut Value {
     guard(std::ptr::null_mut(), || {
-        Box::into_raw(Box::new(Value::Brush(Brush::SolidColor(Color::from_argb_u8(a, r, g, b)))))
+        Box::into_raw(Box::new(Value::Brush(Brush::SolidColor(
+            Color::from_argb_u8(a, r, g, b),
+        ))))
     })
 }
 

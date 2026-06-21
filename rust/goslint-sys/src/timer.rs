@@ -39,7 +39,9 @@ fn timer_mode(mode: i32) -> TimerMode {
 
 #[no_mangle]
 pub extern "C" fn goslint_timer_new() -> *mut Timer {
-    guard(std::ptr::null_mut(), || Box::into_raw(Box::new(Timer::default())))
+    guard(std::ptr::null_mut(), || {
+        Box::into_raw(Box::new(Timer::default()))
+    })
 }
 
 /// # Safety
@@ -71,9 +73,11 @@ pub unsafe extern "C" fn goslint_timer_start(
             None => return,
         };
         let data = TimerCallback { handle, cb, drop };
-        t.start(timer_mode(mode), std::time::Duration::from_millis(interval_ms), move || {
-            data.call()
-        });
+        t.start(
+            timer_mode(mode),
+            std::time::Duration::from_millis(interval_ms),
+            move || data.call(),
+        );
     })
 }
 
@@ -90,7 +94,9 @@ pub unsafe extern "C" fn goslint_timer_single_shot(
 ) {
     guard((), || {
         let data = TimerCallback { handle, cb, drop };
-        Timer::single_shot(std::time::Duration::from_millis(interval_ms), move || data.call());
+        Timer::single_shot(std::time::Duration::from_millis(interval_ms), move || {
+            data.call()
+        });
     })
 }
 

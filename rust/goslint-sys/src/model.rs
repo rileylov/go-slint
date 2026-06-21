@@ -139,7 +139,9 @@ unsafe fn with_inner(m: *const GoModelHandle, f: impl FnOnce(&GoModelInner)) {
 /// `m` must be NULL or a GoModel pointer.
 #[no_mangle]
 pub unsafe extern "C" fn goslint_model_notify_row_changed(m: *const GoModelHandle, row: usize) {
-    guard((), || unsafe { with_inner(m, |i| i.notify.row_changed(row)) })
+    guard((), || unsafe {
+        with_inner(m, |i| i.notify.row_changed(row))
+    })
 }
 
 /// # Safety
@@ -150,7 +152,9 @@ pub unsafe extern "C" fn goslint_model_notify_row_added(
     row: usize,
     count: usize,
 ) {
-    guard((), || unsafe { with_inner(m, |i| i.notify.row_added(row, count)) })
+    guard((), || unsafe {
+        with_inner(m, |i| i.notify.row_added(row, count))
+    })
 }
 
 /// # Safety
@@ -161,7 +165,9 @@ pub unsafe extern "C" fn goslint_model_notify_row_removed(
     row: usize,
     count: usize,
 ) {
-    guard((), || unsafe { with_inner(m, |i| i.notify.row_removed(row, count)) })
+    guard((), || unsafe {
+        with_inner(m, |i| i.notify.row_removed(row, count))
+    })
 }
 
 /// # Safety

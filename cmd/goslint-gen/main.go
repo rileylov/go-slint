@@ -89,7 +89,14 @@ func main() {
 	}
 	rel = filepath.ToSlash(rel)
 
-	code, err := generate(&iface, *pkg, *style, string(src), rel)
+	// Embed every transitively-imported local .slint so the generated code can
+	// compile a multi-file component from memory (a self-contained binary).
+	files, err := collectImports(in)
+	if err != nil {
+		fatal(fmt.Errorf("collect imports: %w", err))
+	}
+
+	code, err := generate(&iface, *pkg, *style, string(src), rel, files)
 	if err != nil {
 		fatal(err)
 	}
