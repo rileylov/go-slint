@@ -121,9 +121,23 @@ func cValue(v any) (*C.GoValue, error) {
 		return C.goslint_value_new_image(x.ptr), nil
 	case *ModelHandle:
 		return C.goslint_value_new_model(x.ptr), nil
+	case []any:
+		return cArray(x)
 	default:
 		return nil, fmt.Errorf("slint: unsupported value type %T", v)
 	}
+}
+
+// cArray builds a snapshot model Value (a VecModel) from a slice. Each element is
+// converted via cValue; the C side clones them, so the temporaries are freed here.
+// Use this to Set an array / `[T]` property to a fixed list (not a live model).
+func cArray(items []any) (*C.GoValue, error) {
+	cvals, err := toCValues(items)
+	if err != nil {
+		return nil, err
+	}
+	defer freeCValues(cvals)
+	return C.goslint_value_new_array((**C.GoValue)(unsafe.Pointer(cvaluePtr(cvals))), C.size_t(len(cvals))), nil
 }
 
 // cGradient builds a gradient brush Value. The C side copies the stops during the

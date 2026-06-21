@@ -146,6 +146,8 @@ GoModel *goslint_model_new(uintptr_t handle, GoModelRowCount rc, GoModelRowData 
                            GoModelSetRowData srd, void (*drop)(uintptr_t));
 void     goslint_model_free(GoModel *m);
 GoValue *goslint_value_new_model(const GoModel *m);
+/* snapshot model from a list of values (a VecModel); items are cloned, caller frees them */
+GoValue *goslint_value_new_array(const GoValue *const *items, size_t n);
 void     goslint_model_notify_row_changed(const GoModel *m, size_t row);
 void     goslint_model_notify_row_added(const GoModel *m, size_t row, size_t count);
 void     goslint_model_notify_row_removed(const GoModel *m, size_t row, size_t count);

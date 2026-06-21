@@ -11,7 +11,7 @@ import (
 	slint "github.com/rileylov/go-slint"
 )
 
-var generatedSource = "import { Button, VerticalBox } from \"std-widgets.slint\";\n\nexport global Logic {\n    pure callback greeting(string) -> string;\n}\n\nexport component AppWindow inherits Window {\n    in-out property <string> name: \"World\";\n    in-out property <int> clicks: 0;\n    callback clicked();\n\n    title: \"Typed Hello\";\n    preferred-width: 340px;\n    preferred-height: 200px;\n\n    VerticalBox {\n        alignment: center;\n        spacing: 10px;\n        Text { text: Logic.greeting(root.name); horizontal-alignment: center; font-size: 22px; }\n        Text { text: \"clicks: \" + root.clicks; horizontal-alignment: center; color: #888; }\n        Button { text: \"Click me\"; clicked => { root.clicked(); } }\n    }\n}\n"
+var generatedSource = "import { Button, VerticalBox } from \"std-widgets.slint\";\n\nexport global Logic {\n    pure callback greeting(string) -> string;\n}\n\nexport component AppWindow inherits Window {\n    in-out property <string> name: \"World\";\n    in-out property <int> clicks: 0;\n    in-out property <[string]> log;\n    callback clicked();\n\n    title: \"Typed Hello\";\n    preferred-width: 340px;\n    preferred-height: 260px;\n\n    VerticalBox {\n        alignment: center;\n        spacing: 10px;\n        Text { text: Logic.greeting(root.name); horizontal-alignment: center; font-size: 22px; }\n        Text { text: \"clicks: \" + root.clicks; horizontal-alignment: center; color: #888; }\n        Button { text: \"Click me\"; clicked => { root.clicked(); } }\n        for entry in root.log : Text { text: entry; horizontal-alignment: center; color: #44aa88; }\n    }\n}\n"
 
 var generatedSourceRel = "../app.slint"
 
@@ -80,6 +80,33 @@ func (c *AppWindow) Clicks() (int, error) {
 
 func (c *AppWindow) SetClicks(value int) error {
 	return c.inner.Set("clicks", value)
+}
+
+func (c *AppWindow) Log() ([]string, error) {
+	v, err := c.inner.Get("log")
+	if err != nil {
+		var zero []string
+		return zero, err
+	}
+	return func() []string {
+		raw, _ := v.([]any)
+		out := make([]string, 0, len(raw))
+		for _, e := range raw {
+			out = append(out, e.(string))
+		}
+		return out
+	}(), nil
+}
+
+func (c *AppWindow) SetLog(value []string) error {
+	return c.inner.Set("log", func() []any {
+		src := value
+		out := make([]any, len(src))
+		for i, e := range src {
+			out[i] = e
+		}
+		return out
+	}())
 }
 
 func (c *AppWindow) Name() (string, error) {

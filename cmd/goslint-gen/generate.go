@@ -251,9 +251,20 @@ func goType(t TypeInfo) string {
 		return exported(t.Name)
 	case "struct":
 		return exported(t.Name)
-	default: // brush (Color|Gradient), array (model), other
+	case "array":
+		return "[]" + goType(elemOr(t))
+	default: // brush (Color|Gradient), other
 		return "any"
 	}
+}
+
+// elemOr returns an array type's element type, or an untyped ("other") element if
+// the element type is unknown (renders as `any`).
+func elemOr(t TypeInfo) TypeInfo {
+	if t.Elem != nil {
+		return *t.Elem
+	}
+	return TypeInfo{Kind: "other"}
 }
 
 // fromAny converts an `any` (from Get/callback args) to the typed Go value.
@@ -275,6 +286,11 @@ func fromAny(expr string, t TypeInfo) string {
 		return exported(t.Name) + "(" + expr + ".(slint.Enum).Value)"
 	case "struct":
 		return exported(t.Name) + "FromMap(" + expr + ".(map[string]any))"
+	case "array":
+		// Models read back as []any; convert each element to the typed element.
+		elem := elemOr(t)
+		return fmt.Sprintf("func() %s {\n\traw, _ := %s.([]any)\n\tout := make(%s, 0, len(raw))\n\tfor _, e := range raw {\n\t\tout = append(out, %s)\n\t}\n\treturn out\n}()",
+			goType(t), expr, goType(t), fromAny("e", elem))
 	default:
 		return expr
 	}
@@ -287,6 +303,11 @@ func toAny(expr string, t TypeInfo) string {
 		return fmt.Sprintf("slint.Enum{Type: %q, Value: string(%s)}", t.Name, expr)
 	case "struct":
 		return expr + ".toMap()"
+	case "array":
+		// Set/Invoke take []any; cValue turns it into a snapshot model (VecModel).
+		elem := elemOr(t)
+		return fmt.Sprintf("func() []any {\n\tsrc := %s\n\tout := make([]any, len(src))\n\tfor i, e := range src {\n\t\tout[i] = %s\n\t}\n\treturn out\n}()",
+			expr, toAny("e", elem))
 	default:
 		return expr
 	}

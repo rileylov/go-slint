@@ -4,7 +4,7 @@
 // Value::Model clones, so notifications reach the live model.
 
 use crate::guard;
-use i_slint_core::model::{Model, ModelNotify, ModelRc, ModelTracker};
+use i_slint_core::model::{Model, ModelNotify, ModelRc, ModelTracker, VecModel};
 use slint_interpreter::Value;
 
 /// The Rust model that delegates to Go function pointers.
@@ -98,6 +98,32 @@ pub unsafe extern "C" fn goslint_value_new_model(m: *const GoModelHandle) -> *mu
     guard(std::ptr::null_mut(), || match m.as_ref() {
         Some(m) => Box::into_raw(Box::new(Value::Model(m.clone()))),
         None => std::ptr::null_mut(),
+    })
+}
+
+/// Build a model Value holding a fixed snapshot of `items` (a `VecModel`). Useful
+/// for setting an array / `[T]` property to a plain list without a Go-backed model:
+/// no host handle is retained, so there is nothing to leak or keep alive. The
+/// values are cloned; the caller still owns and frees `items`.
+///
+/// # Safety
+/// `items` is NULL or an array of `n` GoValue pointers (each NULL or valid).
+#[no_mangle]
+pub unsafe extern "C" fn goslint_value_new_array(
+    items: *const *const Value,
+    n: usize,
+) -> *mut Value {
+    guard(std::ptr::null_mut(), || {
+        let mut values: Vec<Value> = Vec::with_capacity(n);
+        if !items.is_null() {
+            for i in 0..n {
+                if let Some(v) = (*items.add(i)).as_ref() {
+                    values.push(v.clone());
+                }
+            }
+        }
+        let model: ModelRc<Value> = ModelRc::new(VecModel::from(values));
+        Box::into_raw(Box::new(Value::Model(model)))
     })
 }
 

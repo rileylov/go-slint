@@ -11,6 +11,7 @@ package main
 //go:generate goslint generate -o ui/app.slint.go -package ui app.slint
 
 import (
+	"fmt"
 	"runtime"
 	"strings"
 
@@ -38,10 +39,14 @@ func main() {
 		panic(err)
 	}
 
-	// typed callback + typed property get/set
+	// typed callback + typed property get/set, plus a typed [string] array:
+	// Log() returns []string and SetLog takes []string (compiler-checked).
 	if err := win.OnClicked(func() {
 		n, _ := win.Clicks()
 		_ = win.SetClicks(n + 1)
+		name, _ := win.Name()
+		log, _ := win.Log()
+		_ = win.SetLog(append(log, fmt.Sprintf("%s clicked (#%d)", name, n+1)))
 	}); err != nil {
 		panic(err)
 	}

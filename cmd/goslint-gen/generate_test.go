@@ -12,6 +12,8 @@ func TestGenerate(t *testing.T) {
 			{Name: "name", Ty: TypeInfo{Kind: "string"}},
 			{Name: "origin", Ty: TypeInfo{Kind: "struct", Name: "Point"}},
 			{Name: "mode", Ty: TypeInfo{Kind: "enum", Name: "Mode"}},
+			{Name: "tags", Ty: TypeInfo{Kind: "array", Elem: &TypeInfo{Kind: "string"}}},
+			{Name: "points", Ty: TypeInfo{Kind: "array", Elem: &TypeInfo{Kind: "struct", Name: "Point"}}},
 		},
 		Callbacks: []Callable{
 			{Name: "clicked", Args: []TypeInfo{{Kind: "int"}}, Ret: TypeInfo{Kind: "void"}},
@@ -34,6 +36,8 @@ func TestGenerate(t *testing.T) {
 		"package ui",
 		"func NewAppWindow()",
 		"func (c *AppWindow) SetName(value string) error",
+		"func (c *AppWindow) SetTags(value []string) error",
+		"func (c *AppWindow) Points() ([]Point, error)",
 		"func (c *AppWindow) OnClicked(handler func(a0 int)) error",
 		"func (g *AppWindowLogic) OnMakeGreeting(handler func(a0 string) string) error",
 		"type Point struct",

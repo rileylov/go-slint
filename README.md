@@ -141,7 +141,9 @@ can't give you:
 
 - **runtime loading** — compile `.slint` chosen/edited at runtime (themes, plugin
   UIs, a viewer) and **live reload** (`slint.LiveReload`, used by `goslint dev`);
-- **dynamic models** and gradient brushes (the typed layer maps these to `any`);
+- **live, mutating models** and gradient brushes — the typed layer gives `[]T`
+  for arrays (set/get a whole slice as a snapshot), but for incremental row
+  updates (a live `slint.SliceModel`) and `brush` you use the dynamic API;
 - maximum flexibility without a generate step.
 
 Typed is the recommended default for app UIs; the dynamic API is the escape hatch.

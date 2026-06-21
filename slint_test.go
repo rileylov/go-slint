@@ -433,6 +433,61 @@ func TestHeadlessRoundTrip(t *testing.T) {
 	}
 }
 
+// TestSnapshotArraySet covers the []any -> snapshot model (VecModel) path that the
+// typed array setters generate: Set a plain slice into a [T] property (no live
+// Go-backed model), including a struct element type, and read it back.
+func TestSnapshotArraySet(t *testing.T) {
+	app, err := slint.Compile(`
+		export struct Point { x: int, y: int }
+		export component AR inherits Window {
+			in-out property <[string]> tags;
+			in-out property <[Point]> pts;
+			out property <int> tag-count: tags.length;
+			out property <int> first-x: pts.length > 0 ? pts[0].x : -1;
+		}`)
+	if err != nil {
+		t.Fatalf("Compile AR: %v", err)
+	}
+	defer app.Close()
+	inst, err := app.Create("AR")
+	if err != nil {
+		t.Fatalf("Create AR: %v", err)
+	}
+	defer inst.Close()
+
+	// scalar element array via a plain []any snapshot
+	if err := inst.Set("tags", []any{"a", "b", "c"}); err != nil {
+		t.Fatalf("Set(tags): %v", err)
+	}
+	if n, _ := inst.Int("tag-count"); n != 3 {
+		t.Fatalf("tag-count = %d; want 3", n)
+	}
+	tv, _ := inst.Get("tags")
+	rows, ok := tv.([]any)
+	if !ok || len(rows) != 3 || rows[2].(string) != "c" {
+		t.Fatalf("tags = %#v; want [a b c]", tv)
+	}
+
+	// struct element array (what []Point setters emit: a slice of maps)
+	if err := inst.Set("pts", []any{
+		map[string]any{"x": 7, "y": 1},
+		map[string]any{"x": 8, "y": 2},
+	}); err != nil {
+		t.Fatalf("Set(pts): %v", err)
+	}
+	if x, _ := inst.Int("first-x"); x != 7 {
+		t.Fatalf("first-x = %d; want 7", x)
+	}
+	pv, _ := inst.Get("pts")
+	prows, ok := pv.([]any)
+	if !ok || len(prows) != 2 {
+		t.Fatalf("pts = %#v; want 2 rows", pv)
+	}
+	if m, ok := prows[1].(map[string]any); !ok || int(m["x"].(float64)) != 8 {
+		t.Fatalf("pts[1] = %#v; want x=8", prows[1])
+	}
+}
+
 func mustColor(t *testing.T, inst *slint.Instance, name string) slint.Color {
 	t.Helper()
 	v, err := inst.Get(name)
