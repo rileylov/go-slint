@@ -4,6 +4,7 @@ import (
 	"os"
 	pathpkg "path"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	slint "github.com/rileylov/go-slint"
@@ -15,6 +16,12 @@ import (
 // — exactly what generated code does in a shipped binary. It also proves the keys
 // collectImports produces match the paths the interpreter's loader requests.
 func TestEmbedAllIntegration(t *testing.T) {
+	// Use the headless backend so Create works without a display (CI has none).
+	runtime.LockOSThread()
+	if err := slint.InitHeadless(); err != nil {
+		t.Fatalf("InitHeadless: %v", err)
+	}
+
 	dir := t.TempDir()
 	write := func(rel, body string) {
 		p := filepath.Join(dir, filepath.FromSlash(rel))
