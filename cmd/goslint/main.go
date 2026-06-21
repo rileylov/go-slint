@@ -27,6 +27,7 @@ import (
 	"runtime/debug"
 	"sort"
 	"strings"
+	"sync"
 )
 
 // modulePath is the go-slint module; the CLI reads the version the user's project
@@ -131,11 +132,21 @@ type target struct {
 //     module's ABI when building inside a project);
 //  3. selfVersion — the tag this goslint binary was installed at (`go install …@vX`);
 //  4. defaultLibVersion — only for a local devel build run outside a project.
+var versionOnce struct {
+	sync.Once
+	v string
+}
+
 func version() string {
+	versionOnce.Do(func() { versionOnce.v = resolveVersion() })
+	return versionOnce.v
+}
+
+func resolveVersion() string {
 	if v := os.Getenv("GOSLINT_LIB_VERSION"); v != "" {
 		return v
 	}
-	if v := moduleVersion(); v != "" {
+	if v := moduleVersion(); v != "" { // spawns `go list -m`; memoized by version()
 		return v
 	}
 	if v := selfVersion(); v != "" {
@@ -310,10 +321,13 @@ func cmdGo(sub string, args []string) error {
 	if err := ensureCC(); err != nil {
 		return err
 	}
-	// Refresh generated typed wrappers from their .slint first, so build/run always
-	// reflect the current markup (the embedded source is the source of truth).
-	if err := runGoGenerate(""); err != nil {
-		return err
+	// Refresh generated typed wrappers from their .slint first, so build/run reflect
+	// the current markup. Skip when nothing changed — codegen spawns a subprocess and
+	// links the native lib, which is wasteful (and AV-scanned on Windows) per build.
+	if needsGenerate(".") {
+		if err := runGoGenerate(""); err != nil {
+			return err
+		}
 	}
 	goArgs := append([]string{sub, "-tags", buildTag}, args...)
 	cmd := exec.Command("go", goArgs...)

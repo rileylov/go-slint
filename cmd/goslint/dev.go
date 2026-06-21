@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 )
 
@@ -76,8 +77,10 @@ func cmdDev(args []string) error {
 		}
 	}
 
-	if err := gen(); err != nil {
-		fmt.Fprintln(os.Stderr, "generate failed (using existing generated code):", err)
+	if needsGenerate(pkg) {
+		if err := gen(); err != nil {
+			fmt.Fprintln(os.Stderr, "generate failed (using existing generated code):", err)
+		}
 	}
 	if err := build(); err != nil {
 		return err
@@ -154,6 +157,38 @@ func newestExt(pkg, ext string) time.Time {
 		return nil
 	})
 	return newest
+}
+
+// generatedNewest returns the latest mtime among generated wrappers (*.slint.go)
+// under pkg's directory; zero if there are none.
+func generatedNewest(pkg string) time.Time {
+	dir := pkg
+	if fi, err := os.Stat(pkg); err == nil && !fi.IsDir() {
+		dir = filepath.Dir(pkg)
+	}
+	var newest time.Time
+	_ = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(p, ".slint.go") {
+			return nil
+		}
+		if fi, err := d.Info(); err == nil && fi.ModTime().After(newest) {
+			newest = fi.ModTime()
+		}
+		return nil
+	})
+	return newest
+}
+
+// needsGenerate reports whether the typed wrappers under pkg are stale: true if a
+// .slint is newer than the newest generated *.slint.go, or none has been generated
+// yet. Conservative — it only skips regeneration when clearly in sync, so build/run
+// don't pay for codegen on every invocation when nothing changed.
+func needsGenerate(pkg string) bool {
+	gen := generatedNewest(pkg)
+	if gen.IsZero() {
+		return true // nothing generated (or non-default output name) — regenerate
+	}
+	return newestExt(pkg, ".slint").After(gen)
 }
 
 func absOr(p string) string {
