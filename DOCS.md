@@ -374,6 +374,21 @@ slint.SetClipboardText("copied!")
 text := slint.ClipboardText()
 ```
 
+**Multiple windows.** Each `Create` (or `New…`) is an independent window. Show each
+one (non-blocking) and drive a **single** shared event loop with `slint.Run()` — not
+`win.Run()` per window. `Run()` returns when the last window closes; `slint.RunUntilQuit()`
+keeps the loop running across windows opening/closing (until `slint.Quit()`).
+
+```go
+mainWin.Show()
+dialog.Show()        // opened on demand; both share one loop
+slint.Run()          // or slint.RunUntilQuit() for tray-style / dynamic-window apps
+```
+
+See [`cmd/examples/multiwindow`](cmd/examples/multiwindow). (One `.slint` with several
+window components works via the dynamic API today; the typed generator currently wraps
+a single component per file.)
+
 **Snapshot.** Render the window's current contents to a Go image — for screenshots
 or export:
 

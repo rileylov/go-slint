@@ -24,5 +24,11 @@ func SetTestingOSWindows() { C.goslint_testing_set_os_windows() }
 // Blocks; must be called on the UI thread.
 func RunEventLoop() error { return rc(C.goslint_run_event_loop(), "run event loop") }
 
+// RunEventLoopUntilQuit runs the event loop until QuitEventLoop, without quitting
+// when the last window closes. Blocks; UI thread only.
+func RunEventLoopUntilQuit() error {
+	return rc(C.goslint_run_event_loop_until_quit(), "run event loop until quit")
+}
+
 // QuitEventLoop requests the running event loop to quit.
 func QuitEventLoop() error { return rc(C.goslint_quit_event_loop(), "quit event loop") }

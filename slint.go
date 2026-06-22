@@ -24,6 +24,11 @@ func MockElapsedTime(ms uint64) { slintsys.MockElapsedTime(ms) }
 // called. It blocks and must run on the UI thread.
 func Run() error { return slintsys.RunEventLoop() }
 
+// RunUntilQuit is like [Run] but does not exit when the last window closes — it
+// runs until [Quit]. Use it for multi-window apps that open and close windows
+// dynamically. Show at least one window before calling it.
+func RunUntilQuit() error { return slintsys.RunEventLoopUntilQuit() }
+
 // Quit asks the running event loop to exit.
 func Quit() error { return slintsys.QuitEventLoop() }
 

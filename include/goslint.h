@@ -43,6 +43,7 @@ void goslint_testing_mock_elapsed_time(uint64_t ms);
 void goslint_testing_configure_fonts(void);
 void goslint_testing_set_os_windows(void);
 int  goslint_run_event_loop(void);                 /* blocks; UI thread only */
+int  goslint_run_event_loop_until_quit(void);      /* blocks; does not quit on last window close */
 int  goslint_quit_event_loop(void);
 int  goslint_invoke_from_event_loop(void (*cb)(uintptr_t), uintptr_t handle, void (*drop)(uintptr_t));
 

@@ -152,6 +152,36 @@ pub extern "C" fn goslint_run_event_loop() -> i32 {
     })
 }
 
+/// Run the event loop until `goslint_quit_event_loop` is called, *without* quitting
+/// when the last window closes — for apps that open/close windows dynamically. Show
+/// at least one window first so the backend exists; otherwise it behaves like
+/// `goslint_run_event_loop`.
+// set_event_loop_quit_on_last_window_closed is deprecated for direct app use, but
+// it's exactly what slint's own run_event_loop_until_quit does (the interpreter
+// doesn't re-export that fn), so we replicate it.
+#[allow(deprecated)]
+#[no_mangle]
+pub extern "C" fn goslint_run_event_loop_until_quit() -> i32 {
+    guard(1, || {
+        // Clear quit-on-last-window if a backend exists (it does once a window has
+        // been shown); a no-op otherwise.
+        let _ = i_slint_core::with_global_context(
+            || Err(i_slint_core::platform::PlatformError::NoPlatform),
+            |ctx| {
+                ctx.platform()
+                    .set_event_loop_quit_on_last_window_closed(false)
+            },
+        );
+        match slint_interpreter::run_event_loop() {
+            Ok(()) => 0,
+            Err(e) => {
+                set_last_error(e.to_string());
+                1
+            }
+        }
+    })
+}
+
 /// Get the system clipboard text. Returns an owned C string (free with
 /// `goslint_string_free`), or NULL if the clipboard is empty or unavailable. The
 /// clipboard is provided by the platform, so this works once a backend exists

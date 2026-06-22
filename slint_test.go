@@ -477,6 +477,59 @@ func TestWindowCloseRequested(t *testing.T) {
 	}
 }
 
+// TestMultiWindow covers running several windows at once: each Create is an
+// independent window/instance with its own state (two of the same component, plus a
+// different one). Show each and drive the single shared event loop with Run.
+func TestMultiWindow(t *testing.T) {
+	lockSlint(t)
+	app, err := slint.Compile(`
+		export component Doc inherits Window { in-out property <string> name; }
+		export component Palette inherits Window { in-out property <int> tool; }`)
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	defer app.Close()
+
+	doc1, err := app.Create("Doc")
+	if err != nil {
+		t.Fatalf("Create Doc 1: %v", err)
+	}
+	defer doc1.Close()
+	doc2, err := app.Create("Doc") // a second window of the same component
+	if err != nil {
+		t.Fatalf("Create Doc 2: %v", err)
+	}
+	defer doc2.Close()
+	palette, err := app.Create("Palette")
+	if err != nil {
+		t.Fatalf("Create Palette: %v", err)
+	}
+	defer palette.Close()
+
+	for _, w := range []*slint.Instance{doc1, doc2, palette} {
+		if err := w.Show(); err != nil {
+			t.Fatalf("Show: %v", err)
+		}
+	}
+
+	// Independent state across the three windows.
+	_ = doc1.Set("name", "alpha")
+	_ = doc2.Set("name", "beta")
+	_ = palette.Set("tool", 7)
+	if s, _ := doc1.Str("name"); s != "alpha" {
+		t.Fatalf("doc1 name = %q; want alpha", s)
+	}
+	if s, _ := doc2.Str("name"); s != "beta" {
+		t.Fatalf("doc2 name = %q; want beta", s)
+	}
+	if n, _ := palette.Int("tool"); n != 7 {
+		t.Fatalf("palette tool = %d; want 7", n)
+	}
+	for _, w := range []*slint.Instance{doc1, doc2, palette} {
+		_ = w.Hide()
+	}
+}
+
 // TestClipboard covers system clipboard get/set. The headless testing backend
 // (installed by lockSlint's InitHeadless) provides an in-memory clipboard.
 func TestClipboard(t *testing.T) {

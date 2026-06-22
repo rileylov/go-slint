@@ -1,0 +1,32 @@
+import { Button, VerticalBox } from "std-widgets.slint";
+
+// A second, independent top-level window opened on demand from the main window.
+export component Palette inherits Window {
+    title: "Palette";
+    preferred-width: 220px;
+    preferred-height: 150px;
+
+    in-out property <int> count: 0;
+    callback bump();
+
+    VerticalBox {
+        Text { text: "Palette window"; horizontal-alignment: center; }
+        Text { text: "bumps: " + root.count; horizontal-alignment: center; }
+        Button { text: "Bump"; clicked => { root.bump(); } }
+    }
+}
+
+export component MainWindow inherits Window {
+    title: "Main";
+    preferred-width: 300px;
+    preferred-height: 180px;
+
+    callback open-palette();
+
+    VerticalBox {
+        alignment: center;
+        spacing: 12px;
+        Text { text: "Main window"; font-size: 20px; horizontal-alignment: center; }
+        Button { text: "Open a palette window"; clicked => { root.open-palette(); } }
+    }
+}
