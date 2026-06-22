@@ -453,10 +453,17 @@ goslint build -o myapp .                 # one self-contained desktop binary
 goslint android build -o myapp.apk .     # signed APK (arm64-v8a + x86_64)
 ```
 
+On **Windows**, `goslint build` links the app as a GUI subsystem binary, so
+double-clicking it shows only your window — no console pops up alongside. (A side
+effect: stdout/stderr go nowhere in a built app, as with any GUI program. Need a
+console build for debugging? Pass your own `-ldflags` — e.g. `goslint build
+-ldflags= .` — and goslint leaves the subsystem at the default.)
+
 Prefer plain `go`? `eval "$(goslint env)"` exports `CGO_LDFLAGS`, then
 `go build -tags goslint_extlib .` — no pkg-config required. (If you'd rather use
 pkg-config, the `goslint_pkgconfig` tag still works with the `goslint.pc` that
-`setup` also writes.)
+`setup` also writes.) On Windows add `-ldflags=-H=windowsgui` yourself to suppress
+the console.
 
 **Android.** Your package needs a `//go:build android` entry exporting
 `goslint_android_main`; `goslint init` scaffolds it (`app_android.go`). The build

@@ -329,11 +329,29 @@ func cmdGo(sub string, args []string) error {
 			return err
 		}
 	}
-	goArgs := append([]string{sub, "-tags", buildTag}, args...)
+	goArgs := []string{sub, "-tags", buildTag}
+	// On Windows, link a built GUI app with the "windowsgui" subsystem so double-
+	// clicking it doesn't pop a console window alongside the UI. Only for `build`
+	// (dev/run keep the console for logs), and only if the user didn't pass their own
+	// -ldflags (those don't merge — last wins — so we step aside).
+	if sub == "build" && runtime.GOOS == "windows" && !hasLdflags(args) {
+		goArgs = append(goArgs, "-ldflags=-H=windowsgui")
+	}
+	goArgs = append(goArgs, args...)
 	cmd := exec.Command("go", goArgs...)
 	cmd.Env = env
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	return cmd.Run()
+}
+
+// hasLdflags reports whether the args already set -ldflags (so we don't clobber it).
+func hasLdflags(args []string) bool {
+	for _, a := range args {
+		if a == "-ldflags" || strings.HasPrefix(a, "-ldflags=") {
+			return true
+		}
+	}
+	return false
 }
 
 // wrapperEnv returns the process env plus the cgo settings that link the prebuilt
