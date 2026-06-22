@@ -74,6 +74,19 @@ func (i *Instance) RegisterFontFromMemory(data []byte) error {
 		(*C.uint8_t)(unsafe.Pointer(&data[0])), C.size_t(len(data))), "register font (memory)")
 }
 
+// TakeSnapshot renders the window to a straight-RGBA8 pixel buffer (w*h*4 bytes),
+// returning a copy owned by Go.
+func (i *Instance) TakeSnapshot() (pix []byte, w, h int, err error) {
+	var cw, ch C.uint32_t
+	p := C.goslint_instance_take_snapshot(i.ptr, &cw, &ch)
+	if p == nil {
+		return nil, 0, 0, errors.New(lastErrorOr("take snapshot"))
+	}
+	n := C.size_t(uint(cw) * uint(ch) * 4)
+	defer C.goslint_pixels_free(p, n)
+	return C.GoBytes(unsafe.Pointer(p), C.int(n)), int(cw), int(ch), nil
+}
+
 // GetGlobalProperty reads a property of an exported global singleton.
 func (i *Instance) GetGlobalProperty(global, name string) (any, error) {
 	cg := C.CString(global)

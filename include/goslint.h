@@ -103,6 +103,9 @@ void     goslint_instance_request_close(const GoComponentInstance *i);
 /* custom fonts (for `font-family`); 0 on success, 1 on failure (see goslint_last_error) */
 int      goslint_instance_register_font_from_path(const GoComponentInstance *i, const char *path);
 int      goslint_instance_register_font_from_memory(const GoComponentInstance *i, const uint8_t *data, size_t n);
+/* render the window to an RGBA8 buffer (w*h*4 bytes); NULL on failure. Free with goslint_pixels_free. */
+uint8_t *goslint_instance_take_snapshot(const GoComponentInstance *i, uint32_t *w, uint32_t *h);
+void     goslint_pixels_free(uint8_t *ptr, size_t n);
 
 /* ---- callbacks, invoke, globals ---- */
 /* A callback receives a host handle (user_data) + borrowed args, and returns an

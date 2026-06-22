@@ -366,6 +366,17 @@ win.OnCloseRequested(func() bool {
 })
 ```
 
+**Snapshot.** Render the window's current contents to a Go image — for screenshots
+or export:
+
+```go
+img, err := win.Snapshot()      // *image.NRGBA; or SnapshotRGBA() for raw bytes
+png.Encode(file, img)
+```
+
+Snapshot needs a live renderer, so call it on a shown window (it uses the GPU or
+software renderer). It is not available under the headless test backend.
+
 Timers run on the event loop:
 
 ```go

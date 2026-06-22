@@ -261,6 +261,58 @@ pub unsafe extern "C" fn goslint_instance_request_close(i: *const ComponentInsta
     })
 }
 
+/// Render the window's current contents to a freshly-allocated RGBA8 buffer
+/// (`w*h*4` bytes, straight alpha) and write the dimensions into `w`/`h`. NULL on
+/// failure (see goslint_last_error). Free the returned buffer with
+/// `goslint_pixels_free(ptr, w*h*4)`.
+///
+/// # Safety
+/// `i`/`w`/`h` must be NULL or valid pointers.
+#[no_mangle]
+pub unsafe extern "C" fn goslint_instance_take_snapshot(
+    i: *const ComponentInstance,
+    w: *mut u32,
+    h: *mut u32,
+) -> *mut u8 {
+    guard(std::ptr::null_mut(), || {
+        let i = match i.as_ref() {
+            Some(i) => i,
+            None => return std::ptr::null_mut(),
+        };
+        match i.window().take_snapshot() {
+            Ok(buf) => {
+                if let Some(w) = w.as_mut() {
+                    *w = buf.width();
+                }
+                if let Some(h) = h.as_mut() {
+                    *h = buf.height();
+                }
+                let mut bytes = buf.as_bytes().to_vec();
+                bytes.shrink_to_fit(); // capacity == length, so the free is exact
+                let ptr = bytes.as_mut_ptr();
+                std::mem::forget(bytes);
+                ptr
+            }
+            Err(e) => {
+                set_last_error(format!("take snapshot: {e}"));
+                std::ptr::null_mut()
+            }
+        }
+    })
+}
+
+/// Free a buffer returned by `goslint_instance_take_snapshot`. `n` must be the
+/// buffer's byte length (`w*h*4`).
+///
+/// # Safety
+/// `ptr` must be NULL or a buffer from `goslint_instance_take_snapshot` with length `n`.
+#[no_mangle]
+pub unsafe extern "C" fn goslint_pixels_free(ptr: *mut u8, n: usize) {
+    if !ptr.is_null() {
+        drop(Vec::from_raw_parts(ptr, n, n));
+    }
+}
+
 // Reach the window's renderer to register custom fonts. The font collection lives on
 // the shared per-thread context, so registering via one window applies to all
 // windows on that thread (register before the text using the font is laid out).

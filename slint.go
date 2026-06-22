@@ -436,3 +436,22 @@ func (i *Instance) RegisterFontFromPath(path string) error { return i.inner.Regi
 func (i *Instance) RegisterFontFromMemory(data []byte) error {
 	return i.inner.RegisterFontFromMemory(data)
 }
+
+// Snapshot renders the window's current contents to an image.NRGBA — handy for
+// screenshots, export (encode it with image/png), or visual tests. It may re-render
+// and can be slow; the window should be created (and usually shown) first.
+func (i *Instance) Snapshot() (*image.NRGBA, error) {
+	pix, w, h, err := i.inner.TakeSnapshot()
+	if err != nil {
+		return nil, err
+	}
+	img := image.NewNRGBA(image.Rect(0, 0, w, h)) // straight RGBA8 == NRGBA.Pix
+	copy(img.Pix, pix)
+	return img, nil
+}
+
+// SnapshotRGBA is like Snapshot but returns the raw straight-RGBA8 bytes (w*h*4)
+// without allocating an image, for callers that handle pixels directly.
+func (i *Instance) SnapshotRGBA() (pix []byte, w, h int, err error) {
+	return i.inner.TakeSnapshot()
+}

@@ -477,6 +477,48 @@ func TestWindowCloseRequested(t *testing.T) {
 	}
 }
 
+// TestSnapshot covers render-to-buffer: snapshot a window to an image and to raw
+// RGBA, checking dimensions and that the background actually rasterized.
+func TestSnapshot(t *testing.T) {
+	lockSlint(t)
+	app, err := slint.Compile(`export component W inherits Window { width: 64px; height: 48px; background: #ff0000; }`)
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	defer app.Close()
+	inst, err := app.Create("W")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	defer inst.Close()
+	if err := inst.Show(); err != nil {
+		t.Fatalf("Show: %v", err)
+	}
+
+	img, err := inst.Snapshot()
+	if err != nil {
+		// The headless testing backend doesn't rasterize, so take_snapshot is
+		// unsupported there; it works with a real renderer (GPU/software). Skipping
+		// still exercises the FFI path (no panic/leak) and documents the requirement.
+		t.Skipf("snapshot needs a rendering backend: %v", err)
+	}
+	if b := img.Bounds(); b.Dx() != 64 || b.Dy() != 48 {
+		t.Fatalf("snapshot size %dx%d; want 64x48", b.Dx(), b.Dy())
+	}
+	r, g, bl, _ := img.At(0, 0).RGBA()
+	if r>>8 < 200 || g>>8 > 80 || bl>>8 > 80 {
+		t.Fatalf("top-left pixel = (%d,%d,%d); want red-ish", r>>8, g>>8, bl>>8)
+	}
+
+	pix, w, h, err := inst.SnapshotRGBA()
+	if err != nil {
+		t.Fatalf("SnapshotRGBA after Snapshot succeeded: %v", err)
+	}
+	if len(pix) != w*h*4 {
+		t.Fatalf("SnapshotRGBA: len=%d w=%d h=%d", len(pix), w, h)
+	}
+}
+
 // TestRegisterFont covers programmatic custom-font registration from a path and
 // from memory.
 func TestRegisterFont(t *testing.T) {
