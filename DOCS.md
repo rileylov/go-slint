@@ -181,6 +181,24 @@ win.Logic().OnGreeting(func(a0 string) string { return "Hi " + a0 })
 | enum | a generated string type (e.g. `ui.Mode`) |
 | `brush` | `any` — a `slint.Color` or `slint.Gradient` (see [Dynamic API](#dynamic-runtime-api)) |
 
+### Images
+
+An `image` property is a `*slint.Image`. Load one from a file, or build one from
+pixels you generated/decoded in Go (Slint's `SharedPixelBuffer` equivalent):
+
+```go
+img, _ := slint.LoadImage("logo.png")          // from a file
+img, _ := slint.NewImage(goImage)              // any image.Image: decoded, drawn, generated
+img, _ := slint.NewImageRGBA(pixels, w, h)     // raw RGBA8 bytes (w*h*4)
+win.SetIcon(img)
+defer img.Free()
+```
+
+`NewImage` accepts any `image.Image`, so the whole Go ecosystem works — decode with
+`image/png`/`image/jpeg`, draw with `image/draw` or a plotting library, or generate
+procedurally. (It handles Go's premultiplied-alpha `image.RGBA` correctly.) See
+[`cmd/examples/image`](cmd/examples/image).
+
 ### Arrays
 
 Array properties map to Go slices. The setter takes a whole slice (a snapshot);

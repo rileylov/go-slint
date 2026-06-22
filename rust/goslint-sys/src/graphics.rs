@@ -1,10 +1,58 @@
-// C ABI for images. M6 covers loading from a file path (PNG/JPEG) and reading
-// the pixel size; the Image can then be assigned to an `image` property.
+// C ABI for images: load from a file path (PNG/JPEG), build from raw pixel buffers
+// (the SharedPixelBuffer path, for generated/decoded images), and read the size.
+// The Image can then be assigned to an `image` property.
 
 use crate::{guard, opt_str, set_last_error};
-use i_slint_core::graphics::Image;
+use i_slint_core::graphics::{Image, Rgb8Pixel, Rgba8Pixel, SharedPixelBuffer};
 use slint_interpreter::Value;
 use std::ffi::c_char;
+
+/// Build an image from a tightly-packed RGBA8 buffer (`w*h*4` bytes, row-major, no
+/// padding; non-premultiplied alpha). The bytes are copied. NULL on bad args.
+///
+/// # Safety
+/// `data` must point to at least `w*h*4` bytes (or be NULL, which returns NULL).
+#[no_mangle]
+pub unsafe extern "C" fn goslint_image_from_rgba8(data: *const u8, w: u32, h: u32) -> *mut Image {
+    guard(std::ptr::null_mut(), || {
+        let n = match (w as usize)
+            .checked_mul(h as usize)
+            .and_then(|p| p.checked_mul(4))
+        {
+            Some(n) if n > 0 && !data.is_null() => n,
+            _ => {
+                set_last_error("from_rgba8: NULL data or zero/overflowing size");
+                return std::ptr::null_mut();
+            }
+        };
+        let bytes = std::slice::from_raw_parts(data, n);
+        let buf = SharedPixelBuffer::<Rgba8Pixel>::clone_from_slice(bytes, w, h);
+        Box::into_raw(Box::new(Image::from_rgba8(buf)))
+    })
+}
+
+/// Build an image from a tightly-packed RGB8 buffer (`w*h*3` bytes). Copied.
+///
+/// # Safety
+/// `data` must point to at least `w*h*3` bytes (or be NULL, which returns NULL).
+#[no_mangle]
+pub unsafe extern "C" fn goslint_image_from_rgb8(data: *const u8, w: u32, h: u32) -> *mut Image {
+    guard(std::ptr::null_mut(), || {
+        let n = match (w as usize)
+            .checked_mul(h as usize)
+            .and_then(|p| p.checked_mul(3))
+        {
+            Some(n) if n > 0 && !data.is_null() => n,
+            _ => {
+                set_last_error("from_rgb8: NULL data or zero/overflowing size");
+                return std::ptr::null_mut();
+            }
+        };
+        let bytes = std::slice::from_raw_parts(data, n);
+        let buf = SharedPixelBuffer::<Rgb8Pixel>::clone_from_slice(bytes, w, h);
+        Box::into_raw(Box::new(Image::from_rgb8(buf)))
+    })
+}
 
 /// Load an image from a file path. NULL on error (see goslint_last_error).
 ///

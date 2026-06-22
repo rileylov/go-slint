@@ -174,6 +174,9 @@ size_t   goslint_value_gradient_stop_count(const GoValue *v);
 bool     goslint_value_gradient_stop(const GoValue *v, size_t i, GoGradientStop *out);
 
 GoImage *goslint_image_load_from_path(const char *path);
+/* build from raw pixels (copied): rgba8 = w*h*4 bytes, rgb8 = w*h*3 bytes, row-major */
+GoImage *goslint_image_from_rgba8(const uint8_t *data, uint32_t w, uint32_t h);
+GoImage *goslint_image_from_rgb8(const uint8_t *data, uint32_t w, uint32_t h);
 void     goslint_image_free(GoImage *img);
 void     goslint_image_size(const GoImage *img, uint32_t *w, uint32_t *h);
 GoValue *goslint_value_new_image(const GoImage *img);

@@ -1,0 +1,17 @@
+import { VerticalBox } from "std-widgets.slint";
+
+export component AppWindow inherits Window {
+    in property <image> frame;
+
+    title: "Go-generated image";
+    preferred-width: 260px;
+    preferred-height: 260px;
+
+    VerticalBox {
+        Image {
+            source: root.frame;
+            width: 240px;
+            height: 240px;
+        }
+    }
+}

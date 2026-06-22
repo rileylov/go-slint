@@ -1,6 +1,8 @@
 package slint_test
 
 import (
+	"image"
+	"image/color"
 	"os"
 	pathpkg "path"
 	"path/filepath"
@@ -11,6 +13,18 @@ import (
 
 	"github.com/rileylov/go-slint"
 )
+
+// lockSlint pins this test's goroutine to its OS thread and ensures the headless
+// backend is installed on it. Slint's platform/context is thread-local, so any test
+// that creates an instance must do all its Slint calls on one locked thread that has
+// the backend. InitHeadless errors with "already set" if this thread was reused from
+// an earlier test — harmless, so it's ignored (the context is already present).
+func lockSlint(t *testing.T) {
+	t.Helper()
+	runtime.LockOSThread()
+	t.Cleanup(runtime.UnlockOSThread)
+	_ = slint.InitHeadless()
+}
 
 // TestLibraryPaths covers WithLibraryPaths resolving an `@library` import.
 func TestLibraryPaths(t *testing.T) {
@@ -57,17 +71,10 @@ func TestCompileErrorsReported(t *testing.T) {
 	}
 }
 
-// TestHeadlessRoundTrip exercises the whole M1 path on a single locked OS thread
-// (Slint's platform/context is thread-local, and the headless backend may be
-// initialized only once per process).
+// TestHeadlessRoundTrip exercises the whole M1 path. The locked thread + headless
+// backend are set up once in TestMain.
 func TestHeadlessRoundTrip(t *testing.T) {
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
-
-	if err := slint.InitHeadless(); err != nil {
-		t.Fatalf("InitHeadless: %v", err)
-	}
-
+	lockSlint(t)
 	const src = `
 		export component App inherits Window {
 			in-out property <int> counter: 7;
@@ -434,10 +441,70 @@ func TestHeadlessRoundTrip(t *testing.T) {
 	}
 }
 
+// TestImageFromPixels covers building images from raw/Go pixel buffers (the
+// SharedPixelBuffer path) and assigning them to an `image` property.
+func TestImageFromPixels(t *testing.T) {
+	lockSlint(t)
+	app, err := slint.Compile(`
+		export component IMG inherits Window {
+			in-out property <image> pic;
+			out property <int> w: pic.width;
+			out property <int> h: pic.height;
+		}`)
+	if err != nil {
+		t.Fatalf("Compile IMG: %v", err)
+	}
+	defer app.Close()
+	inst, err := app.Create("IMG")
+	if err != nil {
+		t.Fatalf("Create IMG: %v", err)
+	}
+	defer inst.Close()
+
+	// raw RGBA8 buffer
+	raw, err := slint.NewImageRGBA(make([]byte, 8*4*4), 8, 4)
+	if err != nil {
+		t.Fatalf("NewImageRGBA: %v", err)
+	}
+	defer raw.Free()
+	if rw, rh := raw.Size(); rw != 8 || rh != 4 {
+		t.Fatalf("raw image size = %dx%d; want 8x4", rw, rh)
+	}
+	if err := inst.Set("pic", raw); err != nil {
+		t.Fatalf("Set(pic): %v", err)
+	}
+	if w, _ := inst.Int("w"); w != 8 {
+		t.Fatalf("pic.width = %d; want 8", w)
+	}
+
+	// any Go image.Image (here a generated gradient), via NewImage
+	src := image.NewRGBA(image.Rect(0, 0, 16, 9))
+	for y := 0; y < 9; y++ {
+		for x := 0; x < 16; x++ {
+			src.Set(x, y, color.RGBA{uint8(x * 16), uint8(y * 28), 128, 255})
+		}
+	}
+	img, err := slint.NewImage(src)
+	if err != nil {
+		t.Fatalf("NewImage: %v", err)
+	}
+	defer img.Free()
+	if err := inst.Set("pic", img); err != nil {
+		t.Fatalf("Set(pic) Go image: %v", err)
+	}
+	if w, _ := inst.Int("w"); w != 16 {
+		t.Fatalf("pic.width = %d; want 16", w)
+	}
+	if h, _ := inst.Int("h"); h != 9 {
+		t.Fatalf("pic.height = %d; want 9", h)
+	}
+}
+
 // TestSnapshotArraySet covers the []any -> snapshot model (VecModel) path that the
 // typed array setters generate: Set a plain slice into a [T] property (no live
 // Go-backed model), including a struct element type, and read it back.
 func TestSnapshotArraySet(t *testing.T) {
+	lockSlint(t)
 	app, err := slint.Compile(`
 		export struct Point { x: int, y: int }
 		export component AR inherits Window {
@@ -494,6 +561,7 @@ func TestSnapshotArraySet(t *testing.T) {
 // a deeper one, all resolved via WithFileLoader. This is the mechanism the typed
 // codegen uses for self-contained multi-file binaries.
 func TestFileLoaderEmbedded(t *testing.T) {
+	lockSlint(t)
 	files := map[string]string{
 		"components/widget.slint": `import { Base } from "../shared/base.slint";
 			export component Widget inherits Base {

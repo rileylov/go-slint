@@ -3,6 +3,8 @@ package slint
 
 import (
 	"fmt"
+	"image"
+	"image/draw"
 	"strings"
 
 	"github.com/rileylov/go-slint/slintsys"
@@ -317,6 +319,28 @@ type Image = slintsys.Image
 
 // LoadImage loads an image (PNG/JPEG) from a file path.
 func LoadImage(path string) (*Image, error) { return slintsys.LoadImage(path) }
+
+// NewImage builds an image from any Go image.Image — decoded (image/png, image/jpeg),
+// drawn (image/draw, plotting libs), or generated. Use this to display dynamic
+// content the way Slint's SharedPixelBuffer does in Rust. The pixels are copied, so
+// the source can be reused or freed afterward.
+//
+// It converts to non-premultiplied RGBA (Slint's expected format); note Go's
+// image.RGBA is *premultiplied*, which this handles correctly.
+func NewImage(src image.Image) (*Image, error) {
+	b := src.Bounds()
+	w, h := b.Dx(), b.Dy()
+	dst := image.NewNRGBA(image.Rect(0, 0, w, h)) // tightly packed, non-premultiplied
+	draw.Draw(dst, dst.Bounds(), src, b.Min, draw.Src)
+	return slintsys.ImageFromRGBA(dst.Pix, w, h)
+}
+
+// NewImageRGBA builds an image from a tightly-packed RGBA8 buffer (w*h*4 bytes,
+// row-major, non-premultiplied alpha). The bytes are copied.
+func NewImageRGBA(pix []byte, w, h int) (*Image, error) { return slintsys.ImageFromRGBA(pix, w, h) }
+
+// NewImageRGB builds an image from a tightly-packed RGB8 buffer (w*h*3 bytes).
+func NewImageRGB(pix []byte, w, h int) (*Image, error) { return slintsys.ImageFromRGB(pix, w, h) }
 
 // Timer fires a Go callback after an interval. Timers fire only while the event
 // loop runs (Run); create and start them after Create.
