@@ -412,3 +412,15 @@ func (i *Instance) RequestRedraw()             { i.inner.RequestRedraw() }
 
 // Close releases the instance.
 func (i *Instance) Close() { i.inner.Free() }
+
+// OnCloseRequested registers a handler invoked when the window's close is requested
+// (the user clicking the close button, or RequestClose). Return true to allow the
+// window to close, false to keep it open — e.g. to show a confirm dialog or save
+// first. Runs on the event loop.
+func (i *Instance) OnCloseRequested(handler func() (allowClose bool)) {
+	i.inner.OnCloseRequested(handler)
+}
+
+// RequestClose asks the window to close, running the OnCloseRequested handler — as
+// if the user clicked the close button.
+func (i *Instance) RequestClose() { i.inner.RequestClose() }

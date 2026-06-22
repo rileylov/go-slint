@@ -441,6 +441,42 @@ func TestHeadlessRoundTrip(t *testing.T) {
 	}
 }
 
+// TestWindowCloseRequested covers OnCloseRequested + RequestClose: the handler runs
+// on a close request, and returning false vetoes the close.
+func TestWindowCloseRequested(t *testing.T) {
+	lockSlint(t)
+	app, err := slint.Compile(`export component W inherits Window {}`)
+	if err != nil {
+		t.Fatalf("Compile W: %v", err)
+	}
+	defer app.Close()
+	inst, err := app.Create("W")
+	if err != nil {
+		t.Fatalf("Create W: %v", err)
+	}
+	defer inst.Close()
+	if err := inst.Show(); err != nil {
+		t.Fatalf("Show: %v", err)
+	}
+
+	calls := 0
+	allow := false
+	inst.OnCloseRequested(func() bool {
+		calls++
+		return allow
+	})
+
+	inst.RequestClose() // vetoed
+	if calls != 1 {
+		t.Fatalf("handler calls = %d; want 1 after first RequestClose", calls)
+	}
+	allow = true
+	inst.RequestClose() // allowed (window hides)
+	if calls != 2 {
+		t.Fatalf("handler calls = %d; want 2 after second RequestClose", calls)
+	}
+}
+
 // TestImageFromPixels covers building images from raw/Go pixel buffers (the
 // SharedPixelBuffer path) and assigning them to an `image` property.
 func TestImageFromPixels(t *testing.T) {

@@ -44,6 +44,10 @@ func (c *Counter) Show() error            { return c.inner.Show() }
 func (c *Counter) Hide() error            { return c.inner.Hide() }
 func (c *Counter) Run() error             { return c.inner.Run() }
 func (c *Counter) Close()                 { c.inner.Close() }
+func (c *Counter) RequestClose()          { c.inner.RequestClose() }
+
+// OnCloseRequested runs when the window's close is requested; return true to allow it to close.
+func (c *Counter) OnCloseRequested(handler func() bool) { c.inner.OnCloseRequested(handler) }
 
 func (c *Counter) Value() (int, error) {
 	v, err := c.inner.Get("value")

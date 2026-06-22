@@ -197,6 +197,72 @@ pub unsafe extern "C" fn goslint_instance_window_size(
 
 /// Set the window size in physical pixels.
 ///
+/// A Go close-requested handler. `cb` returns true to allow the window to close
+/// (it hides), false to keep it open. `drop` releases `handle` when the handler is
+/// replaced or the instance is freed.
+struct CloseCallback {
+    handle: usize,
+    cb: extern "C" fn(usize) -> bool,
+    drop: Option<extern "C" fn(usize)>,
+}
+
+impl CloseCallback {
+    // A *method* on the whole struct, so the closure capturing `self` keeps the Drop
+    // guard alive across the call (Rust 2021 disjoint-capture gotcha — see CLAUDE.md).
+    fn call(&self) -> i_slint_core::api::CloseRequestResponse {
+        if (self.cb)(self.handle) {
+            i_slint_core::api::CloseRequestResponse::HideWindow
+        } else {
+            i_slint_core::api::CloseRequestResponse::KeepWindowShown
+        }
+    }
+}
+
+impl Drop for CloseCallback {
+    fn drop(&mut self) {
+        if let Some(d) = self.drop {
+            d(self.handle);
+        }
+    }
+}
+
+/// Set a handler invoked when the window's close is requested (the user clicking the
+/// close button, or `goslint_instance_request_close`). Returning true lets it close
+/// (the window hides); false keeps it open. Replaces any previous handler (whose
+/// `drop` then runs).
+///
+/// # Safety
+/// `i` must be NULL or an instance pointer.
+#[no_mangle]
+pub unsafe extern "C" fn goslint_instance_on_close_requested(
+    i: *const ComponentInstance,
+    handle: usize,
+    cb: extern "C" fn(usize) -> bool,
+    drop: Option<extern "C" fn(usize)>,
+) {
+    guard((), || {
+        if let Some(i) = i.as_ref() {
+            let data = CloseCallback { handle, cb, drop };
+            i.window().on_close_requested(move || data.call());
+        }
+    })
+}
+
+/// Request the window close, running the close handler (as if the user clicked the
+/// close button).
+///
+/// # Safety
+/// `i` must be NULL or an instance pointer.
+#[no_mangle]
+pub unsafe extern "C" fn goslint_instance_request_close(i: *const ComponentInstance) {
+    guard((), || {
+        if let Some(i) = i.as_ref() {
+            i.window()
+                .dispatch_event(i_slint_core::platform::WindowEvent::CloseRequested);
+        }
+    })
+}
+
 /// # Safety
 /// `i` must be NULL or an instance pointer.
 #[no_mangle]

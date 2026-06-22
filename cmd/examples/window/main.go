@@ -1,6 +1,7 @@
 // Command window demonstrates Go-side window control: resizing, positioning,
-// maximize/fullscreen, plus reading back size/position/scale-factor. A repeating
-// timer keeps the on-screen readout fresh, so manual drag-resizes show up too.
+// maximize/fullscreen, reading back size/position/scale-factor, and close handling
+// (OnCloseRequested / RequestClose — confirm before exit). A repeating timer keeps
+// the on-screen readout fresh, so manual drag-resizes show up too.
 //
 //	make lib && go run ./cmd/examples/window
 package main
@@ -63,6 +64,22 @@ func main() {
 		fullscreen = !fullscreen
 		win.SetFullscreen(fullscreen)
 		refresh()
+		return nil
+	})
+
+	// Close handling: veto the first close request and ask for confirmation; the
+	// next one (the X button, or the Quit button via RequestClose) goes through.
+	confirmed := false
+	win.OnCloseRequested(func() bool {
+		if !confirmed {
+			confirmed = true
+			win.Set("close-status", "Sure? Close again (or Quit) to exit.")
+			return false // keep the window open
+		}
+		return true // allow the close
+	})
+	win.OnCallback("request-close", func([]any) any {
+		win.RequestClose() // runs the OnCloseRequested handler above
 		return nil
 	})
 

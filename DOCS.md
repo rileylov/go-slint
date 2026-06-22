@@ -332,6 +332,20 @@ win.SetFullscreen(true)            // also SetMaximized / SetMinimized
 win.RequestRedraw()
 ```
 
+**Closing.** Intercept the window's close (the X button) to confirm or save first —
+return `true` to let it close, `false` to keep it open. `RequestClose()` triggers
+the same path (e.g. from a Quit button):
+
+```go
+win.OnCloseRequested(func() bool {
+	if hasUnsavedChanges() {
+		showSavePrompt()
+		return false // keep open
+	}
+	return true     // allow close
+})
+```
+
 Timers run on the event loop:
 
 ```go

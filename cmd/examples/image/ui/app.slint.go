@@ -44,6 +44,10 @@ func (c *AppWindow) Show() error            { return c.inner.Show() }
 func (c *AppWindow) Hide() error            { return c.inner.Hide() }
 func (c *AppWindow) Run() error             { return c.inner.Run() }
 func (c *AppWindow) Close()                 { c.inner.Close() }
+func (c *AppWindow) RequestClose()          { c.inner.RequestClose() }
+
+// OnCloseRequested runs when the window's close is requested; return true to allow it to close.
+func (c *AppWindow) OnCloseRequested(handler func() bool) { c.inner.OnCloseRequested(handler) }
 
 func (c *AppWindow) Frame() (*slint.Image, error) {
 	v, err := c.inner.Get("frame")

@@ -7,12 +7,15 @@ export component AppWindow inherits Window {
 
     // live readout, updated from Go
     in property <string> info: "…";
+    // close-handling status, updated from Go
+    in property <string> close-status: "Closing asks for confirmation (try the X, or Quit).";
 
     // driven into Go
     callback set-size(int, int);
     callback set-pos(int, int);
     callback toggle-maximize();
     callback toggle-fullscreen();
+    callback request-close();
 
     VerticalBox {
         Text {
@@ -44,6 +47,15 @@ export component AppWindow inherits Window {
             Button { text: "Toggle maximize"; clicked => { root.toggle-maximize(); } }
             Button { text: "Toggle fullscreen"; clicked => { root.toggle-fullscreen(); } }
         }
+
+        Text { text: "Close handling:"; }
+        Text {
+            text: root.close-status;
+            horizontal-alignment: center;
+            color: #ff9800;
+            wrap: word-wrap;
+        }
+        Button { text: "Quit"; clicked => { root.request-close(); } }
 
         Text {
             text: "Tip: drag-resize the window — the readout updates live (a Go timer polls it).";

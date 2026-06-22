@@ -96,6 +96,10 @@ void     goslint_instance_window_set_fullscreen(const GoComponentInstance *i, bo
 void     goslint_instance_window_set_maximized(const GoComponentInstance *i, bool on);
 void     goslint_instance_window_set_minimized(const GoComponentInstance *i, bool on);
 void     goslint_instance_window_request_redraw(const GoComponentInstance *i);
+/* close handling: cb returns true to allow close (window hides), false to keep open */
+typedef bool (*GoCloseRequested)(uintptr_t handle);
+void     goslint_instance_on_close_requested(const GoComponentInstance *i, uintptr_t handle, GoCloseRequested cb, void (*drop)(uintptr_t));
+void     goslint_instance_request_close(const GoComponentInstance *i);
 
 /* ---- callbacks, invoke, globals ---- */
 /* A callback receives a host handle (user_data) + borrowed args, and returns an
