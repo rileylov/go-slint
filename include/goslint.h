@@ -46,6 +46,10 @@ int  goslint_run_event_loop(void);                 /* blocks; UI thread only */
 int  goslint_quit_event_loop(void);
 int  goslint_invoke_from_event_loop(void (*cb)(uintptr_t), uintptr_t handle, void (*drop)(uintptr_t));
 
+/* system clipboard (needs a backend; works after the first window / init_headless) */
+char *goslint_clipboard_get_text(void);             /* owned (goslint_string_free) or NULL if empty */
+int   goslint_clipboard_set_text(const char *text); /* 0 ok, 1 on failure */
+
 /* ---- compiler ---- */
 GoCompiler *goslint_compiler_new(void);
 void        goslint_compiler_free(GoCompiler *c);

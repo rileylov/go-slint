@@ -152,6 +152,63 @@ pub extern "C" fn goslint_run_event_loop() -> i32 {
     })
 }
 
+/// Get the system clipboard text. Returns an owned C string (free with
+/// `goslint_string_free`), or NULL if the clipboard is empty or unavailable. The
+/// clipboard is provided by the platform, so this works once a backend exists
+/// (after the first window / `init_headless`).
+#[no_mangle]
+pub extern "C" fn goslint_clipboard_get_text() -> *mut std::ffi::c_char {
+    guard(std::ptr::null_mut(), || {
+        let r = i_slint_core::with_global_context(
+            || Err(i_slint_core::platform::PlatformError::NoPlatform), // don't create a backend just for clipboard
+            |ctx| {
+                ctx.platform()
+                    .clipboard_text(i_slint_core::platform::Clipboard::DefaultClipboard)
+            },
+        );
+        match r {
+            Ok(Some(s)) => to_c_string(&s),
+            Ok(None) => std::ptr::null_mut(),
+            Err(e) => {
+                set_last_error(format!("clipboard get: {e}"));
+                std::ptr::null_mut()
+            }
+        }
+    })
+}
+
+/// Set the system clipboard text. Returns 0 on success, 1 on failure (see
+/// `goslint_last_error`, e.g. no backend yet).
+///
+/// # Safety
+/// `text` must be a valid C string or NULL.
+#[no_mangle]
+pub unsafe extern "C" fn goslint_clipboard_set_text(text: *const std::ffi::c_char) -> i32 {
+    guard(1, || {
+        let s = match opt_str(text) {
+            Some(s) => s.to_string(),
+            None => {
+                set_last_error("clipboard set: NULL or invalid text");
+                return 1;
+            }
+        };
+        let r = i_slint_core::with_global_context(
+            || Err(i_slint_core::platform::PlatformError::NoPlatform),
+            |ctx| {
+                ctx.platform()
+                    .set_clipboard_text(&s, i_slint_core::platform::Clipboard::DefaultClipboard)
+            },
+        );
+        match r {
+            Ok(()) => 0,
+            Err(e) => {
+                set_last_error(format!("clipboard set: {e}"));
+                1
+            }
+        }
+    })
+}
+
 /// A one-shot foreign callback posted to the event loop. Fields are all Send, so
 /// the struct (and the closure capturing it) is Send as `invoke_from_event_loop`
 /// requires.

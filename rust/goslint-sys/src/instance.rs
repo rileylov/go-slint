@@ -316,8 +316,9 @@ pub unsafe extern "C" fn goslint_pixels_free(ptr: *mut u8, n: usize) {
 // Reach the window's renderer to register custom fonts. The font collection lives on
 // the shared per-thread context, so registering via one window applies to all
 // windows on that thread (register before the text using the font is laid out).
-use i_slint_core::renderer::RendererSealed as _;
-use i_slint_core::window::{WindowAdapter as _, WindowInner};
+// (WindowAdapter::renderer and the RendererSealed font methods are callable on the
+// dyn objects without importing those traits.)
+use i_slint_core::window::WindowInner;
 
 /// Register a TrueType/OpenType font from a file path for use via `font-family`.
 /// Returns 0 on success, 1 on failure (see goslint_last_error).

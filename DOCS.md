@@ -366,6 +366,14 @@ win.OnCloseRequested(func() bool {
 })
 ```
 
+**Clipboard.** Read and write the system clipboard (package-level; needs a backend,
+so use it once a window exists):
+
+```go
+slint.SetClipboardText("copied!")
+text := slint.ClipboardText()
+```
+
 **Snapshot.** Render the window's current contents to a Go image — for screenshots
 or export:
 

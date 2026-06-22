@@ -477,6 +477,24 @@ func TestWindowCloseRequested(t *testing.T) {
 	}
 }
 
+// TestClipboard covers system clipboard get/set. The headless testing backend
+// (installed by lockSlint's InitHeadless) provides an in-memory clipboard.
+func TestClipboard(t *testing.T) {
+	lockSlint(t)
+	if err := slint.SetClipboardText("hello go-slint"); err != nil {
+		t.Fatalf("SetClipboardText: %v", err)
+	}
+	if got := slint.ClipboardText(); got != "hello go-slint" {
+		t.Fatalf("ClipboardText = %q; want %q", got, "hello go-slint")
+	}
+	if err := slint.SetClipboardText("二"); err != nil { // unicode round-trip
+		t.Fatalf("SetClipboardText unicode: %v", err)
+	}
+	if got := slint.ClipboardText(); got != "二" {
+		t.Fatalf("ClipboardText unicode = %q; want 二", got)
+	}
+}
+
 // TestSnapshot covers render-to-buffer: snapshot a window to an image and to raw
 // RGBA, checking dimensions and that the background actually rasterized.
 func TestSnapshot(t *testing.T) {

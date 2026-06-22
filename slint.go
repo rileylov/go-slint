@@ -32,6 +32,13 @@ func Quit() error { return slintsys.QuitEventLoop() }
 // models, callbacks) from a background goroutine.
 func InvokeFromEventLoop(fn func()) error { return slintsys.InvokeFromEventLoop(fn) }
 
+// ClipboardText returns the system clipboard's text ("" if empty or unavailable).
+// The clipboard is provided by the backend, so call it once a window exists.
+func ClipboardText() string { return slintsys.ClipboardText() }
+
+// SetClipboardText sets the system clipboard text.
+func SetClipboardText(s string) error { return slintsys.SetClipboardText(s) }
+
 // DiagnosticError reports one or more compiler errors.
 type DiagnosticError struct {
 	Diagnostics []slintsys.Diagnostic
