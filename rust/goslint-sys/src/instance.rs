@@ -40,6 +40,36 @@ pub unsafe extern "C" fn goslint_definition_create(
     })
 }
 
+/// Instantiate the component reusing `win_owner`'s window, so the new content renders
+/// in the SAME on-screen window (used by live reload — no new window flashes). NULL
+/// on failure.
+///
+/// # Safety
+/// `d` must be a definition pointer; `win_owner` an instance pointer.
+#[no_mangle]
+pub unsafe extern "C" fn goslint_definition_create_with_window(
+    d: *const ComponentDefinition,
+    win_owner: *const ComponentInstance,
+) -> *mut ComponentInstance {
+    guard(std::ptr::null_mut(), || {
+        let d = match d.as_ref() {
+            Some(d) => d,
+            None => return std::ptr::null_mut(),
+        };
+        let owner = match win_owner.as_ref() {
+            Some(o) => o,
+            None => return std::ptr::null_mut(),
+        };
+        match d.create_with_existing_window(owner.window()) {
+            Ok(inst) => Box::into_raw(Box::new(inst)),
+            Err(e) => {
+                set_last_error(e.to_string());
+                std::ptr::null_mut()
+            }
+        }
+    })
+}
+
 /// # Safety
 /// `d` must be NULL or a definition pointer.
 #[no_mangle]

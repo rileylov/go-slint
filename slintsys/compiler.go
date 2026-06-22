@@ -169,6 +169,16 @@ func (d *Definition) Create() (*Instance, error) {
 	return &Instance{ptr: p}, nil
 }
 
+// CreateWithWindow instantiates the component reusing winOwner's window (live
+// reload: the new content renders in the same on-screen window).
+func (d *Definition) CreateWithWindow(winOwner *Instance) (*Instance, error) {
+	p := C.goslint_definition_create_with_window(d.ptr, winOwner.ptr)
+	if p == nil {
+		return nil, errors.New(lastErrorOr("create with window"))
+	}
+	return &Instance{ptr: p}, nil
+}
+
 func (d *Definition) Free() {
 	if d.ptr != nil {
 		C.goslint_definition_free(d.ptr)

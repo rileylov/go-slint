@@ -86,6 +86,8 @@ void   goslint_result_free(GoCompilationResult *r);
 /* ---- component definition ---- */
 char *goslint_definition_name(const GoComponentDefinition *d);
 GoComponentInstance *goslint_definition_create(const GoComponentDefinition *d);
+/* instantiate reusing win_owner's window (live reload — swaps content in place) */
+GoComponentInstance *goslint_definition_create_with_window(const GoComponentDefinition *d, const GoComponentInstance *win_owner);
 void  goslint_definition_free(GoComponentDefinition *d);
 
 /* ---- component instance ---- */

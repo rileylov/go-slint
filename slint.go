@@ -170,6 +170,22 @@ func (c *Compilation) Create(name string) (*Instance, error) {
 	return &Instance{inner: inner}, nil
 }
 
+// CreateWithWindow instantiates the named component reusing winOwner's window, so the
+// new content renders in the same on-screen window. Used by live reload to swap the
+// UI in place instead of opening a new window.
+func (c *Compilation) CreateWithWindow(name string, winOwner *Instance) (*Instance, error) {
+	def := c.result.Component(name)
+	if def == nil {
+		return nil, fmt.Errorf("slint: no component named %q", name)
+	}
+	defer def.Free()
+	inner, err := def.CreateWithWindow(winOwner.inner)
+	if err != nil {
+		return nil, err
+	}
+	return &Instance{inner: inner}, nil
+}
+
 // Close releases the compilation's resources.
 func (c *Compilation) Close() { c.result.Free() }
 

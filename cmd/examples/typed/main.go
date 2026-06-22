@@ -5,7 +5,7 @@
 //
 //	make lib
 //	go generate ./cmd/examples/typed   # regenerates ui/app.slint.go from app.slint
-//	go run ./cmd/examples/typed
+//	go run ./cmd/examples/typed        # or: goslint dev ./cmd/examples/typed (live reload)
 package main
 
 //go:generate goslint generate -o ui/app.slint.go -package ui app.slint
@@ -33,12 +33,10 @@ func main() {
 	}); err != nil {
 		panic(err)
 	}
-
 	// typed property setter
 	if err := win.SetName("Gophers"); err != nil {
 		panic(err)
 	}
-
 	// typed callback + typed property get/set, plus a typed [string] array:
 	// Log() returns []string and SetLog takes []string (compiler-checked).
 	if err := win.OnClicked(func() {
@@ -51,6 +49,7 @@ func main() {
 		panic(err)
 	}
 
+	// Run normally; under `goslint dev` the same code live-reloads app.slint.
 	if err := win.Run(); err != nil {
 		panic(err)
 	}

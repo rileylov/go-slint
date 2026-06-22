@@ -38,7 +38,7 @@ const modulePath = "github.com/rileylov/go-slint"
 // (`go build`/`go run`, where the module version is "(devel)") that's also run
 // outside a go-slint project. Released binaries derive their version from the
 // install tag via selfVersion(), so this no longer needs bumping per release.
-const defaultLibVersion = "v0.3.4"
+const defaultLibVersion = "v0.5.0"
 
 // defaultBaseURL is the GitHub Releases download root. The release for libVersion
 // is expected at <defaultBaseURL>/<libVersion>/{manifest.json,<archives>}.
@@ -347,9 +347,15 @@ func wrapperEnv(tgt string) ([]string, error) {
 	return append(os.Environ(), "CGO_ENABLED=1", "CGO_LDFLAGS="+ld), nil
 }
 
-// cgoLDFLAGS returns the link line for the cached static shim (read from the file
-// `goslint setup` writes). Forward slashes keep it valid for MinGW on Windows.
+// cgoLDFLAGS returns the link line for the native shim. GOSLINT_LIB_DIR overrides it
+// to link a locally-built lib (the shared lib via rpath, no setup/cache) — useful for
+// testing unreleased shim changes through the CLI. Otherwise it reads the line
+// `goslint setup` wrote. Forward slashes keep it valid for MinGW on Windows.
 func cgoLDFLAGS(tgt string) (string, error) {
+	if dir := os.Getenv("GOSLINT_LIB_DIR"); dir != "" {
+		d := filepath.ToSlash(dir)
+		return fmt.Sprintf("-L%s -Wl,-rpath,%s -lgoslint", d, d), nil
+	}
 	b, err := os.ReadFile(filepath.Join(pkgconfigDir(tgt), "cgo_ldflags"))
 	if err != nil {
 		return "", fmt.Errorf("not set up for %s — run: goslint setup", tgt)

@@ -3,7 +3,7 @@
 // handled in Go via typed callbacks that update the typed `value` property.
 //
 //	make lib
-//	go run ./cmd/examples/counter
+//	go run ./cmd/examples/counter   # or: goslint dev ./cmd/examples/counter (live reload)
 package main
 
 //go:generate goslint generate -o ui/app.slint.go -package ui app.slint
@@ -33,6 +33,7 @@ func main() {
 		_ = win.SetValue(0)
 	})
 
+	// Run normally; under `goslint dev` the same code live-reloads app.slint.
 	if err := win.Run(); err != nil {
 		log.Fatal(err)
 	}

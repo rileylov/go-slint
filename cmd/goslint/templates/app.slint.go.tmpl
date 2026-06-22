@@ -11,7 +11,7 @@ import (
 	slint "github.com/rileylov/go-slint"
 )
 
-var generatedSource = "import { Button, VerticalBox } from \"std-widgets.slint\";\n\nexport global Logic {\n    pure callback greeting(string) -> string;\n}\n\nexport component AppWindow inherits Window {\n    in-out property <string> name: \"World\";\n    in-out property <int> clicks: 0;\n    in-out property <[string]> log;\n    callback clicked();\n\n    title: \"Typed Hello\";\n    preferred-width: 340px;\n    preferred-height: 260px;\n\n    VerticalBox {\n        alignment: center;\n        spacing: 10px;\n        Text { text: Logic.greeting(root.name); horizontal-alignment: center; font-size: 22px; }\n        Text { text: \"clicks: \" + root.clicks; horizontal-alignment: center; color: #888; }\n        Button { text: \"Click me\"; clicked => { root.clicked(); } }\n        for entry in root.log : Text { text: entry; horizontal-alignment: center; color: #44aa88; }\n    }\n}\n"
+var generatedSource = "import { Button, VerticalBox } from \"std-widgets.slint\";\n\nexport component AppWindow inherits Window {\n    in-out property <int> count: 0;\n    callback increment();\n\n    title: \"go-slint app\";\n    preferred-width: 320px;\n    preferred-height: 200px;\n\n    VerticalBox {\n        alignment: center;\n        spacing: 12px;\n        Text {\n            text: \"Count: \" + root.count;\n            font-size: 28px;\n            horizontal-alignment: center;\n        }\n        Button {\n            text: \"Increment\";\n            clicked => { root.increment(); }\n        }\n    }\n}\n"
 
 var (
 	compileOnce sync.Once
@@ -26,7 +26,7 @@ func compile() (*slint.Compilation, error) {
 	return compiled, compileErr
 }
 
-var generatedSourceRel = "../app.slint"
+var generatedSourceRel = "../../../../../../../../../../tmp/scaffgen/app.slint"
 
 func sourcePath() (string, bool) {
 	_, file, _, ok := runtime.Caller(0)
@@ -111,8 +111,8 @@ func (c *AppWindow) RegisterFontFromMemory(data []byte) error {
 	return c.inner.RegisterFontFromMemory(data)
 }
 
-func (c *AppWindow) Clicks() (int, error) {
-	v, err := c.inner.Get("clicks")
+func (c *AppWindow) Count() (int, error) {
+	v, err := c.inner.Get("count")
 	if err != nil {
 		var zero int
 		return zero, err
@@ -120,82 +120,19 @@ func (c *AppWindow) Clicks() (int, error) {
 	return int(v.(float64)), nil
 }
 
-func (c *AppWindow) SetClicks(value int) error {
+func (c *AppWindow) SetCount(value int) error {
 	if c.rec != nil && c.rec.recording {
-		c.rec.replays = append(c.rec.replays, func(t *AppWindow) error { return t.SetClicks(value) })
+		c.rec.replays = append(c.rec.replays, func(t *AppWindow) error { return t.SetCount(value) })
 	}
-	return c.inner.Set("clicks", value)
+	return c.inner.Set("count", value)
 }
 
-func (c *AppWindow) Log() ([]string, error) {
-	v, err := c.inner.Get("log")
-	if err != nil {
-		var zero []string
-		return zero, err
-	}
-	return func() []string {
-		raw, _ := v.([]any)
-		out := make([]string, 0, len(raw))
-		for _, e := range raw {
-			out = append(out, e.(string))
-		}
-		return out
-	}(), nil
-}
-
-func (c *AppWindow) SetLog(value []string) error {
+func (c *AppWindow) OnIncrement(handler func()) error {
 	if c.rec != nil && c.rec.recording {
-		c.rec.replays = append(c.rec.replays, func(t *AppWindow) error { return t.SetLog(value) })
+		c.rec.replays = append(c.rec.replays, func(t *AppWindow) error { return t.OnIncrement(handler) })
 	}
-	return c.inner.Set("log", func() []any {
-		src := value
-		out := make([]any, len(src))
-		for i, e := range src {
-			out[i] = e
-		}
-		return out
-	}())
-}
-
-func (c *AppWindow) Name() (string, error) {
-	v, err := c.inner.Get("name")
-	if err != nil {
-		var zero string
-		return zero, err
-	}
-	return v.(string), nil
-}
-
-func (c *AppWindow) SetName(value string) error {
-	if c.rec != nil && c.rec.recording {
-		c.rec.replays = append(c.rec.replays, func(t *AppWindow) error { return t.SetName(value) })
-	}
-	return c.inner.Set("name", value)
-}
-
-func (c *AppWindow) OnClicked(handler func()) error {
-	if c.rec != nil && c.rec.recording {
-		c.rec.replays = append(c.rec.replays, func(t *AppWindow) error { return t.OnClicked(handler) })
-	}
-	return c.inner.OnCallback("clicked", func(args []any) any {
+	return c.inner.OnCallback("increment", func(args []any) any {
 		handler()
 		return nil
-	})
-}
-
-// Logic() accesses the "Logic" global.
-func (c *AppWindow) Logic() *AppWindowLogic { return &AppWindowLogic{inner: c.inner, rec: c.rec} }
-
-type AppWindowLogic struct {
-	inner *slint.Instance
-	rec   *devRecorder
-}
-
-func (g *AppWindowLogic) OnGreeting(handler func(a0 string) string) error {
-	if g.rec != nil && g.rec.recording {
-		g.rec.replays = append(g.rec.replays, func(t *AppWindow) error { return t.Logic().OnGreeting(handler) })
-	}
-	return g.inner.OnGlobalCallback("Logic", "greeting", func(args []any) any {
-		return handler(args[0].(string))
 	})
 }

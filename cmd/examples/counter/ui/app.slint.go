@@ -3,6 +3,9 @@
 package ui
 
 import (
+	"os"
+	"path/filepath"
+	"runtime"
 	"sync"
 
 	slint "github.com/rileylov/go-slint"
@@ -23,8 +26,30 @@ func compile() (*slint.Compilation, error) {
 	return compiled, compileErr
 }
 
+var generatedSourceRel = "../app.slint"
+
+func sourcePath() (string, bool) {
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		return "", false
+	}
+	p := filepath.Join(filepath.Dir(file), filepath.FromSlash(generatedSourceRel))
+	if _, err := os.Stat(p); err != nil {
+		return "", false
+	}
+	return p, true
+}
+
+type devRecorder struct {
+	replays   []func(*Counter) error
+	recording bool
+}
+
 // Counter is a typed wrapper around the "Counter" component.
-type Counter struct{ inner *slint.Instance }
+type Counter struct {
+	inner *slint.Instance
+	rec   *devRecorder // non-nil under GOSLINT_DEV; records setup for live reload
+}
 
 // NewCounter compiles (once) and instantiates the component.
 func NewCounter() (*Counter, error) {
@@ -36,18 +61,47 @@ func NewCounter() (*Counter, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Counter{inner: inner}, nil
+	c := &Counter{inner: inner}
+	if os.Getenv("GOSLINT_DEV") != "" {
+		c.rec = &devRecorder{recording: true}
+	}
+	return c, nil
 }
 
 func (c *Counter) Inner() *slint.Instance { return c.inner }
 func (c *Counter) Show() error            { return c.inner.Show() }
 func (c *Counter) Hide() error            { return c.inner.Hide() }
-func (c *Counter) Run() error             { return c.inner.Run() }
 func (c *Counter) Close()                 { c.inner.Close() }
 func (c *Counter) RequestClose()          { c.inner.RequestClose() }
 
+// Run shows the window and runs the event loop. Under `goslint dev` it live-reloads
+// the .slint in-process, replaying your setup on each reload.
+func (c *Counter) Run() error {
+	if c.rec != nil {
+		c.rec.recording = false
+		if p, ok := sourcePath(); ok {
+			c.inner.Close() // discard the not-yet-shown instance; LiveReload makes its own
+			return slint.LiveReload(p, "Counter", func(inst *slint.Instance) error {
+				c.inner = inst
+				for _, replay := range c.rec.replays {
+					if err := replay(&Counter{inner: inst}); err != nil {
+						return err
+					}
+				}
+				return nil
+			}, slint.WithStyle("fluent"))
+		}
+	}
+	return c.inner.Run()
+}
+
 // OnCloseRequested runs when the window's close is requested; return true to allow it to close.
-func (c *Counter) OnCloseRequested(handler func() bool) { c.inner.OnCloseRequested(handler) }
+func (c *Counter) OnCloseRequested(handler func() bool) {
+	if c.rec != nil && c.rec.recording {
+		c.rec.replays = append(c.rec.replays, func(t *Counter) error { t.OnCloseRequested(handler); return nil })
+	}
+	c.inner.OnCloseRequested(handler)
+}
 
 // RegisterFontFromPath/Memory register a custom font for use via `font-family`.
 func (c *Counter) RegisterFontFromPath(path string) error { return c.inner.RegisterFontFromPath(path) }
@@ -65,10 +119,16 @@ func (c *Counter) Value() (int, error) {
 }
 
 func (c *Counter) SetValue(value int) error {
+	if c.rec != nil && c.rec.recording {
+		c.rec.replays = append(c.rec.replays, func(t *Counter) error { return t.SetValue(value) })
+	}
 	return c.inner.Set("value", value)
 }
 
 func (c *Counter) OnIncrement(handler func()) error {
+	if c.rec != nil && c.rec.recording {
+		c.rec.replays = append(c.rec.replays, func(t *Counter) error { return t.OnIncrement(handler) })
+	}
 	return c.inner.OnCallback("increment", func(args []any) any {
 		handler()
 		return nil
@@ -76,6 +136,9 @@ func (c *Counter) OnIncrement(handler func()) error {
 }
 
 func (c *Counter) OnReset(handler func()) error {
+	if c.rec != nil && c.rec.recording {
+		c.rec.replays = append(c.rec.replays, func(t *Counter) error { return t.OnReset(handler) })
+	}
 	return c.inner.OnCallback("reset", func(args []any) any {
 		handler()
 		return nil

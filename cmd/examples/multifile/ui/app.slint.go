@@ -3,8 +3,10 @@
 package ui
 
 import (
+	"os"
 	pathpkg "path"
 	"path/filepath"
+	"runtime"
 	"sync"
 
 	slint "github.com/rileylov/go-slint"
@@ -42,8 +44,30 @@ func compile() (*slint.Compilation, error) {
 	return compiled, compileErr
 }
 
+var generatedSourceRel = "../app.slint"
+
+func sourcePath() (string, bool) {
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		return "", false
+	}
+	p := filepath.Join(filepath.Dir(file), filepath.FromSlash(generatedSourceRel))
+	if _, err := os.Stat(p); err != nil {
+		return "", false
+	}
+	return p, true
+}
+
+type devRecorder struct {
+	replays   []func(*AppWindow) error
+	recording bool
+}
+
 // AppWindow is a typed wrapper around the "AppWindow" component.
-type AppWindow struct{ inner *slint.Instance }
+type AppWindow struct {
+	inner *slint.Instance
+	rec   *devRecorder // non-nil under GOSLINT_DEV; records setup for live reload
+}
 
 // NewAppWindow compiles (once) and instantiates the component.
 func NewAppWindow() (*AppWindow, error) {
@@ -55,18 +79,47 @@ func NewAppWindow() (*AppWindow, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &AppWindow{inner: inner}, nil
+	c := &AppWindow{inner: inner}
+	if os.Getenv("GOSLINT_DEV") != "" {
+		c.rec = &devRecorder{recording: true}
+	}
+	return c, nil
 }
 
 func (c *AppWindow) Inner() *slint.Instance { return c.inner }
 func (c *AppWindow) Show() error            { return c.inner.Show() }
 func (c *AppWindow) Hide() error            { return c.inner.Hide() }
-func (c *AppWindow) Run() error             { return c.inner.Run() }
 func (c *AppWindow) Close()                 { c.inner.Close() }
 func (c *AppWindow) RequestClose()          { c.inner.RequestClose() }
 
+// Run shows the window and runs the event loop. Under `goslint dev` it live-reloads
+// the .slint in-process, replaying your setup on each reload.
+func (c *AppWindow) Run() error {
+	if c.rec != nil {
+		c.rec.recording = false
+		if p, ok := sourcePath(); ok {
+			c.inner.Close() // discard the not-yet-shown instance; LiveReload makes its own
+			return slint.LiveReload(p, "AppWindow", func(inst *slint.Instance) error {
+				c.inner = inst
+				for _, replay := range c.rec.replays {
+					if err := replay(&AppWindow{inner: inst}); err != nil {
+						return err
+					}
+				}
+				return nil
+			}, slint.WithStyle("fluent"))
+		}
+	}
+	return c.inner.Run()
+}
+
 // OnCloseRequested runs when the window's close is requested; return true to allow it to close.
-func (c *AppWindow) OnCloseRequested(handler func() bool) { c.inner.OnCloseRequested(handler) }
+func (c *AppWindow) OnCloseRequested(handler func() bool) {
+	if c.rec != nil && c.rec.recording {
+		c.rec.replays = append(c.rec.replays, func(t *AppWindow) error { t.OnCloseRequested(handler); return nil })
+	}
+	c.inner.OnCloseRequested(handler)
+}
 
 // RegisterFontFromPath/Memory register a custom font for use via `font-family`.
 func (c *AppWindow) RegisterFontFromPath(path string) error {
@@ -86,10 +139,16 @@ func (c *AppWindow) Count() (int, error) {
 }
 
 func (c *AppWindow) SetCount(value int) error {
+	if c.rec != nil && c.rec.recording {
+		c.rec.replays = append(c.rec.replays, func(t *AppWindow) error { return t.SetCount(value) })
+	}
 	return c.inner.Set("count", value)
 }
 
 func (c *AppWindow) OnBump(handler func()) error {
+	if c.rec != nil && c.rec.recording {
+		c.rec.replays = append(c.rec.replays, func(t *AppWindow) error { return t.OnBump(handler) })
+	}
 	return c.inner.OnCallback("bump", func(args []any) any {
 		handler()
 		return nil

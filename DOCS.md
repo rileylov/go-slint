@@ -287,16 +287,29 @@ built binary is still self-contained — no `.slint` tree is needed at run time.
 
 ## Live development
 
-`goslint dev .` runs your app and watches the project:
+You write your app **one way** — create, bind, `Run()` — and it does the right thing
+in dev and in production.
 
-- editing a **`.slint`** re-runs `go generate` (refreshing the typed wrapper from
-  the markup), then rebuilds and restarts — so **both** cosmetic changes and
-  *interface* changes (new/renamed properties and callbacks) show up automatically;
-- editing a **`.go`** rebuilds and restarts.
+```go
+win, _ := ui.NewAppWindow()
+defer win.Close()
+win.OnIncrement(func() { n, _ := win.Count(); _ = win.SetCount(n + 1) })
+win.Run()
+```
 
-`goslint build` and `goslint run` regenerate first too, so a produced binary always
-reflects the current `.slint`. You rarely need to run `goslint generate` by hand —
-do it only when generating outside these commands (e.g. for editor completion).
+`goslint dev .` runs this and watches the project:
+
+- editing a **`.slint`** **hot-reloads in-process** — the app recompiles the markup
+  and swaps its UI into the *same* window live, **no rebuild**, so cosmetic/layout
+  iteration is instant (~100–500ms per save);
+- editing a **`.go`** rebuilds and restarts (regenerating the wrapper first if the
+  `.slint`'s interface changed).
+
+How it works: under `GOSLINT_DEV`, the generated wrapper *records* your `New`-to-`Run`
+setup calls (`Set*`, `On*`) and `Run()` replays them onto the freshly-compiled
+instance on each reload — so your same inline code drives the live reload. Property
+state resets on reload (it replays your initial setup, like a page reload). `goslint
+build`/`run` produce a normal binary from the same code (no recording, no reload).
 
 ---
 

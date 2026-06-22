@@ -3,6 +3,9 @@
 package ui
 
 import (
+	"os"
+	"path/filepath"
+	"runtime"
 	"sync"
 
 	slint "github.com/rileylov/go-slint"
@@ -23,8 +26,30 @@ func compile() (*slint.Compilation, error) {
 	return compiled, compileErr
 }
 
+var generatedSourceRel = "../app.slint"
+
+func sourcePath() (string, bool) {
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		return "", false
+	}
+	p := filepath.Join(filepath.Dir(file), filepath.FromSlash(generatedSourceRel))
+	if _, err := os.Stat(p); err != nil {
+		return "", false
+	}
+	return p, true
+}
+
+type devRecorder struct {
+	replays   []func(*Clock) error
+	recording bool
+}
+
 // Clock is a typed wrapper around the "Clock" component.
-type Clock struct{ inner *slint.Instance }
+type Clock struct {
+	inner *slint.Instance
+	rec   *devRecorder // non-nil under GOSLINT_DEV; records setup for live reload
+}
 
 // NewClock compiles (once) and instantiates the component.
 func NewClock() (*Clock, error) {
@@ -36,18 +61,47 @@ func NewClock() (*Clock, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Clock{inner: inner}, nil
+	c := &Clock{inner: inner}
+	if os.Getenv("GOSLINT_DEV") != "" {
+		c.rec = &devRecorder{recording: true}
+	}
+	return c, nil
 }
 
 func (c *Clock) Inner() *slint.Instance { return c.inner }
 func (c *Clock) Show() error            { return c.inner.Show() }
 func (c *Clock) Hide() error            { return c.inner.Hide() }
-func (c *Clock) Run() error             { return c.inner.Run() }
 func (c *Clock) Close()                 { c.inner.Close() }
 func (c *Clock) RequestClose()          { c.inner.RequestClose() }
 
+// Run shows the window and runs the event loop. Under `goslint dev` it live-reloads
+// the .slint in-process, replaying your setup on each reload.
+func (c *Clock) Run() error {
+	if c.rec != nil {
+		c.rec.recording = false
+		if p, ok := sourcePath(); ok {
+			c.inner.Close() // discard the not-yet-shown instance; LiveReload makes its own
+			return slint.LiveReload(p, "Clock", func(inst *slint.Instance) error {
+				c.inner = inst
+				for _, replay := range c.rec.replays {
+					if err := replay(&Clock{inner: inst}); err != nil {
+						return err
+					}
+				}
+				return nil
+			}, slint.WithStyle("fluent"))
+		}
+	}
+	return c.inner.Run()
+}
+
 // OnCloseRequested runs when the window's close is requested; return true to allow it to close.
-func (c *Clock) OnCloseRequested(handler func() bool) { c.inner.OnCloseRequested(handler) }
+func (c *Clock) OnCloseRequested(handler func() bool) {
+	if c.rec != nil && c.rec.recording {
+		c.rec.replays = append(c.rec.replays, func(t *Clock) error { t.OnCloseRequested(handler); return nil })
+	}
+	c.inner.OnCloseRequested(handler)
+}
 
 // RegisterFontFromPath/Memory register a custom font for use via `font-family`.
 func (c *Clock) RegisterFontFromPath(path string) error { return c.inner.RegisterFontFromPath(path) }
@@ -65,5 +119,8 @@ func (c *Clock) Ticks() (int, error) {
 }
 
 func (c *Clock) SetTicks(value int) error {
+	if c.rec != nil && c.rec.recording {
+		c.rec.replays = append(c.rec.replays, func(t *Clock) error { return t.SetTicks(value) })
+	}
 	return c.inner.Set("ticks", value)
 }

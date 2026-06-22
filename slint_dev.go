@@ -11,8 +11,8 @@ import (
 // LiveReload compiles the .slint file at path, creates component (or the last
 // exported one if component is ""), wires it with bind, shows it, and then
 // hot-reloads whenever any .slint file beside it changes on disk — recompiling and
-// swapping the window in place, with no Go rebuild. It runs the event loop and
-// returns when the window is closed.
+// swapping the content into the SAME window in place (no new window, no Go rebuild).
+// It runs the event loop and returns when the window is closed.
 //
 // It's the engine behind `goslint dev`: because the interpreter loads markup at
 // runtime, editing a .slint and saving updates the UI live. bind is re-invoked on
@@ -35,15 +35,15 @@ func LiveReload(path, component string, bind func(*Instance) error, opts ...Opti
 			}
 			last = m
 			InvokeFromEventLoop(func() {
-				next, err := loadAndShow(path, component, bind, opts)
+				// Reuse the current window so the UI swaps in place (no new window).
+				next, err := loadReuse(path, component, bind, opts, cur.inst)
 				if err != nil {
 					log.Printf("goslint dev: reload failed, keeping current UI: %v", err)
 					return
 				}
 				old := cur
 				cur = next
-				_ = old.inst.Hide()
-				old.close()
+				old.close() // drop the old instance; the window lives on in `next`
 				log.Printf("goslint dev: reloaded %s", filepath.Base(path))
 			})
 		}
@@ -71,19 +71,29 @@ func (l *liveInstance) close() {
 	}
 }
 
-func loadAndShow(path, component string, bind func(*Instance) error, opts []Option) (*liveInstance, error) {
+// compileAndName compiles path and resolves which component to instantiate.
+func compileAndName(path, component string, opts []Option) (*Compilation, string, error) {
 	app, err := CompileFile(path, opts...)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	name := component
 	if name == "" {
 		names := app.ComponentNames()
 		if len(names) == 0 {
 			app.Close()
-			return nil, fmt.Errorf("no components exported by %s", path)
+			return nil, "", fmt.Errorf("no components exported by %s", path)
 		}
 		name = names[len(names)-1]
+	}
+	return app, name, nil
+}
+
+// loadAndShow does the initial load: compile, create, wire, and show a new window.
+func loadAndShow(path, component string, bind func(*Instance) error, opts []Option) (*liveInstance, error) {
+	app, name, err := compileAndName(path, component, opts)
+	if err != nil {
+		return nil, err
 	}
 	inst, err := app.Create(name)
 	if err != nil {
@@ -101,6 +111,29 @@ func loadAndShow(path, component string, bind func(*Instance) error, opts []Opti
 		inst.Close()
 		app.Close()
 		return nil, err
+	}
+	return &liveInstance{app: app, inst: inst}, nil
+}
+
+// loadReuse recompiles and instantiates into old's existing window (an in-place
+// content swap), so no new window appears and nothing flashes. The caller closes
+// old afterward — the window stays alive via the returned instance.
+func loadReuse(path, component string, bind func(*Instance) error, opts []Option, old *Instance) (*liveInstance, error) {
+	app, name, err := compileAndName(path, component, opts)
+	if err != nil {
+		return nil, err
+	}
+	inst, err := app.CreateWithWindow(name, old)
+	if err != nil {
+		app.Close()
+		return nil, err
+	}
+	if bind != nil {
+		if err := bind(inst); err != nil {
+			inst.Close()
+			app.Close()
+			return nil, err
+		}
 	}
 	return &liveInstance{app: app, inst: inst}, nil
 }
