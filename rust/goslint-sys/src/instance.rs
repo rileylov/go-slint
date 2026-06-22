@@ -195,8 +195,6 @@ pub unsafe extern "C" fn goslint_instance_window_size(
     })
 }
 
-/// Set the window size in physical pixels.
-///
 /// A Go close-requested handler. `cb` returns true to allow the window to close
 /// (it hides), false to keep it open. `drop` releases `handle` when the handler is
 /// replaced or the instance is freed.
@@ -263,6 +261,89 @@ pub unsafe extern "C" fn goslint_instance_request_close(i: *const ComponentInsta
     })
 }
 
+// Reach the window's renderer to register custom fonts. The font collection lives on
+// the shared per-thread context, so registering via one window applies to all
+// windows on that thread (register before the text using the font is laid out).
+use i_slint_core::renderer::RendererSealed as _;
+use i_slint_core::window::{WindowAdapter as _, WindowInner};
+
+/// Register a TrueType/OpenType font from a file path for use via `font-family`.
+/// Returns 0 on success, 1 on failure (see goslint_last_error).
+///
+/// # Safety
+/// `i` must be NULL or an instance pointer; `path` a valid C string or NULL.
+#[no_mangle]
+pub unsafe extern "C" fn goslint_instance_register_font_from_path(
+    i: *const ComponentInstance,
+    path: *const c_char,
+) -> i32 {
+    guard(1, || {
+        let i = match i.as_ref() {
+            Some(i) => i,
+            None => return 1,
+        };
+        let p = match opt_str(path) {
+            Some(p) => p,
+            None => {
+                set_last_error("register font: NULL or invalid path");
+                return 1;
+            }
+        };
+        let adapter = WindowInner::from_pub(i.window()).window_adapter();
+        match adapter
+            .renderer()
+            .register_font_from_path(std::path::Path::new(p))
+        {
+            Ok(()) => 0,
+            Err(e) => {
+                set_last_error(format!("register font {p:?}: {e}"));
+                1
+            }
+        }
+    })
+}
+
+/// Register a TrueType/OpenType font from an in-memory buffer. The bytes are copied
+/// and intentionally leaked (`'static`), since a registered font lives for the
+/// process. Returns 0 on success, 1 on failure (see goslint_last_error).
+///
+/// # Safety
+/// `i` must be NULL or an instance pointer; `data` must point to `n` bytes (or be
+/// NULL, which fails).
+#[no_mangle]
+pub unsafe extern "C" fn goslint_instance_register_font_from_memory(
+    i: *const ComponentInstance,
+    data: *const u8,
+    n: usize,
+) -> i32 {
+    guard(1, || {
+        let i = match i.as_ref() {
+            Some(i) => i,
+            None => return 1,
+        };
+        if data.is_null() || n == 0 {
+            set_last_error("register font: NULL or empty data");
+            return 1;
+        }
+        // Leak a 'static copy — the renderer borrows it for the font's lifetime.
+        let bytes: &'static [u8] = Box::leak(
+            std::slice::from_raw_parts(data, n)
+                .to_vec()
+                .into_boxed_slice(),
+        );
+        let adapter = WindowInner::from_pub(i.window()).window_adapter();
+        match adapter.renderer().register_font_from_memory(bytes) {
+            Ok(()) => 0,
+            Err(e) => {
+                set_last_error(format!("register font (memory): {e}"));
+                1
+            }
+        }
+    })
+}
+
+/// Set the window size in physical pixels.
+///
 /// # Safety
 /// `i` must be NULL or an instance pointer.
 #[no_mangle]

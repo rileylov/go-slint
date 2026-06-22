@@ -49,6 +49,14 @@ func (c *AppWindow) RequestClose()          { c.inner.RequestClose() }
 // OnCloseRequested runs when the window's close is requested; return true to allow it to close.
 func (c *AppWindow) OnCloseRequested(handler func() bool) { c.inner.OnCloseRequested(handler) }
 
+// RegisterFontFromPath/Memory register a custom font for use via `font-family`.
+func (c *AppWindow) RegisterFontFromPath(path string) error {
+	return c.inner.RegisterFontFromPath(path)
+}
+func (c *AppWindow) RegisterFontFromMemory(data []byte) error {
+	return c.inner.RegisterFontFromMemory(data)
+}
+
 func (c *AppWindow) Frame() (*slint.Image, error) {
 	v, err := c.inner.Get("frame")
 	if err != nil {

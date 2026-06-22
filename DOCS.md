@@ -199,6 +199,26 @@ defer img.Free()
 procedurally. (It handles Go's premultiplied-alpha `image.RGBA` correctly.) See
 [`cmd/examples/image`](cmd/examples/image).
 
+### Custom fonts
+
+The simplest way is to **import the font in your `.slint`** — the interpreter
+registers it for you, and you reference it by family name:
+
+```slint
+import "fonts/Inter.ttf";
+export component AppWindow inherits Window {
+    Text { text: "Hi"; font-family: "Inter"; }
+}
+```
+
+To register a font from Go at runtime (e.g. a `go:embed`'d or user-supplied font),
+call it on the window before the text is shown — it applies to all windows:
+
+```go
+win.RegisterFontFromPath("fonts/Inter.ttf")
+win.RegisterFontFromMemory(embeddedTTF) // []byte; kept for the process
+```
+
 ### Arrays
 
 Array properties map to Go slices. The setter takes a whole slice (a snapshot);

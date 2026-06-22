@@ -75,7 +75,10 @@ func generate(iface *Interface, pkg, style, source, relPath string, files map[st
 	p("func (c *%s) Close()      { c.inner.Close() }\n", comp)
 	p("func (c *%s) RequestClose() { c.inner.RequestClose() }\n", comp)
 	p("// OnCloseRequested runs when the window's close is requested; return true to allow it to close.\n")
-	p("func (c *%s) OnCloseRequested(handler func() bool) { c.inner.OnCloseRequested(handler) }\n\n", comp)
+	p("func (c *%s) OnCloseRequested(handler func() bool) { c.inner.OnCloseRequested(handler) }\n", comp)
+	p("// RegisterFontFromPath/Memory register a custom font for use via `font-family`.\n")
+	p("func (c *%s) RegisterFontFromPath(path string) error { return c.inner.RegisterFontFromPath(path) }\n", comp)
+	p("func (c *%s) RegisterFontFromMemory(data []byte) error { return c.inner.RegisterFontFromMemory(data) }\n\n", comp)
 
 	recv := "c *" + comp
 	emitProperties(&b, recv, comp, iface.Properties, propAccessors{})

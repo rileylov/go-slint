@@ -55,6 +55,25 @@ func (i *Instance) Invoke(name string, args []any) (any, error) {
 	return goValue(ret), nil
 }
 
+// RegisterFontFromPath registers a TrueType/OpenType font file for use via
+// `font-family`. Registers into the shared per-thread context, so it applies to all
+// windows; call before the text using the font is laid out.
+func (i *Instance) RegisterFontFromPath(path string) error {
+	cs := C.CString(path)
+	defer C.free(unsafe.Pointer(cs))
+	return rc(C.goslint_instance_register_font_from_path(i.ptr, cs), "register font "+path)
+}
+
+// RegisterFontFromMemory registers a font from an in-memory buffer. The data is
+// copied; the copy lives for the process (a registered font is permanent).
+func (i *Instance) RegisterFontFromMemory(data []byte) error {
+	if len(data) == 0 {
+		return errors.New("register font: empty data")
+	}
+	return rc(C.goslint_instance_register_font_from_memory(i.ptr,
+		(*C.uint8_t)(unsafe.Pointer(&data[0])), C.size_t(len(data))), "register font (memory)")
+}
+
 // GetGlobalProperty reads a property of an exported global singleton.
 func (i *Instance) GetGlobalProperty(global, name string) (any, error) {
 	cg := C.CString(global)

@@ -100,6 +100,9 @@ void     goslint_instance_window_request_redraw(const GoComponentInstance *i);
 typedef bool (*GoCloseRequested)(uintptr_t handle);
 void     goslint_instance_on_close_requested(const GoComponentInstance *i, uintptr_t handle, GoCloseRequested cb, void (*drop)(uintptr_t));
 void     goslint_instance_request_close(const GoComponentInstance *i);
+/* custom fonts (for `font-family`); 0 on success, 1 on failure (see goslint_last_error) */
+int      goslint_instance_register_font_from_path(const GoComponentInstance *i, const char *path);
+int      goslint_instance_register_font_from_memory(const GoComponentInstance *i, const uint8_t *data, size_t n);
 
 /* ---- callbacks, invoke, globals ---- */
 /* A callback receives a host handle (user_data) + borrowed args, and returns an

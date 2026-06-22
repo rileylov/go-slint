@@ -424,3 +424,15 @@ func (i *Instance) OnCloseRequested(handler func() (allowClose bool)) {
 // RequestClose asks the window to close, running the OnCloseRequested handler — as
 // if the user clicked the close button.
 func (i *Instance) RequestClose() { i.inner.RequestClose() }
+
+// RegisterFontFromPath registers a TrueType/OpenType font file so `.slint`
+// `font-family` can use it. It applies to all windows (registered into the shared
+// context); call it before the text using the font is shown.
+func (i *Instance) RegisterFontFromPath(path string) error { return i.inner.RegisterFontFromPath(path) }
+
+// RegisterFontFromMemory registers a font from bytes (e.g. a go:embed'd .ttf). The
+// data is copied and kept for the process. (You can also just `import "font.ttf"`
+// in your .slint, which the interpreter registers for you.)
+func (i *Instance) RegisterFontFromMemory(data []byte) error {
+	return i.inner.RegisterFontFromMemory(data)
+}

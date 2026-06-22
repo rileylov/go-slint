@@ -477,6 +477,40 @@ func TestWindowCloseRequested(t *testing.T) {
 	}
 }
 
+// TestRegisterFont covers programmatic custom-font registration from a path and
+// from memory.
+func TestRegisterFont(t *testing.T) {
+	lockSlint(t)
+	const fontPath = "slint/tests/screenshots/fonts/NotoSans-Italic.ttf"
+	if _, err := os.Stat(fontPath); err != nil {
+		t.Skipf("test font not present (%v); needs `make slint`", err)
+	}
+	app, err := slint.Compile(`export component W inherits Window {}`)
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	defer app.Close()
+	inst, err := app.Create("W")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	defer inst.Close()
+
+	if err := inst.RegisterFontFromPath(fontPath); err != nil {
+		t.Fatalf("RegisterFontFromPath: %v", err)
+	}
+	data, err := os.ReadFile(fontPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := inst.RegisterFontFromMemory(data); err != nil {
+		t.Fatalf("RegisterFontFromMemory: %v", err)
+	}
+	if err := inst.RegisterFontFromMemory(nil); err == nil {
+		t.Fatal("RegisterFontFromMemory(nil): expected an error")
+	}
+}
+
 // TestImageFromPixels covers building images from raw/Go pixel buffers (the
 // SharedPixelBuffer path) and assigning them to an `image` property.
 func TestImageFromPixels(t *testing.T) {

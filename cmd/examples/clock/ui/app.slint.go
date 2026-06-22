@@ -49,6 +49,12 @@ func (c *Clock) RequestClose()          { c.inner.RequestClose() }
 // OnCloseRequested runs when the window's close is requested; return true to allow it to close.
 func (c *Clock) OnCloseRequested(handler func() bool) { c.inner.OnCloseRequested(handler) }
 
+// RegisterFontFromPath/Memory register a custom font for use via `font-family`.
+func (c *Clock) RegisterFontFromPath(path string) error { return c.inner.RegisterFontFromPath(path) }
+func (c *Clock) RegisterFontFromMemory(data []byte) error {
+	return c.inner.RegisterFontFromMemory(data)
+}
+
 func (c *Clock) Ticks() (int, error) {
 	v, err := c.inner.Get("ticks")
 	if err != nil {
