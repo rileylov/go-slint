@@ -30,7 +30,10 @@ slint-interpreter = { path = "../../slint/internal/interpreter", default-feature
 i-slint-backend-testing = { path = "../../slint/internal/backends/testing", features = ["internal"] }
 # Direct dep so we can name Model / ModelRc / ModelNotify (not re-exported by the
 # interpreter). Same path as the interpreter's dep, so Cargo unifies the crate.
-i-slint-core = { path = "../../slint/internal/core", features = ["default"] }
+# "tr" enables runtime translation of @tr via an external translator we set from Go.
+i-slint-core = { path = "../../slint/internal/core", features = ["default", "tr"] }
+# The same translation crate i-slint-core uses, so we can implement tr::Translator.
+tr = { version = "0.1", default-features = false }
 spin_on = "0.1"
 # For `goslint generate` introspection only: read the rich langtype::Type exposed
 # by the interpreter's properties_and_callbacks() to emit a typed-codegen JSON.

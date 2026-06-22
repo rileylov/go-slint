@@ -44,6 +44,15 @@ func ClipboardText() string { return slintsys.ClipboardText() }
 // SetClipboardText sets the system clipboard text.
 func SetClipboardText(s string) error { return slintsys.SetClipboardText(s) }
 
+// SetTranslator installs a function that translates `@tr("…")` source strings at
+// runtime, and re-renders existing translations. Call it again to switch languages
+// (e.g. with a different lookup table); the handler returns the original string when
+// it has no translation. Call on the UI thread, after a window/backend exists.
+func SetTranslator(fn func(msgid string) string) error { return slintsys.SetTranslator(fn) }
+
+// ClearTranslator removes the translator so `@tr` shows its source strings again.
+func ClearTranslator() { slintsys.ClearTranslator() }
+
 // DiagnosticError reports one or more compiler errors.
 type DiagnosticError struct {
 	Diagnostics []slintsys.Diagnostic

@@ -1434,6 +1434,7 @@ dependencies = [
  "serde_json",
  "slint-interpreter",
  "spin_on",
+ "tr",
 ]
 
 [[package]]
@@ -1693,6 +1694,7 @@ dependencies = [
  "swash",
  "sys-locale",
  "taffy",
+ "tr",
  "unicode-linebreak",
  "unicode-script",
  "unicode-segmentation",
@@ -4120,6 +4122,12 @@ name = "toml_writer"
 version = "1.1.1+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "756daf9b1013ebe47a8776667b466417e2d4c5679d441c26230efd9ef78692db"
+
+[[package]]
+name = "tr"
+version = "0.1.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "79d30c7e79732253d80e9d619007002c8f3a362b0816e37340af648d4e2c6092"
 
 [[package]]
 name = "tracing"

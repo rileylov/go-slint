@@ -477,6 +477,63 @@ func TestWindowCloseRequested(t *testing.T) {
 	}
 }
 
+// TestTranslations covers runtime @tr translation via a Go translator, including
+// switching languages (re-evaluates existing translations).
+func TestTranslations(t *testing.T) {
+	lockSlint(t)
+	es := map[string]string{"Hello": "Hola", "Bye": "Adiós"}
+	if err := slint.SetTranslator(func(s string) string {
+		if v, ok := es[s]; ok {
+			return v
+		}
+		return s
+	}); err != nil {
+		t.Fatalf("SetTranslator: %v", err)
+	}
+	defer slint.ClearTranslator()
+
+	app, err := slint.Compile(`export component W inherits Window {
+		out property <string> greeting: @tr("Hello");
+		out property <string> untranslated: @tr("Untranslated");
+	}`)
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	defer app.Close()
+	inst, err := app.Create("W")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	defer inst.Close()
+
+	if g, _ := inst.Str("greeting"); g != "Hola" {
+		t.Fatalf("greeting = %q; want Hola", g)
+	}
+	if u, _ := inst.Str("untranslated"); u != "Untranslated" {
+		t.Fatalf("untranslated = %q; want the source string", u)
+	}
+
+	// Switch language; existing @tr bindings re-evaluate.
+	fr := map[string]string{"Hello": "Bonjour"}
+	if err := slint.SetTranslator(func(s string) string {
+		if v, ok := fr[s]; ok {
+			return v
+		}
+		return s
+	}); err != nil {
+		t.Fatalf("SetTranslator (switch): %v", err)
+	}
+	if g, _ := inst.Str("greeting"); g != "Bonjour" {
+		t.Fatalf("greeting after switch = %q; want Bonjour", g)
+	}
+
+	// Clearing falls back to source strings.
+	slint.ClearTranslator()
+	if g, _ := inst.Str("greeting"); g != "Hello" {
+		t.Fatalf("greeting after clear = %q; want Hello", g)
+	}
+}
+
 // TestMultiWindow covers running several windows at once: each Create is an
 // independent window/instance with its own state (two of the same component, plus a
 // different one). Show each and drive the single shared event loop with Run.

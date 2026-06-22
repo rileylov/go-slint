@@ -17,6 +17,7 @@ mod introspect;
 mod model;
 mod structs;
 mod timer;
+mod translations;
 mod value;
 
 use std::cell::RefCell;

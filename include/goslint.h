@@ -47,6 +47,11 @@ int  goslint_run_event_loop_until_quit(void);      /* blocks; does not quit on l
 int  goslint_quit_event_loop(void);
 int  goslint_invoke_from_event_loop(void (*cb)(uintptr_t), uintptr_t handle, void (*drop)(uintptr_t));
 
+/* runtime translation of @tr(...): translate(handle, msgid) returns malloc'd text or NULL */
+typedef char *(*GoTranslate)(uintptr_t handle, const char *msgid);
+int  goslint_set_translator(uintptr_t handle, GoTranslate translate, void (*drop)(uintptr_t));
+void goslint_clear_translator(void);
+
 /* system clipboard (needs a backend; works after the first window / init_headless) */
 char *goslint_clipboard_get_text(void);             /* owned (goslint_string_free) or NULL if empty */
 int   goslint_clipboard_set_text(const char *text); /* 0 ok, 1 on failure */

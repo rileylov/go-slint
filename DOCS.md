@@ -374,6 +374,24 @@ slint.SetClipboardText("copied!")
 text := slint.ClipboardText()
 ```
 
+**Translations.** Mark strings with `@tr("…")` in `.slint`, then provide the
+translations from Go. Call `SetTranslator` again to switch languages at runtime
+(visible `@tr` strings re-render); return the original for anything untranslated:
+
+```slint
+Text { text: @tr("Hello"); }
+```
+
+```go
+es := map[string]string{"Hello": "Hola"}
+slint.SetTranslator(func(msgid string) string {
+	if v, ok := es[msgid]; ok {
+		return v
+	}
+	return msgid
+})
+```
+
 **Multiple windows.** Each `Create` (or `New…`) is an independent window. Show each
 one (non-blocking) and drive a **single** shared event loop with `slint.Run()` — not
 `win.Run()` per window. `Run()` returns when the last window closes; `slint.RunUntilQuit()`
