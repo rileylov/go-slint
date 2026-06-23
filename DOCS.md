@@ -474,6 +474,25 @@ debug keystore is created automatically).
 
 ---
 
+## Renderers
+
+go-slint ships Slint's **GPU renderer** (femtovg/OpenGL — the default, best on most
+machines) and a **software renderer**. On **low-end / integrated GPUs**, OpenGL
+window *resize* can stutter badly (a Slint/driver limitation, not the bindings — it
+reproduces in Slint's own examples). Switch to the software renderer via an env var,
+no rebuild:
+
+```sh
+SLINT_BACKEND=software   ./myapp           # or `winit-software`
+# PowerShell:  $env:SLINT_BACKEND="software"; .\myapp.exe
+```
+
+On a discrete GPU the default is smooth and you don't need this. (Set the env var
+before launching; you can also `os.Setenv("SLINT_BACKEND", "software")` in `init()`
+before creating a window if you want to force it for your app.)
+
+---
+
 ## Reference
 
 - [`cmd/examples`](cmd/examples) — runnable examples (typed: `counter`, `clock`,
