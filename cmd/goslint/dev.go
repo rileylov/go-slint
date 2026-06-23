@@ -59,6 +59,13 @@ func cmdDev(args []string) error {
 	}
 
 	var proc *exec.Cmd
+	// procDone is closed when the running app process exits. It's nil whenever no
+	// process is running, which disables the select case below (a receive on a nil
+	// channel blocks forever). When the app exits on its own — the user closed the
+	// last window, or it called quit — this fires and we stop the dev session
+	// instead of leaving the terminal hung. A harness-initiated kill (rebuild) is
+	// drained by stop(), so it never reaches the select.
+	var procDone chan struct{}
 	start := func() {
 		proc = exec.Command(bin)
 		proc.Env = env
@@ -66,14 +73,20 @@ func cmdDev(args []string) error {
 		if err := proc.Start(); err != nil {
 			fmt.Fprintln(os.Stderr, "start:", err)
 			proc = nil
+			return
 		}
+		p, done := proc, make(chan struct{})
+		procDone = done
+		go func() { _ = p.Wait(); close(done) }()
 	}
 	stop := func() {
 		if proc != nil && proc.Process != nil {
 			_ = proc.Process.Kill()
-			_ = proc.Wait()
-			proc = nil
+			if procDone != nil {
+				<-procDone // wait for the watcher goroutine's Wait() to return
+			}
 		}
+		proc, procDone = nil, nil
 	}
 
 	if needsGenerate(pkg) {
@@ -98,6 +111,11 @@ func cmdDev(args []string) error {
 		select {
 		case <-sig:
 			fmt.Println("\n>> stopping")
+			return nil
+		case <-procDone:
+			// The app exited on its own (last window closed, or it quit) — end the
+			// dev session rather than leaving the terminal hung.
+			fmt.Println("\n>> app exited — stopping")
 			return nil
 		case <-ticker.C:
 			// .slint edits are hot-reloaded by the running binary; the harness only

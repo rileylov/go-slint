@@ -38,7 +38,7 @@ const modulePath = "github.com/rileylov/go-slint"
 // (`go build`/`go run`, where the module version is "(devel)") that's also run
 // outside a go-slint project. Released binaries derive their version from the
 // install tag via selfVersion(), so this no longer needs bumping per release.
-const defaultLibVersion = "v0.5.0"
+const defaultLibVersion = "v0.5.2"
 
 // defaultBaseURL is the GitHub Releases download root. The release for libVersion
 // is expected at <defaultBaseURL>/<libVersion>/{manifest.json,<archives>}.
