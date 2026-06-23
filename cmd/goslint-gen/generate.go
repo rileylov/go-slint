@@ -60,13 +60,22 @@ func generate(iface *Interface, pkg, style, source, relPath string, files map[st
 
 	comp := exported(iface.Component)
 
-	// dev-only: locate the .slint on disk (next to this generated file) so `goslint
-	// dev` can hot-reload it; absent in a shipped binary (then Run runs normally).
+	// dev-only: locate the .slint on disk so `goslint dev` can hot-reload it; absent
+	// in a shipped binary (then Run runs normally).
 	p("var generatedSourceRel = %s\n\n", strconv.Quote(relPath))
 	p("func sourcePath() (string, bool) {\n")
-	p("\t_, file, _, ok := runtime.Caller(0)\n\tif !ok {\n\t\treturn \"\", false\n\t}\n")
-	p("\tp := filepath.Join(filepath.Dir(file), filepath.FromSlash(generatedSourceRel))\n")
-	p("\tif _, err := os.Stat(p); err != nil {\n\t\treturn \"\", false\n\t}\n\treturn p, true\n}\n\n")
+	p("\t// Primary: next to this generated file (source tree present — go run / goslint dev).\n")
+	p("\tif _, file, _, ok := runtime.Caller(0); ok {\n")
+	p("\t\tp := filepath.Join(filepath.Dir(file), filepath.FromSlash(generatedSourceRel))\n")
+	p("\t\tif _, err := os.Stat(p); err == nil {\n\t\t\treturn p, true\n\t\t}\n")
+	p("\t}\n")
+	p("\t// Fallback: the entry .slint in the working directory (goslint dev runs from\n")
+	p("\t// the project dir) — robust even if generatedSourceRel doesn't resolve.\n")
+	p("\tif wd, err := os.Getwd(); err == nil {\n")
+	p("\t\tp := filepath.Join(wd, filepath.Base(filepath.FromSlash(generatedSourceRel)))\n")
+	p("\t\tif _, err := os.Stat(p); err == nil {\n\t\t\treturn p, true\n\t\t}\n")
+	p("\t}\n")
+	p("\treturn \"\", false\n}\n\n")
 
 	// devRecorder records the setup calls (Set*/On*) made between New and Run so they
 	// can be replayed on each live reload onto the freshly-compiled instance.

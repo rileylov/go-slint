@@ -47,15 +47,22 @@ func compile() (*slint.Compilation, error) {
 var generatedSourceRel = "../app.slint"
 
 func sourcePath() (string, bool) {
-	_, file, _, ok := runtime.Caller(0)
-	if !ok {
-		return "", false
+	// Primary: next to this generated file (source tree present — go run / goslint dev).
+	if _, file, _, ok := runtime.Caller(0); ok {
+		p := filepath.Join(filepath.Dir(file), filepath.FromSlash(generatedSourceRel))
+		if _, err := os.Stat(p); err == nil {
+			return p, true
+		}
 	}
-	p := filepath.Join(filepath.Dir(file), filepath.FromSlash(generatedSourceRel))
-	if _, err := os.Stat(p); err != nil {
-		return "", false
+	// Fallback: the entry .slint in the working directory (goslint dev runs from
+	// the project dir) — robust even if generatedSourceRel doesn't resolve.
+	if wd, err := os.Getwd(); err == nil {
+		p := filepath.Join(wd, filepath.Base(filepath.FromSlash(generatedSourceRel)))
+		if _, err := os.Stat(p); err == nil {
+			return p, true
+		}
 	}
-	return p, true
+	return "", false
 }
 
 type devRecorder struct {
