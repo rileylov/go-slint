@@ -122,21 +122,23 @@ func generate(iface *Interface, pkg, style, source, relPath string, files map[st
 	p("func (c *%s) RegisterFontFromMemory(data []byte) error { return c.inner.RegisterFontFromMemory(data) }\n\n", comp)
 
 	recv := "c *" + comp
-	emitProperties(&b, recv, comp, iface.Properties, propAccessors{comp: comp})
-	emitCallables(&b, recv, comp, iface.Callbacks, false, cbAccessors{comp: comp})
-	emitCallables(&b, recv, comp, iface.Functions, true, cbAccessors{comp: comp})
+	emitProperties(&b, recv, comp, iface.Properties, propAccessors{comp: comp, base: "c"})
+	emitCallables(&b, recv, comp, iface.Callbacks, false, cbAccessors{comp: comp, base: "c"})
+	emitCallables(&b, recv, comp, iface.Functions, true, cbAccessors{comp: comp, base: "c"})
 
-	// globals
+	// globals. The accessor returns a handle holding a back-reference to the
+	// component (not a snapshot of its *Instance), so a handle captured before Run()
+	// stays valid across a dev live reload — which swaps the underlying instance.
 	for _, g := range iface.Globals {
 		gType := comp + exported(g.Name)
 		acc := exported(g.Name)
 		p("// %s() accesses the %q global.\n", acc, g.Name)
-		p("func (c *%s) %s() *%s { return &%s{inner: c.inner, rec: c.rec} }\n\n", comp, acc, gType, gType)
-		p("type %s struct {\n\tinner *slint.Instance\n\trec   *devRecorder\n}\n\n", gType)
+		p("func (c *%s) %s() *%s { return &%s{owner: c} }\n\n", comp, acc, gType, gType)
+		p("type %s struct {\n\towner *%s\n}\n\n", gType, comp)
 		grecv := "g *" + gType
-		emitProperties(&b, grecv, gType, g.Properties, propAccessors{global: g.Name, comp: comp, accessor: acc})
-		emitCallables(&b, grecv, gType, g.Callbacks, false, cbAccessors{global: g.Name, comp: comp, accessor: acc})
-		emitCallables(&b, grecv, gType, g.Functions, true, cbAccessors{global: g.Name, comp: comp, accessor: acc})
+		emitProperties(&b, grecv, gType, g.Properties, propAccessors{global: g.Name, comp: comp, accessor: acc, base: "g.owner"})
+		emitCallables(&b, grecv, gType, g.Callbacks, false, cbAccessors{global: g.Name, comp: comp, accessor: acc, base: "g.owner"})
+		emitCallables(&b, grecv, gType, g.Functions, true, cbAccessors{global: g.Name, comp: comp, accessor: acc, base: "g.owner"})
 	}
 
 	// structs & enums
@@ -151,9 +153,11 @@ func generate(iface *Interface, pkg, style, source, relPath string, files map[st
 }
 
 // propAccessors / cbAccessors carry the global name (empty = component-level) plus
-// the component type and Go global-accessor name, used to emit dev record/replay.
-type propAccessors struct{ global, comp, accessor string }
-type cbAccessors struct{ global, comp, accessor string }
+// the component type and Go global-accessor name (for dev record/replay), and
+// `base` — the expression yielding the live instance/recorder: "c" for component
+// members, "g.owner" for global members (which reach through the back-reference).
+type propAccessors struct{ global, comp, accessor, base string }
+type cbAccessors struct{ global, comp, accessor, base string }
 
 // recordReplay emits the dev record branch for a setter/callback binding: when
 // recording, append a closure that re-invokes `call` on a fresh component `t`.
@@ -170,20 +174,20 @@ func emitProperties(b *strings.Builder, recv, _ string, props []Prop, a propAcce
 		// getter
 		p("func (%s) %s() (%s, error) {\n", recv, m, gt)
 		if a.global == "" {
-			p("\tv, err := %s.inner.Get(%q)\n", rcv(recv), pr.Name)
+			p("\tv, err := %s.inner.Get(%q)\n", a.base, pr.Name)
 		} else {
-			p("\tv, err := %s.inner.GetGlobal(%q, %q)\n", rcv(recv), a.global, pr.Name)
+			p("\tv, err := %s.inner.GetGlobal(%q, %q)\n", a.base, a.global, pr.Name)
 		}
 		p("\tif err != nil {\n\t\tvar zero %s\n\t\treturn zero, err\n\t}\n", gt)
 		p("\treturn %s, nil\n}\n\n", fromAny("v", pr.Ty))
 		// setter (records for live-reload replay)
 		p("func (%s) Set%s(value %s) error {\n", recv, m, gt)
 		if a.global == "" {
-			p("%s", recordReplay(rcv(recv), a.comp, "t.Set"+m+"(value)"))
-			p("\treturn %s.inner.Set(%q, %s)\n}\n\n", rcv(recv), pr.Name, toAny("value", pr.Ty))
+			p("%s", recordReplay(a.base, a.comp, "t.Set"+m+"(value)"))
+			p("\treturn %s.inner.Set(%q, %s)\n}\n\n", a.base, pr.Name, toAny("value", pr.Ty))
 		} else {
-			p("%s", recordReplay(rcv(recv), a.comp, "t."+a.accessor+"().Set"+m+"(value)"))
-			p("\treturn %s.inner.SetGlobal(%q, %q, %s)\n}\n\n", rcv(recv), a.global, pr.Name, toAny("value", pr.Ty))
+			p("%s", recordReplay(a.base, a.comp, "t."+a.accessor+"().Set"+m+"(value)"))
+			p("\treturn %s.inner.SetGlobal(%q, %q, %s)\n}\n\n", a.base, a.global, pr.Name, toAny("value", pr.Ty))
 		}
 	}
 }
@@ -198,18 +202,18 @@ func emitCallables(b *strings.Builder, recv, _ string, cs []Callable, isFn bool,
 			if c.Ret.Kind == "void" {
 				p("func (%s) %s(%s) error {\n", recv, exported(c.Name), params)
 				if a.global == "" {
-					p("\t_, err := %s.inner.Invoke(%q%s)\n\treturn err\n}\n\n", rcv(recv), c.Name, commaList(invokeArgs))
+					p("\t_, err := %s.inner.Invoke(%q%s)\n\treturn err\n}\n\n", a.base, c.Name, commaList(invokeArgs))
 				} else {
-					p("\t_, err := %s.inner.InvokeGlobal(%q, %q%s)\n\treturn err\n}\n\n", rcv(recv), a.global, c.Name, commaList(invokeArgs))
+					p("\t_, err := %s.inner.InvokeGlobal(%q, %q%s)\n\treturn err\n}\n\n", a.base, a.global, c.Name, commaList(invokeArgs))
 				}
 				continue
 			}
 			rt := goType(c.Ret)
 			p("func (%s) %s(%s) (%s, error) {\n", recv, exported(c.Name), params, rt)
 			if a.global == "" {
-				p("\tr, err := %s.inner.Invoke(%q%s)\n", rcv(recv), c.Name, commaList(invokeArgs))
+				p("\tr, err := %s.inner.Invoke(%q%s)\n", a.base, c.Name, commaList(invokeArgs))
 			} else {
-				p("\tr, err := %s.inner.InvokeGlobal(%q, %q%s)\n", rcv(recv), a.global, c.Name, commaList(invokeArgs))
+				p("\tr, err := %s.inner.InvokeGlobal(%q, %q%s)\n", a.base, a.global, c.Name, commaList(invokeArgs))
 			}
 			p("\tif err != nil {\n\t\tvar zero %s\n\t\treturn zero, err\n\t}\n", rt)
 			p("\treturn %s, nil\n}\n\n", fromAny("r", c.Ret))
@@ -223,11 +227,11 @@ func emitCallables(b *strings.Builder, recv, _ string, cs []Callable, isFn bool,
 		p("func (%s) On%s(handler %s) error {\n", recv, exported(c.Name), sig)
 		body := callbackBody(c, argExprs)
 		if a.global == "" {
-			p("%s", recordReplay(rcv(recv), a.comp, "t.On"+exported(c.Name)+"(handler)"))
-			p("\treturn %s.inner.OnCallback(%q, func(args []any) any {\n%s\t})\n}\n\n", rcv(recv), c.Name, body)
+			p("%s", recordReplay(a.base, a.comp, "t.On"+exported(c.Name)+"(handler)"))
+			p("\treturn %s.inner.OnCallback(%q, func(args []any) any {\n%s\t})\n}\n\n", a.base, c.Name, body)
 		} else {
-			p("%s", recordReplay(rcv(recv), a.comp, "t."+a.accessor+"().On"+exported(c.Name)+"(handler)"))
-			p("\treturn %s.inner.OnGlobalCallback(%q, %q, func(args []any) any {\n%s\t})\n}\n\n", rcv(recv), a.global, c.Name, body)
+			p("%s", recordReplay(a.base, a.comp, "t."+a.accessor+"().On"+exported(c.Name)+"(handler)"))
+			p("\treturn %s.inner.OnGlobalCallback(%q, %q, func(args []any) any {\n%s\t})\n}\n\n", a.base, a.global, c.Name, body)
 		}
 	}
 }
@@ -408,10 +412,6 @@ func exported(name string) string {
 		return "X"
 	}
 	return b.String()
-}
-
-func rcv(recv string) string { // "c *AppWindow" -> "c"
-	return strings.Fields(recv)[0]
 }
 
 // pathBase returns the final element of a slash-separated path.
