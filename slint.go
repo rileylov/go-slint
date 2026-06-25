@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"image"
 	"image/draw"
+	"io/fs"
+	pathpkg "path"
 	"strings"
 
 	"github.com/rileylov/go-slint/slintsys"
@@ -130,6 +132,33 @@ func CompileSource(path, source string, opts ...Option) (*Compilation, error) {
 	return finish(build(opts, func(c *slintsys.Compiler) *slintsys.Result {
 		return c.BuildFromSource(source, path)
 	}))
+}
+
+// CompileFS compiles the `.slint` file `entry` from `fsys` (typically an embed.FS),
+// resolving every relative import through the same filesystem — so a multi-file
+// component compiles entirely from embedded bytes, with nothing on disk and no temp
+// files. Import paths are resolved relative to the FS root (i.e. as embedded), which
+// matches `//go:embed` when the embedding .go sits alongside the markup. This is the
+// self-contained compile path for generated code and for hand-rolled stateful reload.
+//
+//	//go:embed app.slint components/card.slint
+//	var ui embed.FS
+//	comp, err := slint.CompileFS(ui, "app.slint")
+func CompileFS(fsys fs.FS, entry string, opts ...Option) (*Compilation, error) {
+	src, err := fs.ReadFile(fsys, entry)
+	if err != nil {
+		return nil, fmt.Errorf("slint: read entry %q: %w", entry, err)
+	}
+	loader := func(path string) (string, bool) {
+		b, err := fs.ReadFile(fsys, pathpkg.Clean(path))
+		if err != nil {
+			return "", false
+		}
+		return string(b), true
+	}
+	// Our FS loader resolves embedded imports; user-supplied opts still apply (and a
+	// user WithFileLoader, coming later, would override ours).
+	return CompileSource(entry, string(src), append([]Option{WithFileLoader(loader)}, opts...)...)
 }
 
 func build(opts []Option, f func(*slintsys.Compiler) *slintsys.Result) *slintsys.Result {

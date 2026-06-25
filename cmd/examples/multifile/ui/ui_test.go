@@ -1,12 +1,13 @@
 package ui
 
 import (
+	"os"
 	"testing"
 
 	slint "github.com/rileylov/go-slint"
 )
 
-// TestGeneratedCompiles validates the generated wrapper (disk branch in-repo).
+// TestGeneratedCompiles validates the generated wrapper compiles.
 func TestGeneratedCompiles(t *testing.T) {
 	if _, err := compile(); err != nil {
 		t.Fatalf("generated app.slint failed to compile: %v", err)
@@ -14,12 +15,19 @@ func TestGeneratedCompiles(t *testing.T) {
 }
 
 // TestEmbeddedCompiles exercises the self-contained path a shipped binary uses:
-// compile the entry purely from the embedded source + file loader, no disk access.
+// compile the entry + its subdir import purely from the embedded FS, from an EMPTY
+// working directory so there is no on-disk fallback.
 func TestEmbeddedCompiles(t *testing.T) {
-	c, err := slint.CompileSource(generatedEntryName, generatedSource,
-		slint.WithStyle("fluent"), slint.WithFileLoader(embeddedLoader))
+	dir := t.TempDir()
+	old, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(old)
+
+	c, err := slint.CompileFS(slintFS, "app.slint", slint.WithStyle("fluent"))
 	if err != nil {
-		t.Fatalf("embedded compile failed: %v", err)
+		t.Fatalf("embedded compile (no disk) failed: %v", err)
 	}
 	c.Close()
 }

@@ -96,7 +96,7 @@ func main() {
 		fatal(fmt.Errorf("collect imports: %w", err))
 	}
 
-	code, err := generate(&iface, *pkg, *style, string(src), rel, files)
+	code, err := generate(&iface, *pkg, *style, rel, files)
 	if err != nil {
 		fatal(err)
 	}

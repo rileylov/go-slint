@@ -8,7 +8,7 @@
 //	go run ./cmd/examples/typed        # or: goslint dev ./cmd/examples/typed (live reload)
 package main
 
-//go:generate goslint generate -o ui/app.slint.go -package ui app.slint
+//go:generate goslint generate -o ui/app.slint.go -package ui ui/app.slint
 
 import (
 	"fmt"
@@ -21,35 +21,37 @@ import (
 func init() { runtime.LockOSThread() } // Slint is thread-affine
 
 func main() {
+
 	win, err := ui.NewAppWindow()
 	if err != nil {
 		panic(err)
 	}
 	defer win.Close()
 
-	// typed global callback: signature matches the .slint declaration
-	if err := win.Logic().OnGreeting(func(name string) string {
+	app := win.App()
+
+	if err := app.OnGreeting(func(name string) string {
 		return "Hello, " + strings.ToUpper(name) + "!"
 	}); err != nil {
 		panic(err)
 	}
-	// typed property setter
-	if err := win.SetName("Gophers"); err != nil {
-		panic(err)
-	}
-	// typed callback + typed property get/set, plus a typed [string] array:
-	// Log() returns []string and SetLog takes []string (compiler-checked).
-	if err := win.OnClicked(func() {
-		n, _ := win.Clicks()
-		_ = win.SetClicks(n + 1)
-		name, _ := win.Name()
-		log, _ := win.Log()
-		_ = win.SetLog(append(log, fmt.Sprintf("%s clicked (#%d)", name, n+1)))
+
+	if err := app.OnClicked(func() {
+		n, _ := app.Calls()
+		if err := app.SetCalls(n + 1); err != nil {
+			fmt.Println("set global Logic.calls failed:", err)
+			return
+		}
+		win.SetClicks(n + 1)
+
 	}); err != nil {
 		panic(err)
 	}
 
-	// Run normally; under `goslint dev` the same code live-reloads app.slint.
+	if err := win.SetName("Gophers"); err != nil {
+		panic(err)
+	}
+
 	if err := win.Run(); err != nil {
 		panic(err)
 	}

@@ -3,8 +3,8 @@
 package ui
 
 import (
+	"embed"
 	"os"
-	pathpkg "path"
 	"path/filepath"
 	"runtime"
 	"sync"
@@ -12,17 +12,8 @@ import (
 	slint "github.com/rileylov/go-slint"
 )
 
-var generatedSource = "import { VerticalBox, Button } from \"std-widgets.slint\";\nimport { Card } from \"components/card.slint\";\n\nexport component AppWindow inherits Window {\n    in-out property <int> count: 0;\n    callback bump();\n\n    title: \"Multi-file\";\n    preferred-width: 320px;\n    preferred-height: 220px;\n\n    VerticalBox {\n        Card { title: \"Counter\"; value: root.count; }\n        Button { text: \"Bump\"; clicked => { root.bump(); } }\n    }\n}\n"
-
-// generatedEntryName is the entry .slint's base name; the embedded file-loader
-// treats imports as relative to it.
-var generatedEntryName = "app.slint"
-
-// generatedFiles holds every imported .slint, keyed relative to the entry's
-// directory, so the component compiles from memory with no files on disk.
-var generatedFiles = map[string]string{
-	"components/card.slint": "import { VerticalBox } from \"std-widgets.slint\";\n\n// Card is a reusable component imported by app.slint, demonstrating that the typed\n// generator embeds every imported .slint so the binary is self-contained.\nexport component Card inherits Rectangle {\n    in property <string> title;\n    in property <int> value;\n\n    background: #2a2a2a;\n    border-radius: 8px;\n    height: 96px;\n\n    VerticalBox {\n        Text { text: root.title; font-size: 14px; color: #999; }\n        Text { text: root.value; font-size: 34px; horizontal-alignment: center; }\n    }\n}\n",
-}
+//go:embed app.slint components/card.slint
+var slintFS embed.FS
 
 var (
 	compileOnce sync.Once
@@ -30,21 +21,14 @@ var (
 	compileErr  error
 )
 
-// embeddedLoader resolves imports from generatedFiles (the requested path is
-// relative to the entry's directory).
-func embeddedLoader(path string) (string, bool) {
-	s, ok := generatedFiles[pathpkg.Clean(filepath.ToSlash(path))]
-	return s, ok
-}
-
 func compile() (*slint.Compilation, error) {
 	compileOnce.Do(func() {
-		compiled, compileErr = slint.CompileSource(generatedEntryName, generatedSource, slint.WithStyle("fluent"), slint.WithFileLoader(embeddedLoader))
+		compiled, compileErr = slint.CompileFS(slintFS, "app.slint", slint.WithStyle("fluent"))
 	})
 	return compiled, compileErr
 }
 
-var generatedSourceRel = "../app.slint"
+var generatedSourceRel = "app.slint"
 
 func sourcePath() (string, bool) {
 	// Primary: next to this generated file (source tree present — go run / goslint dev).

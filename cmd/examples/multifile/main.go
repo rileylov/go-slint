@@ -7,7 +7,7 @@
 //	go run ./cmd/examples/multifile
 package main
 
-//go:generate goslint generate -o ui/app.slint.go -package ui app.slint
+//go:generate goslint generate -o ui/app.slint.go -package ui ui/app.slint
 
 import (
 	"runtime"

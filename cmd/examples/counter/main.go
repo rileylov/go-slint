@@ -6,7 +6,7 @@
 //	go run ./cmd/examples/counter   # or: goslint dev ./cmd/examples/counter (live reload)
 package main
 
-//go:generate goslint generate -o ui/app.slint.go -package ui app.slint
+//go:generate goslint generate -o ui/app.slint.go -package ui ui/app.slint
 
 import (
 	"log"

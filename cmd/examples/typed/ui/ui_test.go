@@ -31,11 +31,11 @@ func TestDevRecordReplayGlobals(t *testing.T) {
 	}
 	defer win.Close()
 
-	_ = win.SetName("Ada")                                          // component setter
-	_ = win.Logic().OnGreeting(func(string) string { return "hi" }) // global callback (records via t.Logic())
-	_ = win.OnClicked(func() {})                                    // component callback
+	_ = win.SetName("Ada")                                        // component setter
+	_ = win.App().OnGreeting(func(string) string { return "hi" }) // global callback (records via t.Logic())
+	_ = win.App().OnClicked(func() {})                            // global callback
 	if win.rec == nil || len(win.rec.replays) != 3 {
-		t.Fatalf("recorded %d setup calls; want 3 (incl. the global)", len(win.rec.replays))
+		t.Fatalf("recorded %d setup calls; want 3 (incl. the globals)", len(win.rec.replays))
 	}
 
 	// Replay onto a fresh instance, as a live reload does. The global replay
@@ -58,5 +58,52 @@ func TestDevRecordReplayGlobals(t *testing.T) {
 	}
 	if n, _ := target.Name(); n != "Ada" {
 		t.Fatalf("replayed name = %q; want Ada", n)
+	}
+}
+
+// TestGlobalHandleSurvivesReload reproduces the dev-only bug where a global handle
+// captured before Run() pointed at the instance that live reload then swapped out
+// ("set global property failed" on click). The fix: the handle holds a back-ref to
+// the component, so it follows win.inner to the freshly-created instance.
+func TestGlobalHandleSurvivesReload(t *testing.T) {
+	runtime.LockOSThread()
+	if err := slint.InitHeadless(); err != nil {
+		t.Fatalf("InitHeadless: %v", err)
+	}
+	win, err := NewAppWindow()
+	if err != nil {
+		t.Fatalf("NewAppWindow: %v", err)
+	}
+
+	logic := win.App() // captured BEFORE the swap, like `counter := win.Counter()`
+	if err := logic.SetCalls(1); err != nil {
+		t.Fatalf("SetCalls (initial instance): %v", err)
+	}
+
+	// Simulate what dev live reload does: create a fresh instance and point the
+	// component at it (LiveReload's bind sets c.inner = inst).
+	old := win.inner
+	app, err := compile()
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	fresh, err := app.Create("AppWindow")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	win.inner = fresh
+	defer old.Close()
+	defer fresh.Close()
+
+	// The captured handle must now operate on the fresh instance, not the dead one.
+	// (Old snapshot behavior: this read the old instance and returned 1.)
+	if n, _ := logic.Calls(); n != 0 {
+		t.Fatalf("captured handle still bound to old instance: Calls = %d, want 0", n)
+	}
+	if err := logic.SetCalls(5); err != nil {
+		t.Fatalf("SetCalls after reload: %v (this was the reported bug)", err)
+	}
+	if n, _ := logic.Calls(); n != 5 {
+		t.Fatalf("Calls after reload = %d, want 5", n)
 	}
 }

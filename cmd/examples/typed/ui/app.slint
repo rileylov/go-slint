@@ -1,0 +1,27 @@
+import { Button, VerticalBox, Palette } from "std-widgets.slint";
+
+export global App {
+    pure callback Greeting(string) -> string;
+    in-out property <int> calls: 0;
+    pure callback Clicked();
+}
+
+export component AppWindow inherits Window {
+    in-out property <string> name: "World";
+    in-out property <int> clicks: 0;
+    in-out property <[string]> log;
+
+    title: "Typed Hello";
+    preferred-width: 340px;
+    preferred-height: 260px;
+
+    VerticalBox {
+        alignment: center;
+        spacing: 10px;
+        Text { text: App.Greeting(root.name); horizontal-alignment: center; font-size: 22px; }
+        Text { text: "clicks: " + root.clicks; horizontal-alignment: center; color: #ec9f23; }
+        Button { text: "Click me now!"; clicked => { App.Clicked(); } }
+        for entry in root.log : Text { text: entry; horizontal-alignment: center; color: #44aa88; }
+    }
+}
+

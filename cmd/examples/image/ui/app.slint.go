@@ -3,6 +3,7 @@
 package ui
 
 import (
+	"embed"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -11,7 +12,8 @@ import (
 	slint "github.com/rileylov/go-slint"
 )
 
-var generatedSource = "import { VerticalBox } from \"std-widgets.slint\";\n\nexport component AppWindow inherits Window {\n    in property <image> frame;\n\n    title: \"Go-generated image\";\n    preferred-width: 260px;\n    preferred-height: 260px;\n\n    VerticalBox {\n        Image {\n            source: root.frame;\n            width: 240px;\n            height: 240px;\n        }\n    }\n}\n"
+//go:embed app.slint
+var slintFS embed.FS
 
 var (
 	compileOnce sync.Once
@@ -21,12 +23,12 @@ var (
 
 func compile() (*slint.Compilation, error) {
 	compileOnce.Do(func() {
-		compiled, compileErr = slint.Compile(generatedSource, slint.WithStyle("fluent"))
+		compiled, compileErr = slint.CompileFS(slintFS, "app.slint", slint.WithStyle("fluent"))
 	})
 	return compiled, compileErr
 }
 
-var generatedSourceRel = "../app.slint"
+var generatedSourceRel = "app.slint"
 
 func sourcePath() (string, bool) {
 	// Primary: next to this generated file (source tree present — go run / goslint dev).

@@ -3,6 +3,7 @@
 package ui
 
 import (
+	"embed"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -11,7 +12,8 @@ import (
 	slint "github.com/rileylov/go-slint"
 )
 
-var generatedSource = "import { Button, VerticalBox } from \"std-widgets.slint\";\n\nexport global Logic {\n    pure callback greeting(string) -> string;\n}\n\nexport component AppWindow inherits Window {\n    in-out property <string> name: \"World\";\n    in-out property <int> clicks: 0;\n    in-out property <[string]> log;\n    callback clicked();\n\n    title: \"Typed Hello\";\n    preferred-width: 340px;\n    preferred-height: 260px;\n\n    VerticalBox {\n        alignment: center;\n        spacing: 10px;\n        Text { text: Logic.greeting(root.name); horizontal-alignment: center; font-size: 22px; }\n        Text { text: \"clicks: \" + root.clicks; horizontal-alignment: center; color: #888; }\n        Button { text: \"Click me\"; clicked => { root.clicked(); } }\n        for entry in root.log : Text { text: entry; horizontal-alignment: center; color: #44aa88; }\n    }\n}\n"
+//go:embed app.slint
+var slintFS embed.FS
 
 var (
 	compileOnce sync.Once
@@ -21,12 +23,12 @@ var (
 
 func compile() (*slint.Compilation, error) {
 	compileOnce.Do(func() {
-		compiled, compileErr = slint.Compile(generatedSource, slint.WithStyle("fluent"))
+		compiled, compileErr = slint.CompileFS(slintFS, "app.slint", slint.WithStyle("fluent"))
 	})
 	return compiled, compileErr
 }
 
-var generatedSourceRel = "../app.slint"
+var generatedSourceRel = "app.slint"
 
 func sourcePath() (string, bool) {
 	// Primary: next to this generated file (source tree present — go run / goslint dev).
@@ -180,29 +182,44 @@ func (c *AppWindow) SetName(value string) error {
 	return c.inner.Set("name", value)
 }
 
-func (c *AppWindow) OnClicked(handler func()) error {
-	if c.rec != nil && c.rec.recording {
-		c.rec.replays = append(c.rec.replays, func(t *AppWindow) error { return t.OnClicked(handler) })
+// App() accesses the "App" global.
+func (c *AppWindow) App() *AppWindowApp { return &AppWindowApp{owner: c} }
+
+type AppWindowApp struct {
+	owner *AppWindow
+}
+
+func (g *AppWindowApp) Calls() (int, error) {
+	v, err := g.owner.inner.GetGlobal("App", "calls")
+	if err != nil {
+		var zero int
+		return zero, err
 	}
-	return c.inner.OnCallback("clicked", func(args []any) any {
+	return int(v.(float64)), nil
+}
+
+func (g *AppWindowApp) SetCalls(value int) error {
+	if g.owner.rec != nil && g.owner.rec.recording {
+		g.owner.rec.replays = append(g.owner.rec.replays, func(t *AppWindow) error { return t.App().SetCalls(value) })
+	}
+	return g.owner.inner.SetGlobal("App", "calls", value)
+}
+
+func (g *AppWindowApp) OnClicked(handler func()) error {
+	if g.owner.rec != nil && g.owner.rec.recording {
+		g.owner.rec.replays = append(g.owner.rec.replays, func(t *AppWindow) error { return t.App().OnClicked(handler) })
+	}
+	return g.owner.inner.OnGlobalCallback("App", "Clicked", func(args []any) any {
 		handler()
 		return nil
 	})
 }
 
-// Logic() accesses the "Logic" global.
-func (c *AppWindow) Logic() *AppWindowLogic { return &AppWindowLogic{inner: c.inner, rec: c.rec} }
-
-type AppWindowLogic struct {
-	inner *slint.Instance
-	rec   *devRecorder
-}
-
-func (g *AppWindowLogic) OnGreeting(handler func(a0 string) string) error {
-	if g.rec != nil && g.rec.recording {
-		g.rec.replays = append(g.rec.replays, func(t *AppWindow) error { return t.Logic().OnGreeting(handler) })
+func (g *AppWindowApp) OnGreeting(handler func(a0 string) string) error {
+	if g.owner.rec != nil && g.owner.rec.recording {
+		g.owner.rec.replays = append(g.owner.rec.replays, func(t *AppWindow) error { return t.App().OnGreeting(handler) })
 	}
-	return g.inner.OnGlobalCallback("Logic", "greeting", func(args []any) any {
+	return g.owner.inner.OnGlobalCallback("App", "Greeting", func(args []any) any {
 		return handler(args[0].(string))
 	})
 }

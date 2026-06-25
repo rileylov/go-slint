@@ -8,8 +8,10 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/rileylov/go-slint"
 )
@@ -857,4 +859,25 @@ func mustColor(t *testing.T, inst *slint.Instance, name string) slint.Color {
 		t.Fatalf("%s is not a Color: %#v", name, v)
 	}
 	return c
+}
+
+// TestCompileFS verifies the self-contained compile path: a multi-file component
+// (with a subdir import) compiles from an in-memory FS, resolving the import through
+// the same FS — no files on disk, no temp dir.
+func TestCompileFS(t *testing.T) {
+	fsys := fstest.MapFS{
+		"app.slint": {Data: []byte(
+			"import { Card } from \"components/card.slint\";\n" +
+				"export component App inherits Window { Card { } }\n")},
+		"components/card.slint": {Data: []byte(
+			"export component Card inherits Rectangle { }\n")},
+	}
+	comp, err := slint.CompileFS(fsys, "app.slint")
+	if err != nil {
+		t.Fatalf("CompileFS: %v", err)
+	}
+	defer comp.Close()
+	if names := comp.ComponentNames(); !slices.Contains(names, "App") {
+		t.Fatalf("App not found in %v", names)
+	}
 }

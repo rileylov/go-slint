@@ -3,6 +3,7 @@
 package ui
 
 import (
+	"embed"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -11,7 +12,8 @@ import (
 	slint "github.com/rileylov/go-slint"
 )
 
-var generatedSource = "import { Button, VerticalBox } from \"std-widgets.slint\";\n\nexport component Counter inherits Window {\n    title: \"go-slint counter\";\n    preferred-width: 280px;\n    preferred-height: 180px;\n\n    in-out property <int> value: 0;\n    callback increment();\n    callback reset();\n\n    VerticalBox {\n        alignment: center;\n        Text {\n            text: \"Count: \" + root.value;\n            font-size: 28px;\n            horizontal-alignment: center;\n        }\n        Button {\n            text: \"Increment\";\n            clicked => { root.increment(); }\n        }\n        Button {\n            text: \"Reset\";\n            clicked => { root.reset(); }\n        }\n    }\n}\n"
+//go:embed app.slint
+var slintFS embed.FS
 
 var (
 	compileOnce sync.Once
@@ -21,12 +23,12 @@ var (
 
 func compile() (*slint.Compilation, error) {
 	compileOnce.Do(func() {
-		compiled, compileErr = slint.Compile(generatedSource, slint.WithStyle("fluent"))
+		compiled, compileErr = slint.CompileFS(slintFS, "app.slint", slint.WithStyle("fluent"))
 	})
 	return compiled, compileErr
 }
 
-var generatedSourceRel = "../app.slint"
+var generatedSourceRel = "app.slint"
 
 func sourcePath() (string, bool) {
 	// Primary: next to this generated file (source tree present — go run / goslint dev).

@@ -34,15 +34,15 @@ test: lib
 	go test . ./slintsys/ ./internal/conformance/
 
 # Regenerate the scaffold's embedded ui wrapper that `goslint init` ships. It MUST be
-# generated in the scaffold's layout (ui/app.slint.go alongside ../app.slint) so the
-# baked generatedSourceRel is "../app.slint" — generating it elsewhere bakes a
-# machine-specific path and breaks first-run live reload. Run after changing the
-# scaffold's app.slint (appSlintTemplate in cmd/goslint/init.go) or the generator.
+# generated CO-LOCATED with the markup (ui/app.slint + ui/app.slint.go in one dir) so
+# the emitted //go:embed app.slint directive resolves — the generator rejects a
+# non-co-located layout. Run after changing the scaffold's app.slint (appSlintTemplate
+# in cmd/goslint/init.go) or the generator.
 .PHONY: scaffold-template
 scaffold-template: lib
 	tmp=$$(mktemp -d) && mkdir -p $$tmp/ui && \
-	  python3 -c "import re;open('$$tmp/app.slint','w').write(re.search(r'const appSlintTemplate = \`(.*?)\`\n',open('cmd/goslint/init.go').read(),re.S).group(1))" && \
-	  go run ./cmd/goslint-gen -o $$tmp/ui/app.slint.go -package ui $$tmp/app.slint && \
+	  python3 -c "import re;open('$$tmp/ui/app.slint','w').write(re.search(r'const appSlintTemplate = \`(.*?)\`\n',open('cmd/goslint/init.go').read(),re.S).group(1))" && \
+	  go run ./cmd/goslint-gen -o $$tmp/ui/app.slint.go -package ui $$tmp/ui/app.slint && \
 	  cp $$tmp/ui/app.slint.go cmd/goslint/templates/app.slint.go.tmpl && \
 	  rm -rf $$tmp && echo "regenerated cmd/goslint/templates/app.slint.go.tmpl"
 

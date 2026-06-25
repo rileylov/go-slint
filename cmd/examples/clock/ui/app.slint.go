@@ -3,6 +3,7 @@
 package ui
 
 import (
+	"embed"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -11,7 +12,8 @@ import (
 	slint "github.com/rileylov/go-slint"
 )
 
-var generatedSource = "import { VerticalBox } from \"std-widgets.slint\";\n\nexport component Clock inherits Window {\n    title: \"go-slint clock\";\n    preferred-width: 240px;\n    preferred-height: 120px;\n\n    in-out property <int> ticks: 0;\n\n    VerticalBox {\n        alignment: center;\n        Text {\n            text: \"Ticks: \" + root.ticks;\n            font-size: 28px;\n            horizontal-alignment: center;\n        }\n    }\n}\n"
+//go:embed app.slint
+var slintFS embed.FS
 
 var (
 	compileOnce sync.Once
@@ -21,12 +23,12 @@ var (
 
 func compile() (*slint.Compilation, error) {
 	compileOnce.Do(func() {
-		compiled, compileErr = slint.Compile(generatedSource, slint.WithStyle("fluent"))
+		compiled, compileErr = slint.CompileFS(slintFS, "app.slint", slint.WithStyle("fluent"))
 	})
 	return compiled, compileErr
 }
 
-var generatedSourceRel = "../app.slint"
+var generatedSourceRel = "app.slint"
 
 func sourcePath() (string, bool) {
 	// Primary: next to this generated file (source tree present — go run / goslint dev).
