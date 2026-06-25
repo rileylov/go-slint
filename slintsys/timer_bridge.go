@@ -48,4 +48,7 @@ func SingleShot(intervalMs uint64, fn func()) {
 
 // InitIntegration installs the integration-test backend (simple event loop,
 // system time) so timers fire. Call once per process on the UI thread.
-func InitIntegration() error { return rc(C.goslint_testing_init_integration(), "init integration") }
+func InitIntegration() error {
+	MarkUIThread() // this thread owns Slint's context for tests
+	return rc(C.goslint_testing_init_integration(), "init integration")
+}

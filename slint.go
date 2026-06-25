@@ -324,6 +324,7 @@ func (s *SliceModel) RowData(row int) any {
 }
 
 func (s *SliceModel) SetRowData(row int, v any) {
+	slintsys.CheckUIThread("model SetRowData", "")
 	if row >= 0 && row < len(s.items) {
 		s.items[row] = v
 		s.handle.NotifyRowChanged(row)
@@ -332,12 +333,14 @@ func (s *SliceModel) SetRowData(row int, v any) {
 
 // Append adds an item and notifies Slint.
 func (s *SliceModel) Append(v any) {
+	slintsys.CheckUIThread("model Append", "")
 	s.items = append(s.items, v)
 	s.handle.NotifyRowAdded(len(s.items)-1, 1)
 }
 
 // RemoveAt removes the item at row and notifies Slint.
 func (s *SliceModel) RemoveAt(row int) {
+	slintsys.CheckUIThread("model RemoveAt", "")
 	if row < 0 || row >= len(s.items) {
 		return
 	}

@@ -28,6 +28,7 @@ func (i *Instance) GetProperty(name string) (any, error) {
 
 // SetProperty writes a public property from a Go value.
 func (i *Instance) SetProperty(name string, val any) error {
+	CheckUIThread("Set", name)
 	cv, err := cValue(val)
 	if err != nil {
 		return err
@@ -40,6 +41,7 @@ func (i *Instance) SetProperty(name string, val any) error {
 
 // Invoke calls a callback or function and returns its result (nil for void).
 func (i *Instance) Invoke(name string, args []any) (any, error) {
+	CheckUIThread("Invoke", name)
 	cvals, err := toCValues(args)
 	if err != nil {
 		return nil, err
@@ -103,6 +105,7 @@ func (i *Instance) GetGlobalProperty(global, name string) (any, error) {
 
 // SetGlobalProperty writes a property of an exported global singleton.
 func (i *Instance) SetGlobalProperty(global, name string, val any) error {
+	CheckUIThread("SetGlobal", name)
 	cv, err := cValue(val)
 	if err != nil {
 		return err
@@ -117,6 +120,7 @@ func (i *Instance) SetGlobalProperty(global, name string, val any) error {
 
 // InvokeGlobal calls a callback or function on an exported global singleton.
 func (i *Instance) InvokeGlobal(global, name string, args []any) (any, error) {
+	CheckUIThread("InvokeGlobal", name)
 	cvals, err := toCValues(args)
 	if err != nil {
 		return nil, err
@@ -134,9 +138,12 @@ func (i *Instance) InvokeGlobal(global, name string, args []any) (any, error) {
 	return goValue(ret), nil
 }
 
-func (i *Instance) Show() error { return rc(C.goslint_instance_show(i.ptr), "show") }
+// Show/Run establish (and require) the UI thread; record it so the off-thread guard
+// knows which thread is the event-loop thread. Single-window apps drive the loop via
+// Run(); multi-window apps Show() each window then slint.Run() (also marks).
+func (i *Instance) Show() error { MarkUIThread(); return rc(C.goslint_instance_show(i.ptr), "show") }
 func (i *Instance) Hide() error { return rc(C.goslint_instance_hide(i.ptr), "hide") }
-func (i *Instance) Run() error  { return rc(C.goslint_instance_run(i.ptr), "run") }
+func (i *Instance) Run() error  { MarkUIThread(); return rc(C.goslint_instance_run(i.ptr), "run") }
 
 // ---- window control (physical pixels) ----
 

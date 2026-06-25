@@ -442,7 +442,23 @@ t.Start(slint.TimerRepeated, 1000, func() { /* every second */ })
 
 **Threading.** Slint's context is thread-local. Call `runtime.LockOSThread()` in
 `init` (the scaffold does this), and marshal any UI change made from another
-goroutine through `slint.InvokeFromEventLoop(func(){ … })`.
+goroutine through `slint.InvokeFromEventLoop(func(){ … })`:
+
+```go
+go func() {
+    img := decode(path)                       // heavy work off the UI thread
+    slint.InvokeFromEventLoop(func() {        // back on the UI thread to touch the UI
+        win.SetPreview(img)
+    })
+}()
+```
+
+A bare `win.SetPreview(img)` from that goroutine compiles fine but corrupts or
+crashes at runtime — Slint is thread-affine. To catch this, **`goslint dev` runs a
+guard**: a property set, model mutation, or invoke made off the event-loop thread
+**panics** with a clear message instead of corrupting silently. The guard is active
+only under `GOSLINT_DEV` (so a shipped build has zero overhead) — develop with
+`goslint dev` and off-thread mistakes surface immediately.
 
 ---
 
