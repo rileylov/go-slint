@@ -96,6 +96,12 @@ func main() {
 		fatal(fmt.Errorf("collect imports: %w", err))
 	}
 
+	// Surface globals that are reachable but not exported by the entry — they get no
+	// typed accessor, which is otherwise a silent loss when markup is reorganized.
+	for _, w := range unexportedGlobalWarnings(&iface, files) {
+		fmt.Fprintln(os.Stderr, "goslint: warning:", w)
+	}
+
 	code, err := generate(&iface, *pkg, *style, rel, files)
 	if err != nil {
 		fatal(err)
