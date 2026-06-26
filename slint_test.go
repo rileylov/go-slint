@@ -881,3 +881,52 @@ func TestCompileFS(t *testing.T) {
 		t.Fatalf("App not found in %v", names)
 	}
 }
+
+// TestDataTransferRoundTrip exercises the drag-payload bridge end-to-end through the
+// interpreter: a Go callback returns a data-transfer (Go->Slint), which is passed to
+// another Go callback that reads its text (Slint->Go). No GUI needed.
+func TestDataTransferRoundTrip(t *testing.T) {
+	lockSlint(t)
+	const src = `
+		export global Api {
+			pure callback make() -> data-transfer;
+			pure callback read(data-transfer) -> string;
+		}
+		export component T inherits Window {
+			out property <string> result: Api.read(Api.make());
+		}`
+	app, err := slint.Compile(src)
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	defer app.Close()
+	inst, err := app.Create("T")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	defer inst.Close()
+
+	if err := inst.OnGlobalCallback("Api", "make", func([]any) any {
+		return slint.NewDataTransfer("hello-payload")
+	}); err != nil {
+		t.Fatalf("bind make: %v", err)
+	}
+	if err := inst.OnGlobalCallback("Api", "read", func(a []any) any {
+		dt, ok := a[0].(slint.DataTransfer)
+		if !ok {
+			t.Errorf("read arg is %T, want slint.DataTransfer", a[0])
+			return ""
+		}
+		return dt.Text
+	}); err != nil {
+		t.Fatalf("bind read: %v", err)
+	}
+
+	got, err := inst.Str("result")
+	if err != nil {
+		t.Fatalf("read result: %v", err)
+	}
+	if got != "hello-payload" {
+		t.Fatalf("data-transfer round-trip = %q, want %q", got, "hello-payload")
+	}
+}

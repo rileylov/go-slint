@@ -386,6 +386,16 @@ type GradientStop = slintsys.GradientStop
 // Image is a loaded image; assign it to an `image` property and Free it when done.
 type Image = slintsys.Image
 
+// DataTransfer is a drag-and-drop payload — Slint 1.17's `data-transfer` type carried
+// by a DragArea. go-slint bridges its plain-text content: return one from a callback
+// wired to produce a `data-transfer` (e.g. `DragArea.data: Api.makeData(...)`), and
+// read it from a DropArea's DropEvent (`event.data`). A non-empty payload is required
+// for a drag to start.
+type DataTransfer = slintsys.DataTransfer
+
+// NewDataTransfer builds a drag payload carrying text (e.g. an item id or JSON).
+func NewDataTransfer(text string) DataTransfer { return DataTransfer{Text: text} }
+
 // LoadImage loads an image (PNG/JPEG) from a file path.
 func LoadImage(path string) (*Image, error) { return slintsys.LoadImage(path) }
 

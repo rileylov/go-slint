@@ -1,0 +1,31 @@
+import { Button, VerticalBox } from "std-widgets.slint";
+
+export component MainWindow inherits Window {
+    title: "go-slint system tray";
+    preferred-width: 380px;
+    preferred-height: 180px;
+    callback hide-to-tray;
+    VerticalBox {
+        alignment: center;
+        spacing: 12px;
+        Text {
+            text: "This app lives in the system tray.\nUse the tray icon's menu to show/hide or quit.";
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+        Button { text: "Hide to tray"; clicked => { hide-to-tray(); } }
+    }
+}
+
+export component Tray inherits SystemTrayIcon {
+    icon: @image-url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAArklEQVR4nOyXPQ6AIAxGlTh5Je/m4N28kqtOJBpaSi39GeiK9D2+aoJpcq6Fu2E7rru2fu7rzOnX9DAFlciQI/gLb92LGkrAUGFpgAn0htd6FgIa8Fpv98/wI6B5eoyRLOEQK9YI3AQs48+VmTESGAJDYAhwr1E9KjNjJBBCwHIMb1bCFizghYBHFQKaKUC9wQQ0JLCeJEh6V6AOQ74DkjRa9rKb9/45da8nAAD//3iWRD3qelNxAAAAAElFTkSuQmCC");
+    in-out property <string> tray-tooltip <=> root.tooltip;
+    callback show-hide;
+    callback quit;
+    clicked => { show-hide(); } // left-click where the platform doesn't auto-popup the menu
+    Menu {
+        MenuItem { title: "Show / hide window"; activated => { show-hide(); } }
+        MenuSeparator {}
+        MenuItem { title: "Quit"; activated => { quit(); } }
+    }
+}

@@ -22,6 +22,9 @@ slint-interpreter = { path = "../../slint/internal/interpreter", default-feature
     "backend-winit",
     "renderer-femtovg",
     "renderer-software",
+    # SystemTrayIcon support (1.17). On Linux/BSD this pulls in ksni (StatusNotifier);
+    # without it the tray element compiles but silently never registers an icon.
+    "system-tray",
     # exposes properties_and_callbacks() (rich langtype::Type) for `goslint generate`
     "internal",
 ] }

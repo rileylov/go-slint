@@ -1,0 +1,54 @@
+import { VerticalBox } from "std-widgets.slint";
+
+export global Api {
+    pure callback make-data(int) -> data-transfer;
+    callback dropped(DropEvent, int);
+}
+
+export component DndDemo inherits Window {
+    title: "go-slint drag & drop";
+    preferred-width: 360px;
+    preferred-height: 360px;
+    in property <[string]> items;
+
+    VerticalBox {
+        Text { text: "Drag a tile onto another to reorder"; horizontal-alignment: center; }
+        for item[i] in root.items: Rectangle {
+            height: 46px;
+            drop := DropArea {
+                can-drop(e) => { DragAction.move }
+                dropped(e) => { Api.dropped(e, i); return e.proposed-action; }
+                Rectangle {
+                    border-radius: 8px;
+                    background: #2a2a2a;
+                    DragArea {
+                        allow-move: true;
+                        data: Api.make-data(i); // non-empty payload -> the drag can start
+                        // Cursor-following preview. @image-url resolves relative to this
+                        // .slint's on-disk dir, so main.go compiles with CompileSource
+                        // (not Compile) and ships card-drag.svg alongside.
+                        drag-image: @image-url("card-drag.svg");
+                        drag-image-offset-x: 90;
+                        drag-image-offset-y: 30;
+                        Text {
+                            text: item;
+                            color: white;
+                            vertical-alignment: center;
+                            horizontal-alignment: center;
+                        }
+                    }
+                }
+                // Drop indicator: a line in the gap above this card marking where the
+                // dragged card will land (instead of recolouring the whole card).
+                Rectangle {
+                    y: -6px;
+                    height: 3px;
+                    border-radius: 1.5px;
+                    background: #3b82f6;
+                    opacity: drop.has-drag ? 1 : 0;
+                    animate opacity { duration: 80ms; }
+                }
+            }
+        }
+    }
+}

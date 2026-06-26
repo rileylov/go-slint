@@ -4,7 +4,7 @@
 
 use crate::{guard, to_c_string};
 use i_slint_core::graphics::{GradientStop, LinearGradientBrush, RadialGradientBrush};
-use i_slint_core::{Brush, Color};
+use i_slint_core::{Brush, Color, DataTransfer};
 use slint_interpreter::{SharedString, Struct, Value, ValueType};
 use std::ffi::c_char;
 
@@ -66,8 +66,41 @@ pub unsafe extern "C" fn goslint_value_new_string(s: *const c_char) -> *mut Valu
 #[no_mangle]
 pub unsafe extern "C" fn goslint_value_type(v: *const Value) -> i32 {
     guard(-2, || match v.as_ref() {
+        // ValueType has no DataTransfer variant (value_type() returns Other), so match
+        // the Value directly to give data-transfer its own discriminant (8).
+        Some(Value::DataTransfer(_)) => 8,
         Some(v) => type_code(v.value_type()),
         None => -2,
+    })
+}
+
+/// Create a `data-transfer` Value carrying `text` as its plain-text payload — the drag
+/// payload for `DragArea.data`. A non-empty payload is required for a drag to start.
+///
+/// # Safety
+/// `text` must be NULL or a valid NUL-terminated C string.
+#[no_mangle]
+pub unsafe extern "C" fn goslint_value_new_data_transfer(text: *const c_char) -> *mut Value {
+    guard(std::ptr::null_mut(), || {
+        let text = crate::opt_str(text).unwrap_or("");
+        let mut dt = DataTransfer::default();
+        dt.set_plain_text(SharedString::from(text));
+        Box::into_raw(Box::new(Value::DataTransfer(dt)))
+    })
+}
+
+/// Return the plain-text payload of a `data-transfer` Value (empty string if it has
+/// none), or NULL if `v` is not a data-transfer. The returned string is owned.
+///
+/// # Safety
+/// `v` must be NULL or a pointer returned by this library.
+#[no_mangle]
+pub unsafe extern "C" fn goslint_value_data_transfer_text(v: *const Value) -> *mut c_char {
+    guard(std::ptr::null_mut(), || match v.as_ref() {
+        Some(Value::DataTransfer(dt)) => {
+            to_c_string(dt.plain_text().unwrap_or_default().as_str())
+        }
+        _ => std::ptr::null_mut(),
     })
 }
 

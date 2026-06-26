@@ -155,6 +155,11 @@ GoStruct *goslint_value_as_struct(const GoValue *v);   /* owned; NULL if not a s
 GoValue *goslint_value_new_enum(const char *enum_name, const char *value);
 bool     goslint_value_as_enum(const GoValue *v, char **out_name, char **out_value);
 
+/* data-transfer (drag & drop payload, Slint 1.17). goslint_value_type returns 8.
+ * _text returns NULL if v is not a data-transfer, else an owned (possibly empty) string. */
+GoValue *goslint_value_new_data_transfer(const char *text);
+char    *goslint_value_data_transfer_text(const GoValue *v);
+
 GoStruct *goslint_struct_new(void);
 void      goslint_struct_free(GoStruct *s);
 void      goslint_struct_set_field(GoStruct *s, const char *name, const GoValue *v);

@@ -78,8 +78,15 @@ const (
 	TypeStruct = 5
 	TypeBrush  = 6
 	TypeImage  = 7
-	TypeOther  = -1
+	// TypeDataTransfer: the Slint 1.17 `data-transfer` drag payload. ValueType has no
+	// variant for it, so the shim discriminates Value::DataTransfer directly as 8.
+	TypeDataTransfer = 8
+	TypeOther        = -1
 )
+
+// DataTransfer is the payload carried by a drag (Slint's `data-transfer`). go-slint
+// bridges its plain-text content; create one with a string and read it back as Text.
+type DataTransfer struct{ Text string }
 
 // cValue builds an owned C value from a Go value. The caller frees it with
 // C.goslint_value_free. M1 supports the scalar types; richer types come later.
@@ -109,6 +116,10 @@ func cValue(v any) (*C.GoValue, error) {
 		cv := C.CString(x.Value)
 		defer C.free(unsafe.Pointer(cv))
 		return C.goslint_value_new_enum(cn, cv), nil
+	case DataTransfer:
+		ct := C.CString(x.Text)
+		defer C.free(unsafe.Pointer(ct))
+		return C.goslint_value_new_data_transfer(ct), nil
 	case map[string]any:
 		return cStruct(x)
 	case Color:
@@ -229,6 +240,8 @@ func goValue(v *C.GoValue) any {
 	switch int(C.goslint_value_type(v)) {
 	case TypeVoid:
 		return nil
+	case TypeDataTransfer:
+		return DataTransfer{Text: takeString(C.goslint_value_data_transfer_text(v))}
 	case TypeNumber:
 		var out C.double
 		C.goslint_value_as_double(v, &out)

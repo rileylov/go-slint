@@ -95,3 +95,20 @@ dirs) through the Go API, mirroring Slint's interpreter test driver
 (SLINT_ENABLE_EXPERIMENTAL_FEATURES + test fonts + OS=Windows): 0 failures.
 `internal/timertest` verifies timers fire via the integration backend. Each
 `cmd/examples/*` has a compile-smoke `*_test.go` (validates markup, no display).
+
+### Known platform limitations
+
+- **Skia-only properties don't render.** go-slint ships femtovg + software, not Skia,
+  so `drop-shadow-spread` and the `inner-shadow-*` properties on `Rectangle` (Slint
+  1.17) are ignored. Plain `drop-shadow-*` works everywhere; only the spread/inner
+  variants need Skia.
+- **`DragArea.drag-image` must point at a file on disk, not a `data:` URL or a
+  Go-set image.** The cursor-following drag overlay (Slint 1.17) is loaded from the
+  `@image-url` resolved relative to the `.slint` source file's directory — so compile
+  with [`CompileSource`] (or the generated/`CompileFS` path with the source present),
+  not bare `Compile` with an empty path, and ship the asset alongside the markup. A
+  `data:` URL or an image pushed in from Go renders as a black box. With a real file
+  via `@image-url`, the overlay renders on every platform including Wayland (see
+  `cmd/examples/dragdrop`, which mirrors Slint's own `dnd-kanban`).
+- **System tray on Windows/macOS** currently needs an extra backend dependency that the
+  shipped lib doesn't yet enable (the Linux tray works). See `cmd/examples/systray`.
