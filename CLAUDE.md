@@ -110,5 +110,3 @@ dirs) through the Go API, mirroring Slint's interpreter test driver
   `data:` URL or an image pushed in from Go renders as a black box. With a real file
   via `@image-url`, the overlay renders on every platform including Wayland (see
   `cmd/examples/dragdrop`, which mirrors Slint's own `dnd-kanban`).
-- **System tray on Windows/macOS** currently needs an extra backend dependency that the
-  shipped lib doesn't yet enable (the Linux tray works). See `cmd/examples/systray`.

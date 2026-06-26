@@ -28,6 +28,11 @@ lib:
 	mkdir -p $(LIBDIR)
 	cp $(TARGET)/libgoslint.a $(LIBDIR)/libgoslint.a
 	cp $(TARGET)/libgoslint.so $(LIBDIR)/libgoslint.so 2>/dev/null || true
+	cp $(TARGET)/libgoslint.dylib $(LIBDIR)/libgoslint.dylib 2>/dev/null || true
+	@# macOS: cargo bakes an absolute deps/ path as the dylib's install name, so a
+	@# binary linked against the staged copy would load from the target dir (and break
+	@# after `cargo clean`). Rewrite it to @rpath so link_dev.go's -rpath governs it.
+	@test -f $(LIBDIR)/libgoslint.dylib && install_name_tool -id @rpath/libgoslint.dylib $(LIBDIR)/libgoslint.dylib || true
 	@echo "staged shim artifacts in $(LIBDIR)"
 
 test: lib

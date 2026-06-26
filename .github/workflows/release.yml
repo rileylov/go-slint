@@ -34,6 +34,13 @@ jobs:
           # fontconfig dev package installs without a cross-apt dance.
           - { target: linux_amd64, runner: ubuntu-latest, rust: x86_64-unknown-linux-gnu, kind: static, apt: libfontconfig-dev }
           - { target: linux_arm64, runner: ubuntu-24.04-arm, rust: aarch64-unknown-linux-gnu, kind: static, apt: libfontconfig-dev }
+          # macOS builds natively per arch: macos-14 is Apple Silicon (arm64), macos-13
+          # is the last Intel (amd64) runner. Xcode CLT (ld64 + the AppKit/Foundation
+          # frameworks the system-tray appkit backend needs) is preinstalled, so no apt.
+          # The release ships the static .a like the other desktop targets; the dylib /
+          # install_name_tool dance is only for in-repo `make lib` dev linking.
+          - { target: darwin_arm64, runner: macos-14, rust: aarch64-apple-darwin, kind: static, apt: "" }
+          - { target: darwin_amd64, runner: macos-13, rust: x86_64-apple-darwin, kind: static, apt: "" }
           # Windows + Android cross-compile from x86_64 (neither uses fontconfig).
           - { target: windows_amd64, runner: ubuntu-latest, rust: x86_64-pc-windows-gnu, kind: static, apt: gcc-mingw-w64-x86-64 }
           - { target: android_arm64, runner: ubuntu-latest, rust: aarch64-linux-android, kind: shared, apt: "" }
@@ -147,7 +154,8 @@ jobs:
         working-directory: dist
         run: |
           file="$(ls libgoslint-${{ matrix.target }}.*)"
-          sha="$(sha256sum "$file" | cut -d' ' -f1)"
+          # macOS runners have `shasum -a 256`, not GNU `sha256sum`.
+          sha="$( (sha256sum "$file" 2>/dev/null || shasum -a 256 "$file") | cut -d' ' -f1)"
           cat > "meta-${{ matrix.target }}.json" <<EOF
           {"target":"${{ matrix.target }}","archive":"$file","sha256":"$sha","libs":"${LIBS:-}","kind":"${{ matrix.kind }}"}
           EOF

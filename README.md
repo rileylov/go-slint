@@ -65,7 +65,8 @@ goslint android build -o myapp.apk .    # signed APK (arm64-v8a + x86_64)
 | Linux (amd64) | ✅ tested |
 | Android (arm64-v8a) | ✅ tested |
 | Windows (amd64) | ✅ tested |
-| macOS, iOS | ❌ (no hardware to test on) |
+| macOS (arm64) | ✅ tested |
+| iOS | ❌ (no hardware to test on) |
 
 Desktop targets link `libgoslint` (and the Slint interpreter) statically, leaving
 only ubiquitous system libraries — on Linux, OpenGL and fontconfig (the
