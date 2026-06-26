@@ -441,9 +441,19 @@ func linkLine(libdir, libs string) string {
 
 // staticLibLink returns the linker tokens that pull in the whole libgoslint.a
 // archive from libdir (a literal path or a pkg-config ${libdir} reference), plus
-// libs. GNU ld (Linux, MinGW on Windows) needs --start-group/--end-group with
-// -l:NAME to resolve the archive↔system-lib reference cycle; macOS's ld64 supports
-// neither and resolves archives in any order, so name the archive by path instead.
+// libs. The archive and the system libs/frameworks reference each other cyclically,
+// so one left-to-right pass can't resolve them — the archive must be scanned again
+// after the libs. GNU ld (Linux, MinGW on Windows) expresses that with
+// --start-group/--end-group around -l:NAME. macOS's ld64 supports NEITHER
+// --start-group NOR -l:NAME, so we name the archive by path; the required second pass
+// is supplied by `go build` itself, which passes CGO_LDFLAGS to the host linker twice
+// (so the archive is effectively listed twice). That duplication is LOAD-BEARING on
+// macOS — verified on real hardware: do NOT dedup it or add
+// -Wl,-no_warn_duplicate_libraries. Suppressing the second copy makes ld64 honor a
+// single pass and the link fails with "symbol(s) not found for architecture arm64".
+// The "duplicate libraries" warning is benign (GNU ld simply doesn't print it). If Go
+// ever stops doubling CGO_LDFLAGS, name the archive twice here (or use
+// -Wl,-force_load,<path>) to keep the second pass on macOS.
 func staticLibLink(libdir, libs string) string {
 	if runtime.GOOS == "darwin" {
 		return fmt.Sprintf("-L%s %s/libgoslint.a %s", libdir, libdir, libs)
