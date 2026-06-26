@@ -74,7 +74,10 @@ Append/SetRowData) from a background goroutine must go through
 
 `goslint setup` reads the go-slint version from the user's `go.mod` and downloads
 the matching prebuilt `libgoslint` from GitHub Releases (checksum-verified) into
-`~/.cache/goslint/`, writing a pkg-config file. The release is produced by
+`~/.cache/goslint/`, writing a pkg-config file. This is now **optional** —
+`build`/`run`/`dev` call the same provisioning (`ensureProvisioned`) automatically
+when `cgoLDFLAGS` finds the lib uncached, so a fresh checkout just works; `setup`
+remains for explicit pre-fetch, CI, `-force`, and `-target` cross-provisioning. The release is produced by
 `.github/workflows/release.yml` (matrix → `manifest.json` + `SHA256SUMS`) on a
 `v*` tag. **Cutting a release:** push a `vX.Y.Z` tag; the published `manifest.json`
 version = the tag, and `setup` matches it from `go.mod`. Android targets ship the

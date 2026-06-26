@@ -27,8 +27,11 @@ generated `ui/` package):
 ```sh
 go install github.com/rileylov/go-slint/cmd/goslint@latest
 goslint init myapp && cd myapp
-goslint setup          # download the prebuilt native lib for your platform
 ```
+
+`goslint dev`/`run`/`build` download the prebuilt native lib for your platform on
+first use (cached, once per version) — no separate install step. (To pre-fetch it
+explicitly, e.g. in CI, run `goslint setup`.)
 
 **2. Write `app.slint`:**
 

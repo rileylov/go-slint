@@ -10,8 +10,8 @@ import (
 )
 
 // cmdInit scaffolds a new go-slint project using the TYPED API: ui/app.slint with a
-// co-located, pre-generated ui/app.slint.go (so it builds right after `goslint setup`,
-// and //go:embed can reach the markup), app.go (shared wiring + a //go:generate
+// co-located, pre-generated ui/app.slint.go (so it builds straight away, and
+// //go:embed can reach the markup), app.go (shared wiring + a //go:generate
 // directive to regenerate), and the desktop + Android entry points.
 func cmdInit(args []string) error {
 	fs := flag.NewFlagSet("init", flag.ExitOnError)
@@ -72,8 +72,7 @@ func cmdInit(args []string) error {
 	if dir != "." {
 		fmt.Printf("  cd %s\n", dir)
 	}
-	fmt.Println("  goslint setup            # fetch the native lib for this platform")
-	fmt.Println("  goslint dev .            # run with auto-reload on edits")
+	fmt.Println("  goslint dev .            # run with auto-reload (fetches the native lib on first run)")
 	fmt.Println("  goslint android build .  # build a signed APK")
 	fmt.Println("\nJust edit ui/app.slint — goslint dev/run/build regenerate ui/app.slint.go for you.")
 	return nil

@@ -44,9 +44,12 @@ go install github.com/rileylov/go-slint/cmd/goslint@latest
 
 goslint init myapp     # scaffold go.mod + app.slint + main.go + ui/
 cd myapp
-goslint setup          # download the native lib matching your go.mod
 goslint dev .          # run; edit .slint → live in-process reload, edit .go → rebuild
 ```
+
+`dev`/`run`/`build` fetch the prebuilt native lib (matching your `go.mod`) on first
+use — cached, once per version. Pre-fetch it explicitly with `goslint setup` if you
+prefer (e.g. in CI).
 
 Ship it:
 

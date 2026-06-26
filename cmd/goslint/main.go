@@ -3,13 +3,13 @@
 //
 // Typical use after `go get github.com/rileylov/go-slint`:
 //
-//	go run github.com/rileylov/go-slint/cmd/goslint setup   # download the native lib
 //	go run github.com/rileylov/go-slint/cmd/goslint build ./...   # build your app
 //
-// `setup` downloads the prebuilt static library for your target into a cache dir
-// and writes a pkg-config file (goslint.pc) describing how to link it. `build`/
-// `run` then set PKG_CONFIG_PATH and the build tag for you; or point PKG_CONFIG_PATH
-// at the printed dir yourself and use plain `go build -tags goslint_pkgconfig`.
+// `build`/`run`/`dev` download the prebuilt static library for your target into a
+// cache dir (once per version) and link it automatically — no separate setup step.
+// `goslint setup` does the same provisioning explicitly (handy for CI, pre-fetching,
+// or `-target` cross-provisioning), and `goslint env` prints the link flags if you'd
+// rather drive a plain `go build -tags goslint_pkgconfig` yourself.
 package main
 
 import (
@@ -95,7 +95,7 @@ func usage() {
 
 Usage:
   goslint init [-module path] [dir]                   scaffold a new go-slint project
-  goslint setup [-target <goos>_<goarch>] [-force]   download the native lib + write goslint.pc
+  goslint setup [-target <goos>_<goarch>] [-force]   pre-fetch the native lib (optional; build/run/dev auto-fetch)
   goslint generate [-o out.go] [-package p] <in.slint>  generate a typed Go API from a .slint
   goslint dev   [package]                             run with live reload (edit .slint, save)
   goslint build [go build args...]                    go build with the lib wired up
@@ -213,13 +213,16 @@ func pkgconfigDir(tgt string) string { return filepath.Join(cacheDir(tgt), "pkgc
 
 // ---- setup ----
 
+// cmdSetup explicitly provisions the native lib. It's now OPTIONAL — build/run/dev
+// auto-provision on first use (see cgoLDFLAGS) — but stays useful for pre-fetching,
+// CI, -force re-downloads, and -target cross-provisioning.
 func cmdSetup(args []string) error {
 	fs := flag.NewFlagSet("setup", flag.ExitOnError)
 	tgt := fs.String("target", hostTarget(), "target as <goos>_<goarch>")
 	force := fs.Bool("force", false, "re-download even if cached")
 	_ = fs.Parse(args)
 
-	t, libpath, slint, err := provision(*tgt, *force)
+	t, libpath, slint, err := ensureProvisioned(*tgt, *force)
 	if err != nil {
 		return err
 	}
@@ -231,20 +234,7 @@ func cmdSetup(args []string) error {
 		return nil
 	}
 
-	pcdir := pkgconfigDir(*tgt)
-	if err := os.MkdirAll(pcdir, 0o755); err != nil {
-		return err
-	}
-	pcpath := filepath.Join(pcdir, "goslint.pc")
-	if err := os.WriteFile(pcpath, []byte(buildPC(filepath.Dir(libpath), t.Libs, slint)), 0o644); err != nil {
-		return err
-	}
-	// Also write the raw cgo link line so the CLI can build without pkg-config.
-	ldpath := filepath.Join(pcdir, "cgo_ldflags")
-	if err := os.WriteFile(ldpath, []byte(linkLine(filepath.Dir(libpath), t.Libs)), 0o644); err != nil {
-		return err
-	}
-
+	pcpath := filepath.Join(pkgconfigDir(*tgt), "goslint.pc")
 	fmt.Printf("\n✓ go-slint native lib ready for %s (Slint %s)\n", *tgt, slint)
 	fmt.Printf("  lib: %s\n  pc:  %s\n\n", libpath, pcpath)
 	fmt.Println("Build & run with the wrapper (no pkg-config needed):")
@@ -252,6 +242,37 @@ func cmdSetup(args []string) error {
 	fmt.Println("\nPrefer plain go? Run `eval \"$(goslint env)\"` first, then:")
 	fmt.Printf("  go build -tags %s ./...\n", buildTag)
 	return nil
+}
+
+// ensureProvisioned makes sure the prebuilt static shim for tgt is cached and its cgo
+// link line (cgo_ldflags + goslint.pc) is written, downloading + checksum-verifying on
+// first use. It's the silent core shared by `goslint setup` (explicit) and the
+// auto-provision path build/run/dev take when the lib isn't set up yet — so a user
+// never has to run setup by hand. The cache is global per version+target, so this is a
+// once-per-version cost. Android (shared) targets are provisioned but get no pkg-config
+// line (they're bundled into an APK, not linked via cgo). Returns the manifest entry,
+// cached lib path, and Slint version for callers that print details.
+func ensureProvisioned(tgt string, force bool) (target, string, string, error) {
+	t, libpath, slint, err := provision(tgt, force)
+	if err != nil {
+		return t, libpath, slint, err
+	}
+	if t.Kind == "shared" {
+		return t, libpath, slint, nil
+	}
+	pcdir := pkgconfigDir(tgt)
+	if err := os.MkdirAll(pcdir, 0o755); err != nil {
+		return t, libpath, slint, err
+	}
+	libdir := filepath.Dir(libpath)
+	if err := os.WriteFile(filepath.Join(pcdir, "goslint.pc"), []byte(buildPC(libdir, t.Libs, slint)), 0o644); err != nil {
+		return t, libpath, slint, err
+	}
+	// Also write the raw cgo link line so the CLI can build without pkg-config.
+	if err := os.WriteFile(filepath.Join(pcdir, "cgo_ldflags"), []byte(linkLine(libdir, t.Libs)), 0o644); err != nil {
+		return t, libpath, slint, err
+	}
+	return t, libpath, slint, nil
 }
 
 // provision ensures the prebuilt native lib for tgt is cached (downloading +
@@ -331,12 +352,18 @@ func cmdGo(sub string, args []string) error {
 		}
 	}
 	goArgs := []string{sub, "-tags", buildTag}
-	// On Windows, link a built GUI app with the "windowsgui" subsystem so double-
-	// clicking it doesn't pop a console window alongside the UI. Only for `build`
-	// (dev/run keep the console for logs), and only if the user didn't pass their own
-	// -ldflags (those don't merge — last wins — so we step aside).
-	if sub == "build" && runtime.GOOS == "windows" && !hasLdflags(args) {
-		goArgs = append(goArgs, "-ldflags=-H=windowsgui")
+	// For `build` (the "ship it" command) strip the symbol table + DWARF (-s -w): it
+	// roughly halves the binary (e.g. 62MB→44MB) with no runtime effect; dev/run keep
+	// symbols for debuggable panic traces. On Windows also select the "windowsgui"
+	// subsystem so double-clicking the app doesn't pop a console window alongside the
+	// UI. We only inject -ldflags when the user didn't pass their own (Go keeps just
+	// the last -ldflags, so we'd clobber it) — pass any -ldflags to opt out of strip.
+	if sub == "build" && !hasLdflags(args) {
+		ldflags := "-s -w"
+		if runtime.GOOS == "windows" {
+			ldflags += " -H=windowsgui"
+		}
+		goArgs = append(goArgs, "-ldflags="+ldflags)
 	}
 	goArgs = append(goArgs, args...)
 	cmd := exec.Command("go", goArgs...)
@@ -369,17 +396,41 @@ func wrapperEnv(tgt string) ([]string, error) {
 // cgoLDFLAGS returns the link line for the native shim. GOSLINT_LIB_DIR overrides it
 // to link a locally-built lib (the shared lib via rpath, no setup/cache) — useful for
 // testing unreleased shim changes through the CLI. Otherwise it reads the line
-// `goslint setup` wrote. Forward slashes keep it valid for MinGW on Windows.
+// ensureProvisioned wrote, auto-provisioning (download + checksum-verify) on first use
+// so the user never has to run `goslint setup` by hand. Forward slashes keep it valid
+// for MinGW on Windows.
 func cgoLDFLAGS(tgt string) (string, error) {
 	if dir := os.Getenv("GOSLINT_LIB_DIR"); dir != "" {
 		d := filepath.ToSlash(dir)
 		return fmt.Sprintf("-L%s -Wl,-rpath,%s -lgoslint", d, d), nil
 	}
-	b, err := os.ReadFile(filepath.Join(pkgconfigDir(tgt), "cgo_ldflags"))
+	ldpath := filepath.Join(pkgconfigDir(tgt), "cgo_ldflags")
+	b, err := os.ReadFile(ldpath)
 	if err != nil {
-		return "", fmt.Errorf("not set up for %s — run: goslint setup", tgt)
+		if !os.IsNotExist(err) {
+			return "", err
+		}
+		// Not set up yet — fresh machine or a newly-pinned go-slint version. Fetch it
+		// now instead of erroring; cached globally per version+target, so once only.
+		fmt.Fprintf(os.Stderr, "goslint: native lib for %s not cached — fetching it now (one-time)…\n", tgt)
+		if _, _, _, perr := ensureProvisioned(tgt, false); perr != nil {
+			return "", fmt.Errorf("could not auto-provision the native lib for %s: %w", tgt, perr)
+		}
+		if b, err = os.ReadFile(ldpath); err != nil {
+			return "", err
+		}
 	}
 	return strings.TrimSpace(string(b)), nil
+}
+
+// isProvisioned reports whether the native lib for tgt is already set up, WITHOUT
+// downloading — `goslint doctor` uses it so a status check never triggers a fetch.
+func isProvisioned(tgt string) bool {
+	if os.Getenv("GOSLINT_LIB_DIR") != "" {
+		return true
+	}
+	_, err := os.Stat(filepath.Join(pkgconfigDir(tgt), "cgo_ldflags"))
+	return err == nil
 }
 
 // linkLine builds the CGO_LDFLAGS for the static shim in libdir with libs being the
@@ -500,11 +551,11 @@ func cmdDoctor(args []string) error {
 		report("C compiler", true)
 	}
 
-	if _, err := cgoLDFLAGS(tgt); err == nil {
+	if isProvisioned(tgt) {
 		report("native lib", true)
 	} else {
 		report("native lib", false)
-		fmt.Println("               → run: goslint setup")
+		fmt.Println("               → not cached yet — goslint build/run/dev will fetch it automatically (or: goslint setup)")
 	}
 
 	// pkg-config is optional — only for `go build -tags goslint_pkgconfig`.
