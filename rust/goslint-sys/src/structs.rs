@@ -17,9 +17,11 @@ pub extern "C" fn goslint_struct_new() -> *mut Struct {
 /// `s` must be NULL or a pointer from goslint_struct_new / goslint_value_as_struct.
 #[no_mangle]
 pub unsafe extern "C" fn goslint_struct_free(s: *mut Struct) {
-    if !s.is_null() {
-        drop(Box::from_raw(s));
-    }
+    guard((), || {
+        if !s.is_null() {
+            drop(Box::from_raw(s));
+        }
+    });
 }
 
 /// Set (or overwrite) a field. The Value is cloned.

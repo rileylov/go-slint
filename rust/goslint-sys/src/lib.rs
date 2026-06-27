@@ -87,9 +87,11 @@ pub extern "C" fn goslint_last_error() -> *mut c_char {
 /// `s` must be a pointer previously returned by this library (or NULL).
 #[no_mangle]
 pub unsafe extern "C" fn goslint_string_free(s: *mut c_char) {
-    if !s.is_null() {
-        drop(CString::from_raw(s));
-    }
+    guard((), || {
+        if !s.is_null() {
+            drop(CString::from_raw(s));
+        }
+    });
 }
 
 // ---- event loop & platform --------------------------------------------------

@@ -26,9 +26,11 @@ pub extern "C" fn goslint_compiler_new() -> *mut Compiler {
 /// `c` must be NULL or a pointer returned by `goslint_compiler_new`.
 #[no_mangle]
 pub unsafe extern "C" fn goslint_compiler_free(c: *mut Compiler) {
-    if !c.is_null() {
-        drop(Box::from_raw(c));
-    }
+    guard((), || {
+        if !c.is_null() {
+            drop(Box::from_raw(c));
+        }
+    });
 }
 
 /// # Safety
@@ -351,7 +353,9 @@ pub unsafe extern "C" fn goslint_result_component(
 /// `r` must be NULL or a result pointer.
 #[no_mangle]
 pub unsafe extern "C" fn goslint_result_free(r: *mut CompilationResult) {
-    if !r.is_null() {
-        drop(Box::from_raw(r));
-    }
+    guard((), || {
+        if !r.is_null() {
+            drop(Box::from_raw(r));
+        }
+    });
 }

@@ -79,9 +79,11 @@ pub unsafe extern "C" fn goslint_image_load_from_path(path: *const c_char) -> *m
 /// `img` must be NULL or a pointer from this library.
 #[no_mangle]
 pub unsafe extern "C" fn goslint_image_free(img: *mut Image) {
-    if !img.is_null() {
-        drop(Box::from_raw(img));
-    }
+    guard((), || {
+        if !img.is_null() {
+            drop(Box::from_raw(img));
+        }
+    });
 }
 
 /// Write the image's pixel size into `w`/`h`.

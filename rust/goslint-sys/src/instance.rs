@@ -74,9 +74,11 @@ pub unsafe extern "C" fn goslint_definition_create_with_window(
 /// `d` must be NULL or a definition pointer.
 #[no_mangle]
 pub unsafe extern "C" fn goslint_definition_free(d: *mut ComponentDefinition) {
-    if !d.is_null() {
-        drop(Box::from_raw(d));
-    }
+    guard((), || {
+        if !d.is_null() {
+            drop(Box::from_raw(d));
+        }
+    });
 }
 
 // ---- ComponentInstance ------------------------------------------------------
@@ -338,9 +340,11 @@ pub unsafe extern "C" fn goslint_instance_take_snapshot(
 /// `ptr` must be NULL or a buffer from `goslint_instance_take_snapshot` with length `n`.
 #[no_mangle]
 pub unsafe extern "C" fn goslint_pixels_free(ptr: *mut u8, n: usize) {
-    if !ptr.is_null() {
-        drop(Vec::from_raw_parts(ptr, n, n));
-    }
+    guard((), || {
+        if !ptr.is_null() {
+            drop(Vec::from_raw_parts(ptr, n, n));
+        }
+    });
 }
 
 // Reach the window's renderer to register custom fonts. The font collection lives on
@@ -557,9 +561,11 @@ pub unsafe extern "C" fn goslint_instance_window_request_redraw(i: *const Compon
 /// `i` must be NULL or an instance pointer.
 #[no_mangle]
 pub unsafe extern "C" fn goslint_instance_free(i: *mut ComponentInstance) {
-    if !i.is_null() {
-        drop(Box::from_raw(i));
-    }
+    guard((), || {
+        if !i.is_null() {
+            drop(Box::from_raw(i));
+        }
+    });
 }
 
 // ---- callbacks, invoke, globals ---------------------------------------------

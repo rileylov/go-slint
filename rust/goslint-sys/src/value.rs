@@ -97,9 +97,7 @@ pub unsafe extern "C" fn goslint_value_new_data_transfer(text: *const c_char) ->
 #[no_mangle]
 pub unsafe extern "C" fn goslint_value_data_transfer_text(v: *const Value) -> *mut c_char {
     guard(std::ptr::null_mut(), || match v.as_ref() {
-        Some(Value::DataTransfer(dt)) => {
-            to_c_string(dt.plain_text().unwrap_or_default().as_str())
-        }
+        Some(Value::DataTransfer(dt)) => to_c_string(dt.plain_text().unwrap_or_default().as_str()),
         _ => std::ptr::null_mut(),
     })
 }
@@ -433,7 +431,9 @@ pub unsafe extern "C" fn goslint_value_eq(a: *const Value, b: *const Value) -> b
 /// `v` must be NULL or a pointer returned by this library, freed at most once.
 #[no_mangle]
 pub unsafe extern "C" fn goslint_value_free(v: *mut Value) {
-    if !v.is_null() {
-        drop(Box::from_raw(v));
-    }
+    guard((), || {
+        if !v.is_null() {
+            drop(Box::from_raw(v));
+        }
+    });
 }

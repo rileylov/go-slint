@@ -48,9 +48,11 @@ pub extern "C" fn goslint_timer_new() -> *mut Timer {
 /// `t` must be NULL or a pointer from goslint_timer_new.
 #[no_mangle]
 pub unsafe extern "C" fn goslint_timer_free(t: *mut Timer) {
-    if !t.is_null() {
-        drop(Box::from_raw(t));
-    }
+    guard((), || {
+        if !t.is_null() {
+            drop(Box::from_raw(t));
+        }
+    });
 }
 
 /// Start (or restart) the timer. `drop` is invoked with `handle` when the

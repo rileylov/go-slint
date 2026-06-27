@@ -84,9 +84,11 @@ pub extern "C" fn goslint_model_new(
 /// `m` must be NULL or a pointer from `goslint_model_new`.
 #[no_mangle]
 pub unsafe extern "C" fn goslint_model_free(m: *mut GoModelHandle) {
-    if !m.is_null() {
-        drop(Box::from_raw(m));
-    }
+    guard((), || {
+        if !m.is_null() {
+            drop(Box::from_raw(m));
+        }
+    });
 }
 
 /// Wrap the model into a Value (clones the shared ModelRc).
