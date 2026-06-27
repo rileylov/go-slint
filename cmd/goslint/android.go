@@ -2,6 +2,7 @@ package main
 
 import (
 	"archive/zip"
+	"debug/elf"
 	"flag"
 	"fmt"
 	"io"
@@ -84,6 +85,7 @@ func cmdAndroidBuild(args []string) error {
 	defer os.RemoveAll(stage)
 
 	// 1. per-ABI: fetch prebuilt libgoslint.so + cross-build the Go c-shared.
+	fmt.Printf("Building %s.apk  (package %s, abis: %s)\n", name, pkg, strings.Join(abiNames(selected), ", "))
 	libEntries := map[string]string{} // zip path -> file path
 	for _, a := range selected {
 		fmt.Printf(">> %s\n", a.abi)
@@ -110,9 +112,21 @@ func cmdAndroidBuild(args []string) error {
 			"CC=" + clang,
 			"CGO_LDFLAGS=-L" + filepath.Dir(soPath) + " -lgoslint -llog",
 		}
+		fmt.Printf("   cross-building %s (c-shared, %s)…\n", pkg, a.goarch)
 		if err := runEnv(env, "go", "build", "-buildmode=c-shared", "-o", appSO, pkg); err != nil {
 			return fmt.Errorf("go build (%s): %w", a.abi, err)
 		}
+		// The APK is only usable if the Go side exports goslint_android_main — the
+		// symbol the Rust android_main dlsym's and calls. Without it the APK installs
+		// but the activity does nothing; verify it now rather than ship a dead APK.
+		exported, err := androidEntryExported(appSO)
+		if err != nil {
+			return fmt.Errorf("inspect %s: %w", appSO, err)
+		}
+		if !exported {
+			return fmt.Errorf(noAndroidEntryMsg, pkg)
+		}
+		fmt.Println("   ✓ goslint_android_main exported — the app will launch")
 		libEntries["lib/"+a.abi+"/libgoslint.so"] = filepath.Join(abiDir, "libgoslint.so")
 		libEntries["lib/"+a.abi+"/libgoslintapp.so"] = appSO
 	}
@@ -172,10 +186,60 @@ func cmdAndroidBuild(args []string) error {
 		return fmt.Errorf("apksigner: %w", err)
 	}
 
-	fmt.Printf("\n✓ %s  (%s, %s)\n", *out, *appID, strings.Join(abiNames(selected), "+"))
+	size := ""
+	if fi, err := os.Stat(*out); err == nil {
+		size = fmt.Sprintf(", %.1f MB", float64(fi.Size())/(1<<20))
+	}
+	fmt.Printf("\n✓ %s  (%s, %s%s) — launchable\n", *out, *appID, strings.Join(abiNames(selected), "+"), size)
 	fmt.Printf("  install: adb install -r %s\n", *out)
 	return nil
 }
+
+// androidEntryExported reports whether the built c-shared exports goslint_android_main,
+// the symbol the Rust android_main dlsym's and calls (see rust/goslint-sys/src/android.rs).
+// If it's absent the APK installs but the NativeActivity does nothing — the common trap
+// when a package is missing its //go:build android entry file. dlsym resolves against the
+// dynamic symbol table, so that's what we check.
+func androidEntryExported(soPath string) (bool, error) {
+	f, err := elf.Open(soPath)
+	if err != nil {
+		return false, err
+	}
+	defer f.Close()
+	syms, err := f.DynamicSymbols()
+	if err != nil {
+		return false, err
+	}
+	for _, s := range syms {
+		if s.Name == "goslint_android_main" {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+const noAndroidEntryMsg = `package %q builds, but its Android library does not export goslint_android_main —
+the APK would install yet never launch (Android's NativeActivity loads the Go library and
+calls goslint_android_main; with it missing, nothing happens).
+
+Add an Android entry point in a file built only for android, e.g. app_android.go:
+
+    //go:build android
+
+    package main
+
+    import "C"
+    import "runtime"
+
+    //export goslint_android_main
+    func goslint_android_main(_ *C.char) {
+        runtime.LockOSThread() // Slint is thread-affine
+        _ = run()              // open your window and run the event loop
+    }
+
+    func main() {} // required for c-shared; unused on android
+
+Most examples in the go-slint repo are desktop-only and omit this on purpose. ` + "`goslint init`" + ` scaffolds it for you.`
 
 // ---- android toolchain resolution ----
 
