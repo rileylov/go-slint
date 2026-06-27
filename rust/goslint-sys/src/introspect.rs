@@ -27,6 +27,10 @@ struct TypeInfo {
 struct Property {
     name: String,
     ty: TypeInfo,
+    // "in" | "out" | "in-out" for component/global properties; None for struct fields.
+    // Output-only ("out") properties get no Go setter (setting one fails at runtime).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    direction: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -132,6 +136,7 @@ fn named_struct(s: &LangStruct, reg: &mut Registry) -> TypeInfo {
                     .map(|(k, t)| Property {
                         name: k.to_string(),
                         ty: type_info(t, reg),
+                        direction: None, // struct fields have no in/out direction
                     })
                     .collect();
                 reg.structs.insert(name.clone(), StructInfo { fields });
@@ -158,6 +163,7 @@ fn callable(name: String, f: &Function, reg: &mut Registry) -> Callable {
 fn classify(
     name: String,
     ty: &LangType,
+    vis: PropertyVisibility,
     reg: &mut Registry,
     props: &mut Vec<Property>,
     cbs: &mut Vec<Callable>,
@@ -169,6 +175,16 @@ fn classify(
         _ => props.push(Property {
             name,
             ty: type_info(ty, reg),
+            // Only Input/InOut are settable from Go; Output (and Constexpr/Fake/…)
+            // get a getter but no setter.
+            direction: Some(
+                match vis {
+                    PropertyVisibility::Input => "in",
+                    PropertyVisibility::InOut => "in-out",
+                    _ => "out",
+                }
+                .to_string(),
+            ),
         }),
     }
 }
@@ -194,7 +210,7 @@ pub unsafe extern "C" fn goslint_definition_type_info(
             if matches!(vis, PropertyVisibility::Private) {
                 continue;
             }
-            classify(name, &ty, &mut reg, &mut props, &mut cbs, &mut fns);
+            classify(name, &ty, vis, &mut reg, &mut props, &mut cbs, &mut fns);
         }
 
         let mut globals = Vec::new();
@@ -205,7 +221,7 @@ pub unsafe extern "C" fn goslint_definition_type_info(
                     if matches!(vis, PropertyVisibility::Private) {
                         continue;
                     }
-                    classify(name, &ty, &mut reg, &mut gp, &mut gc, &mut gf);
+                    classify(name, &ty, vis, &mut reg, &mut gp, &mut gc, &mut gf);
                 }
             }
             globals.push(GlobalInfo {

@@ -47,3 +47,38 @@ func TestTypeInfoJSON(t *testing.T) {
 		}
 	}
 }
+
+// TestTypeInfoDirection checks the introspection JSON carries each property's
+// in/out/in-out direction, so codegen can skip setters for output-only properties.
+func TestTypeInfoDirection(t *testing.T) {
+	src := `
+		export component App inherits Window {
+			in-out property <string> caption;
+			out property <int> result;
+			in property <string> label;
+		}`
+	c := NewCompiler()
+	defer c.Free()
+	r := c.BuildFromSource(src, "test.slint")
+	defer r.Free()
+	if r.HasErrors() {
+		t.Fatalf("compile errors: %v", r.Diagnostics())
+	}
+	def := r.Component("App")
+	if def == nil {
+		t.Fatal("no App")
+	}
+	defer def.Free()
+
+	js := def.TypeInfoJSON()
+	t.Logf("type info JSON:\n%s", js)
+	for _, want := range []string{
+		`"name":"caption"`, `"direction":"in-out"`,
+		`"name":"result"`, `"direction":"out"`,
+		`"name":"label"`, `"direction":"in"`,
+	} {
+		if !strings.Contains(js, want) {
+			t.Errorf("JSON missing %s", want)
+		}
+	}
+}

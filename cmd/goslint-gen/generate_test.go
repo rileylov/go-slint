@@ -139,3 +139,32 @@ func TestGenerateNameCollision(t *testing.T) {
 		t.Fatalf("clean interface should generate: %v", err)
 	}
 }
+
+// TestGenerateOutPropertyNoSetter checks that output-only properties get a getter but
+// no setter (setting an `out` property fails at runtime), while in/in-out keep theirs.
+func TestGenerateOutPropertyNoSetter(t *testing.T) {
+	iface := &Interface{
+		Component: "App",
+		Properties: []Prop{
+			{Name: "title", Ty: TypeInfo{Kind: "string"}, Direction: "in-out"},
+			{Name: "result", Ty: TypeInfo{Kind: "int"}, Direction: "out"},
+			{Name: "label", Ty: TypeInfo{Kind: "string"}, Direction: "in"},
+		},
+	}
+	code, err := generate(iface, "ui", "fluent", "app.slint", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(code)
+	if !strings.Contains(src, "Result()") {
+		t.Error("out property 'result' should still have a getter")
+	}
+	if strings.Contains(src, "SetResult(") {
+		t.Error("out-only property 'result' should NOT get a setter")
+	}
+	for _, m := range []string{"SetTitle(", "SetLabel("} {
+		if !strings.Contains(src, m) {
+			t.Errorf("in/in-out property should keep its setter %q", m)
+		}
+	}
+}

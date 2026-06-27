@@ -137,6 +137,10 @@ type TypeInfo struct {
 type Prop struct {
 	Name string   `json:"name"`
 	Ty   TypeInfo `json:"ty"`
+	// Direction is "in", "out", or "in-out" for component/global properties; empty for
+	// struct fields. Output-only ("out") properties get no setter (setting one fails at
+	// runtime). Empty (e.g. an older lib that didn't emit it) keeps a setter.
+	Direction string `json:"direction"`
 }
 type Callable struct {
 	Name     string     `json:"name"`

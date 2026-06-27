@@ -177,7 +177,12 @@ func emitProperties(b *strings.Builder, recv, _ string, props []Prop, a propAcce
 		}
 		p("\tif err != nil {\n\t\tvar zero %s\n\t\treturn zero, err\n\t}\n", gt)
 		p("\treturn %s, nil\n}\n\n", fromAny("v", pr.Ty))
-		// setter (records for live-reload replay)
+		// setter — skipped for output-only properties (setting an `out` property fails
+		// at runtime; an empty direction, e.g. from an older lib, keeps the setter).
+		// Records for live-reload replay.
+		if pr.Direction == "out" {
+			continue
+		}
 		p("func (%s) Set%s(value %s) error {\n", recv, m, gt)
 		if a.global == "" {
 			p("%s", recordReplay(a.base, a.comp, "t.Set"+m+"(value)"))
@@ -476,8 +481,10 @@ func validateNames(iface *Interface) error {
 			if err := addMethod(recv, m, origin); err != nil {
 				return err
 			}
-			if err := addMethod(recv, "Set"+m, origin); err != nil {
-				return err
+			if pr.Direction != "out" { // out-only props get no setter (see emitProperties)
+				if err := addMethod(recv, "Set"+m, origin); err != nil {
+					return err
+				}
 			}
 		}
 		for _, c := range callbacks {
