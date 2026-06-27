@@ -212,8 +212,7 @@ jobs:
       - name: Assemble release body
         run: |
           {
-            echo 'Prebuilt `libgoslint` native libraries for the go-slint bindings.'
-            echo
+            echo '## Install'
             echo '```sh'
             echo 'go install github.com/rileylov/go-slint/cmd/goslint@${{ github.ref_name }}'
             echo '```'
@@ -222,6 +221,8 @@ jobs:
             cat RELEASE_NOTES.md
             echo
             echo "Built against Slint \`$(cat .slint-version)\` (go-slint \`${{ github.sha }}\`)."
+            echo
+            echo 'You can find the prebuilt `libgoslint` native libraries for go-slint below.'
           } > release-body.md
           echo "=== release body ==="; cat release-body.md
 
