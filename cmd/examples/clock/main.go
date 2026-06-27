@@ -29,7 +29,7 @@ func main() {
 	defer win.Close()
 
 	timer := slint.NewTimer()
-	defer timer.Free()
+	defer timer.Close()
 	timer.Start(slint.TimerRepeated, 1000, func() {
 		n, _ := win.Ticks()
 		fmt.Println(n + 1)

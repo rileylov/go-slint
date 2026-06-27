@@ -29,7 +29,7 @@ func LoadImage(path string) (*Image, error) {
 // watch arms the dev-only leak warning (GOSLINT_DEV) and returns the image, so callers
 // can `return img.watch(), nil`.
 func (img *Image) watch() *Image {
-	leakWatch(img, func(i *Image) bool { return i.ptr != nil }, "slint.Image", "Free")
+	leakWatch(img, func(i *Image) bool { return i.ptr != nil }, "slint.Image", "Close")
 	return img
 }
 
@@ -69,9 +69,13 @@ func (i *Image) Size() (w, h int) {
 	return int(cw), int(ch)
 }
 
-func (i *Image) Free() {
+// Close releases the image's native memory. Safe to call multiple times.
+func (i *Image) Close() {
 	if i.ptr != nil {
 		C.goslint_image_free(i.ptr)
 		i.ptr = nil
 	}
 }
+
+// Deprecated: use [Image.Close].
+func (i *Image) Free() { i.Close() }

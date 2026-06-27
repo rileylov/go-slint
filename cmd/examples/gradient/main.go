@@ -70,7 +70,7 @@ func main() {
 
 	// Animate: rotate a linear gradient by rebuilding it ~30×/second from Go.
 	anim := slint.NewTimer()
-	defer anim.Free()
+	defer anim.Close()
 	angle := 0.0
 	win.OnCallback("toggle-animate", func([]any) any {
 		if anim.Running() {

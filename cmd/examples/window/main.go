@@ -85,7 +85,7 @@ func main() {
 
 	// Poll the geometry ~4×/second so the readout reflects manual resizes too.
 	timer := slint.NewTimer()
-	defer timer.Free()
+	defer timer.Close()
 	timer.Start(slint.TimerRepeated, 250, refresh)
 
 	if err := win.Run(); err != nil {

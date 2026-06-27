@@ -35,7 +35,7 @@ func TestLeakWatch(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		img.Free()
+		img.Close()
 	}()
 	if got := waitLeak(msgs); got != "" {
 		t.Errorf("a Freed image should not warn, got %q", got)
@@ -69,7 +69,7 @@ func benchImageCreate(b *testing.B, dev bool) {
 		if err != nil {
 			b.Fatal(err)
 		}
-		img.Free()
+		img.Close()
 	}
 }
 

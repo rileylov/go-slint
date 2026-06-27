@@ -49,11 +49,14 @@ func (mh *ModelHandle) NotifyReset() {
 	C.goslint_model_notify_reset(mh.ptr)
 }
 
-// Free releases the Rust-side handle. The Go handle backing the model is released
-// once the last Value::Model reference also drops.
-func (mh *ModelHandle) Free() {
+// Close releases the Rust-side handle. The Go handle backing the model is released
+// once the last Value::Model reference also drops. Safe to call multiple times.
+func (mh *ModelHandle) Close() {
 	if mh.ptr != nil {
 		C.goslint_model_free(mh.ptr)
 		mh.ptr = nil
 	}
 }
+
+// Deprecated: use [ModelHandle.Close].
+func (mh *ModelHandle) Free() { mh.Close() }

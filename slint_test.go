@@ -368,7 +368,7 @@ func TestHeadlessRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadImage: %v", err)
 	}
-	defer img.Free()
+	defer img.Close()
 	w, h := img.Size()
 	if w != 330 || h != 132 {
 		t.Fatalf("image size = %dx%d; want 330x132", w, h)
@@ -708,7 +708,7 @@ func TestImageFromPixels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewImageRGBA: %v", err)
 	}
-	defer raw.Free()
+	defer raw.Close()
 	if rw, rh := raw.Size(); rw != 8 || rh != 4 {
 		t.Fatalf("raw image size = %dx%d; want 8x4", rw, rh)
 	}
@@ -730,7 +730,7 @@ func TestImageFromPixels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewImage: %v", err)
 	}
-	defer img.Free()
+	defer img.Close()
 	if err := inst.Set("pic", img); err != nil {
 		t.Fatalf("Set(pic) Go image: %v", err)
 	}
@@ -996,7 +996,7 @@ func TestImagePropertyRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer img.Free()
+	defer img.Close()
 	if err := inst.Set("pic", img); err != nil {
 		t.Fatal(err)
 	}
@@ -1010,5 +1010,5 @@ func TestImagePropertyRoundTrip(t *testing.T) {
 	if w, h := pic.Size(); w != 2 || h != 2 {
 		t.Fatalf("image read back as %dx%d, want 2x2", w, h)
 	}
-	pic.Free()
+	pic.Close()
 }

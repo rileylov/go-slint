@@ -355,7 +355,7 @@ func (s *SliceModel) Len() int { return len(s.items) }
 func (s *SliceModel) Handle() *ModelHandle { return s.handle }
 
 // Close releases the model's binding handle.
-func (s *SliceModel) Close() { s.handle.Free() }
+func (s *SliceModel) Close() { s.handle.Close() }
 
 // toSys maps Go-facing model wrappers to values the cgo layer understands.
 func toSys(v any) any {
@@ -383,7 +383,12 @@ type Gradient = slintsys.Gradient
 // GradientStop is one stop of a [Gradient]: Pos in 0..=1 with a Color.
 type GradientStop = slintsys.GradientStop
 
-// Image is a loaded image; assign it to an `image` property and Free it when done.
+// Image is a loaded image; assign it to an `image` property and Close it when done.
+//
+// TODO(v1.0): make Image (and Timer) a real struct rather than a slintsys alias, so the
+// public API doesn't leak Layer 1 into the v1 contract. This requires wrapping/unwrapping
+// at every Value boundary (Set, Get, callback args, model rows, nested structs), so it's
+// a v1.0 task — see "Toward v1.0" in CLAUDE.md — not a 0.x patch.
 type Image = slintsys.Image
 
 // DataTransfer is a drag-and-drop payload — Slint 1.17's `data-transfer` type carried
@@ -423,6 +428,8 @@ func NewImageRGB(pix []byte, w, h int) (*Image, error) { return slintsys.ImageFr
 
 // Timer fires a Go callback after an interval. Timers fire only while the event
 // loop runs (Run); create and start them after Create.
+//
+// TODO(v1.0): wrap in a real struct (see the Image alias note above).
 type Timer = slintsys.Timer
 
 // Timer modes.

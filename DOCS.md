@@ -194,7 +194,7 @@ img, _ := slint.LoadImage("logo.png")          // from a file
 img, _ := slint.NewImage(goImage)              // any image.Image: decoded, drawn, generated
 img, _ := slint.NewImageRGBA(pixels, w, h)     // raw RGBA8 bytes (w*h*4)
 win.SetIcon(img)
-defer img.Free()
+defer img.Close()
 ```
 
 `NewImage` accepts any `image.Image`, so the whole Go ecosystem works — decode with

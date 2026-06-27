@@ -113,3 +113,22 @@ dirs) through the Go API, mirroring Slint's interpreter test driver
   `data:` URL or an image pushed in from Go renders as a black box. With a real file
   via `@image-url`, the overlay renders on every platform including Wayland (see
   `cmd/examples/dragdrop`, which mirrors Slint's own `dnd-kanban`).
+
+## Toward v1.0
+
+Tracked breaking changes to make when cutting **v1.0** (don't do them in 0.x):
+
+- **Drop the Layer-1 type aliases.** `slint.Image` and `slint.Timer` are currently
+  `= slintsys.Image` / `= slintsys.Timer` aliases, which leaks Layer 1 into the public
+  v1 contract. Make them real `slint` structs wrapping the `slintsys` handle. This is
+  non-trivial: images/timers flow through the dynamic Value system *as* `slintsys`
+  types, so it needs wrapping/unwrapping at every boundary where one surfaces — `Set`
+  (via `toSys`), `Get`/typed getters (`goValue` returns `*slintsys.Image`), callback
+  args, model rows, and values nested inside structs. Keep the finalizer leak-watch
+  (the wrapper's `Close` must still drive the inner handle's release) and the
+  image-read path (#2) working. See the `TODO(v1.0)` at the `Image`/`Timer` aliases in
+  `slint.go`.
+- **Remove the deprecated `Free()` methods.** `Image`/`Timer`/`ModelHandle` kept
+  `Free()` as a `// Deprecated:` alias for `Close()` (added in 0.x for a consistent
+  release verb without a break). Deleting `Free()` at v1.0 is the breaking change — tag
+  that commit accordingly.

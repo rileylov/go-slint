@@ -25,7 +25,7 @@ func NewTimer() *Timer { return (&Timer{ptr: C.goslint_timer_new()}).watch() }
 
 // watch arms the dev-only leak warning (GOSLINT_DEV) and returns the timer.
 func (t *Timer) watch() *Timer {
-	leakWatch(t, func(t *Timer) bool { return t.ptr != nil }, "slint.Timer", "Free")
+	leakWatch(t, func(t *Timer) bool { return t.ptr != nil }, "slint.Timer", "Close")
 	return t
 }
 
@@ -39,12 +39,16 @@ func (t *Timer) Stop()         { C.goslint_timer_stop(t.ptr) }
 func (t *Timer) Restart()      { C.goslint_timer_restart(t.ptr) }
 func (t *Timer) Running() bool { return bool(C.goslint_timer_running(t.ptr)) }
 
-func (t *Timer) Free() {
+// Close stops and releases the timer's native memory. Safe to call multiple times.
+func (t *Timer) Close() {
 	if t.ptr != nil {
 		C.goslint_timer_free(t.ptr)
 		t.ptr = nil
 	}
 }
+
+// Deprecated: use [Timer.Close].
+func (t *Timer) Free() { t.Close() }
 
 // SingleShot fires fn once after intervalMs without a retained Timer.
 func SingleShot(intervalMs uint64, fn func()) {

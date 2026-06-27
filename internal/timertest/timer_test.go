@@ -42,7 +42,7 @@ func TestTimers(t *testing.T) {
 		t.Fatalf("RunEventLoop (repeated): %v", err)
 	}
 	tm.Stop()
-	tm.Free()
+	tm.Close()
 	if n := atomic.LoadInt32(&fired); n < 3 {
 		t.Fatalf("repeated timer fired %d times; want >= 3", n)
 	}

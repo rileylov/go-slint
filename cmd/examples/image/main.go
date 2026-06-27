@@ -40,7 +40,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	defer frame.Free()
+	defer frame.Close()
 	if err := win.SetFrame(frame); err != nil {
 		panic(err)
 	}

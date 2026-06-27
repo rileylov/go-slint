@@ -76,8 +76,8 @@
 //
 //   - [Compilation.Close] after compiling;
 //   - [Instance.Close] for each window (also released when the window closes);
-//   - [Image.Free] for images you create or read back from a property;
-//   - [Timer.Free] for timers.
+//   - [Image.Close] for images you create or read back from a property;
+//   - [Timer.Close] for timers.
 //
 // Forgetting these leaks native memory. During development, run with the GOSLINT_DEV
 // environment variable set: goslint then warns to stderr whenever such an object is
