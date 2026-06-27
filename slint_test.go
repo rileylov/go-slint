@@ -971,3 +971,44 @@ func TestInvokeFromEventLoopErrorNoPanic(t *testing.T) {
 	}
 	t.Logf("returned an error (no panic) as expected: %v", err)
 }
+
+// TestImagePropertyRoundTrip is a regression test for the image getter: reading back an
+// image property must return a *slint.Image, not nil. The generated typed getter does
+// `got.(*slint.Image)`; before goValue handled images, reads returned nil and that
+// assertion panicked with "interface conversion: interface {} is nil, not *slint.Image".
+func TestImagePropertyRoundTrip(t *testing.T) {
+	app, err := slint.Compile(`export component App inherits Window { in-out property <image> pic; }`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Close()
+	inst, err := app.Create("App")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer inst.Close()
+
+	// a 2x2 opaque image
+	img, err := slint.NewImageRGBA([]byte{
+		255, 0, 0, 255, 0, 255, 0, 255,
+		0, 0, 255, 255, 255, 255, 0, 255,
+	}, 2, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer img.Free()
+	if err := inst.Set("pic", img); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := inst.Get("pic")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Exactly what the generated typed getter does (generate.go: `.(*slint.Image)`).
+	pic := got.(*slint.Image)
+	if w, h := pic.Size(); w != 2 || h != 2 {
+		t.Fatalf("image read back as %dx%d, want 2x2", w, h)
+	}
+	pic.Free()
+}
