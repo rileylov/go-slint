@@ -35,10 +35,13 @@ import (
 const modulePath = "github.com/rileylov/go-slint"
 
 // defaultLibVersion is the LAST-resort fallback, only hit for a locally-built CLI
-// (`go build`/`go run`, where the module version is "(devel)") that's also run
-// outside a go-slint project. Released binaries derive their version from the
-// install tag via selfVersion(), so this no longer needs bumping per release.
-const defaultLibVersion = "v0.5.2"
+// (`go build`/`go run`, where the module version is "(devel)") run outside any
+// go-slint project. It is the unmistakable placeholder v0.0.0 (no such release) on
+// purpose: there's no real version to choose, so commands that need the native lib
+// fail loudly with guidance instead of silently fetching a stale one. Released
+// binaries get their version from the install tag via selfVersion(), so this is a
+// placeholder, not a number to keep bumping.
+const defaultLibVersion = "v0.0.0"
 
 // defaultBaseURL is the GitHub Releases download root. The release for libVersion
 // is expected at <defaultBaseURL>/<libVersion>/{manifest.json,<archives>}.
@@ -131,28 +134,33 @@ type target struct {
 //  2. the go-slint version the current project's go.mod requires (must match the
 //     module's ABI when building inside a project);
 //  3. selfVersion — the tag this goslint binary was installed at (`go install …@vX`);
-//  4. defaultLibVersion — only for a local devel build run outside a project.
+//  4. defaultLibVersion — the v0.0.0 placeholder; only for a local devel build run
+//     outside a project, where commands needing the lib then fail with guidance.
 var versionOnce struct {
 	sync.Once
-	v string
+	v   string
+	src string // human-readable origin of v, for `goslint doctor`
 }
 
-func version() string {
-	versionOnce.Do(func() { versionOnce.v = resolveVersion() })
-	return versionOnce.v
-}
+func version() string       { versionOnce.Do(resolveVersion); return versionOnce.v }
+func versionSource() string { versionOnce.Do(resolveVersion); return versionOnce.src }
 
-func resolveVersion() string {
+// resolveVersion records both the chosen version and a label for where it came from.
+func resolveVersion() {
+	set := func(v, src string) { versionOnce.v, versionOnce.src = v, src }
 	if v := os.Getenv("GOSLINT_LIB_VERSION"); v != "" {
-		return v
+		set(v, "from $GOSLINT_LIB_VERSION")
+		return
 	}
-	if v := moduleVersion(); v != "" { // spawns `go list -m`; memoized by version()
-		return v
+	if v := moduleVersion(); v != "" { // spawns `go list -m`; memoized via versionOnce
+		set(v, "from your project's go.mod")
+		return
 	}
 	if v := selfVersion(); v != "" {
-		return v
+		set(v, "this goslint's install tag")
+		return
 	}
-	return defaultLibVersion
+	set(defaultLibVersion, "placeholder — no version resolved (not in a go-slint project)")
 }
 
 // selfVersion reports the module version this goslint binary was installed at
@@ -280,6 +288,15 @@ func ensureProvisioned(tgt string, force bool) (target, string, string, error) {
 // manifest entry, the cached lib path, and the Slint version. Shared returns the
 // .so; static returns the .a.
 func provision(tgt string, force bool) (target, string, string, error) {
+	// No real version resolved (the v0.0.0 placeholder): there's nothing to fetch.
+	// Fail with guidance instead of 404'ing on a non-existent release. A GOSLINT_BASE_URL
+	// override (e.g. a local file:// release for testing) makes the version a mere cache
+	// key, so allow it there.
+	if version() == defaultLibVersion && os.Getenv("GOSLINT_BASE_URL") == "" {
+		return target{}, "", "", fmt.Errorf("no go-slint version resolved, so there's no native lib to fetch — "+
+			"run inside a project that requires go-slint, set GOSLINT_LIB_VERSION, or install goslint at a release tag "+
+			"(go install %s/cmd/goslint@vX.Y.Z)", modulePath)
+	}
 	base := releaseBase()
 	m, err := fetchManifest(base)
 	if err != nil {
@@ -549,7 +566,7 @@ func prependPath(dir string) string {
 
 func cmdDoctor(args []string) error {
 	tgt := hostTarget()
-	fmt.Printf("target:        %s\nexpected lib:  %s\nrelease base:  %s\n\n", tgt, version(), releaseBase())
+	fmt.Printf("target:        %s\nexpected lib:  %s  (%s)\nrelease base:  %s\n\n", tgt, version(), versionSource(), releaseBase())
 
 	report("go toolchain", inPath("go"))
 
@@ -563,6 +580,9 @@ func cmdDoctor(args []string) error {
 
 	if isProvisioned(tgt) {
 		report("native lib", true)
+	} else if version() == defaultLibVersion {
+		report("native lib", false)
+		fmt.Println("               → no version resolved — set GOSLINT_LIB_VERSION or run inside a go-slint project")
 	} else {
 		report("native lib", false)
 		fmt.Println("               → not cached yet — goslint build/run/dev will fetch it automatically (or: goslint setup)")
