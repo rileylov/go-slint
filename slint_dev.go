@@ -35,6 +35,7 @@ func LiveReload(path, component string, bind func(*Instance) error, opts ...Opti
 			}
 			last = m
 			InvokeFromEventLoop(func() {
+				start := time.Now()
 				// Reuse the current window so the UI swaps in place (no new window).
 				next, err := loadReuse(path, component, bind, opts, cur.inst)
 				if err != nil {
@@ -44,7 +45,7 @@ func LiveReload(path, component string, bind func(*Instance) error, opts ...Opti
 				old := cur
 				cur = next
 				old.close() // drop the old instance; the window lives on in `next`
-				log.Printf("goslint dev: reloaded %s", filepath.Base(path))
+				log.Printf("goslint dev: reloaded %s in %s", filepath.Base(path), time.Since(start).Round(time.Millisecond))
 			})
 		}
 	}()

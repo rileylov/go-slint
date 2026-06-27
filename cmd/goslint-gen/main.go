@@ -22,7 +22,7 @@ import (
 )
 
 func main() {
-	out := flag.String("o", "", "output .go file (default <input>.go)")
+	out := flag.String("o", "", "output .go file (default: <input>.go, e.g. app.slint -> app.slint.go)")
 	pkg := flag.String("package", "", "package name (default: output directory name)")
 	component := flag.String("component", "", "component to wrap (default: last exported)")
 	style := flag.String("style", "fluent", "widget style baked into the generated compile()")
@@ -33,7 +33,9 @@ func main() {
 		os.Exit(2)
 	}
 	if *out == "" {
-		*out = strings.TrimSuffix(in, filepath.Ext(in)) + ".go"
+		// Keep the full name + ".go" (app.slint -> app.slint.go), matching the
+		// convention used by directory discovery and the //go:generate directives.
+		*out = in + ".go"
 	}
 	if *pkg == "" {
 		abs, _ := filepath.Abs(*out)

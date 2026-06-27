@@ -1,4 +1,4 @@
-# go-slint — Guide
+# go-slint - Guide (wip)
 
 How to build a UI with go-slint, step by step.
 
@@ -6,7 +6,7 @@ You write your UI in the **`.slint`** language, run **`goslint generate`** to tu
 it into a typed Go package, and drive it with normal Go methods. Property and
 callback names become compile-checked methods; structs and enums become Go types.
 Under the hood a small Rust shim runs Slint's interpreter, so `.slint` is compiled
-at run time — but `goslint generate` embeds the markup, so you still ship one
+at run time - but `goslint generate` embeds the markup, so you still ship one
 self-contained binary.
 
 > New to the `.slint` language itself? See the
@@ -16,7 +16,7 @@ self-contained binary.
 
 ## Quick start
 
-**Prerequisites:** Go and a **C compiler** for cgo — gcc/clang on Linux, the Xcode
+**Prerequisites:** Go and a **C compiler** for cgo - gcc/clang on Linux, the Xcode
 command-line tools on macOS, **MinGW-w64 gcc on Windows** (the prebuilt lib uses the
 GNU toolchain, so MSVC won't link). You do *not* need Rust or pkg-config. `goslint
 doctor` checks all of this.
@@ -30,7 +30,7 @@ goslint init myapp && cd myapp
 ```
 
 `goslint dev`/`run`/`build` download the prebuilt native lib for your platform on
-first use (cached, once per version) — no separate install step. (To pre-fetch it
+first use (cached, once per version) - no separate install step. (To pre-fetch it
 explicitly, e.g. in CI, run `goslint setup`.)
 
 **2. Write `app.slint`:**
@@ -52,8 +52,15 @@ export component AppWindow inherits Window {
 **3. Generate the typed API and write `main.go`:**
 
 ```sh
+goslint generate          # whole project: writes <name>.slint.go next to each entry .slint
+# …or target one file explicitly:
 goslint generate -o ui/app.slint.go -package ui app.slint
 ```
+
+With no arguments, `goslint generate` finds every **entry** `.slint` (one not imported by
+another - imported components/widgets are skipped) and generates the typed `<name>.slint.go`
+beside it, packaged after its directory. If your project already has `//go:generate goslint
+generate …` directives, it runs those instead, so a custom output path/package still wins.
 
 ```go
 package main
@@ -85,7 +92,7 @@ func main() {
 **4. Run it:** `goslint dev .` (or `goslint run .`).
 
 The scaffold puts a `//go:generate goslint generate …` directive atop `main.go`, and
-`goslint dev`/`run`/`build` run it for you — so you can just edit `app.slint` and
+`goslint dev`/`run`/`build` run it for you - so you can just edit `app.slint` and
 see your changes. (Manual `goslint generate` is only needed if you build outside
 those commands.)
 
@@ -182,7 +189,7 @@ win.Logic().OnGreeting(func(a0 string) string { return "Hi " + a0 })
 | `[T]` (array) | `[]T` |
 | struct | a generated struct type (e.g. `ui.Point`) |
 | enum | a generated string type (e.g. `ui.Mode`) |
-| `brush` | `any` — a `slint.Color` or `slint.Gradient` (see [Dynamic API](#dynamic-runtime-api)) |
+| `brush` | `any` - a `slint.Color` or `slint.Gradient` (see [Dynamic API](#dynamic-runtime-api)) |
 
 ### Images
 
@@ -197,14 +204,14 @@ win.SetIcon(img)
 defer img.Close()
 ```
 
-`NewImage` accepts any `image.Image`, so the whole Go ecosystem works — decode with
+`NewImage` accepts any `image.Image`, so the whole Go ecosystem works - decode with
 `image/png`/`image/jpeg`, draw with `image/draw` or a plotting library, or generate
 procedurally. (It handles Go's premultiplied-alpha `image.RGBA` correctly.) See
 [`cmd/examples/image`](cmd/examples/image).
 
 ### Custom fonts
 
-The simplest way is to **import the font in your `.slint`** — the interpreter
+The simplest way is to **import the font in your `.slint`** - the interpreter
 registers it for you, and you reference it by family name:
 
 ```slint
@@ -215,7 +222,7 @@ export component AppWindow inherits Window {
 ```
 
 To register a font from Go at runtime (e.g. a `go:embed`'d or user-supplied font),
-call it on the window before the text is shown — it applies to all windows:
+call it on the window before the text is shown - it applies to all windows:
 
 ```go
 win.RegisterFontFromPath("fonts/Inter.ttf")
@@ -282,7 +289,7 @@ import { Card } from "components/card.slint";
 ```
 
 `goslint generate` walks the import graph and **embeds every imported file**, so the
-built binary is still self-contained — no `.slint` tree is needed at run time.
+built binary is still self-contained - no `.slint` tree is needed at run time.
 (`@library` imports are the exception: they still resolve via library paths.) See
 [`cmd/examples/multifile`](cmd/examples/multifile).
 
@@ -290,7 +297,7 @@ built binary is still self-contained — no `.slint` tree is needed at run time.
 
 ## Live development
 
-You write your app **one way** — create, bind, `Run()` — and it does the right thing
+You write your app **one way** - create, bind, `Run()` - and it does the right thing
 in dev and in production.
 
 ```go
@@ -302,7 +309,7 @@ win.Run()
 
 `goslint dev .` runs this and watches the project:
 
-- editing a **`.slint`** **hot-reloads in-process** — the app recompiles the markup
+- editing a **`.slint`** **hot-reloads in-process** - the app recompiles the markup
   and swaps its UI into the *same* window live, **no rebuild**, so cosmetic/layout
   iteration is instant (~100–500ms per save);
 - editing a **`.go`** rebuilds and restarts (regenerating the wrapper first if the
@@ -310,7 +317,7 @@ win.Run()
 
 How it works: under `GOSLINT_DEV`, the generated wrapper *records* your `New`-to-`Run`
 setup calls (`Set*`, `On*`) and `Run()` replays them onto the freshly-compiled
-instance on each reload — so your same inline code drives the live reload. Property
+instance on each reload - so your same inline code drives the live reload. Property
 state resets on reload (it replays your initial setup, like a page reload). `goslint
 build`/`run` produce a normal binary from the same code (no recording, no reload).
 
@@ -368,7 +375,7 @@ win.SetFullscreen(true)            // also SetMaximized / SetMinimized
 win.RequestRedraw()
 ```
 
-**Closing.** Intercept the window's close (the X button) to confirm or save first —
+**Closing.** Intercept the window's close (the X button) to confirm or save first -
 return `true` to let it close, `false` to keep it open. `RequestClose()` triggers
 the same path (e.g. from a Quit button):
 
@@ -409,7 +416,7 @@ slint.SetTranslator(func(msgid string) string {
 ```
 
 **Multiple windows.** Each `Create` (or `New…`) is an independent window. Show each
-one (non-blocking) and drive a **single** shared event loop with `slint.Run()` — not
+one (non-blocking) and drive a **single** shared event loop with `slint.Run()` - not
 `win.Run()` per window. `Run()` returns when the last window closes; `slint.RunUntilQuit()`
 keeps the loop running across windows opening/closing (until `slint.Quit()`).
 
@@ -423,7 +430,7 @@ See [`cmd/examples/multiwindow`](cmd/examples/multiwindow). (One `.slint` with s
 window components works via the dynamic API today; the typed generator currently wraps
 a single component per file.)
 
-**Snapshot.** Render the window's current contents to a Go image — for screenshots
+**Snapshot.** Render the window's current contents to a Go image - for screenshots
 or export:
 
 ```go
@@ -457,10 +464,10 @@ go func() {
 ```
 
 A bare `win.SetPreview(img)` from that goroutine compiles fine but corrupts or
-crashes at runtime — Slint is thread-affine. To catch this, **`goslint dev` runs a
+crashes at runtime - Slint is thread-affine. To catch this, **`goslint dev` runs a
 guard**: a property set, model mutation, or invoke made off the event-loop thread
 **panics** with a clear message instead of corrupting silently. The guard is active
-only under `GOSLINT_DEV` (so a shipped build has zero overhead) — develop with
+only under `GOSLINT_DEV` (so a shipped build has zero overhead) - develop with
 `goslint dev` and off-thread mistakes surface immediately.
 
 ---
@@ -473,13 +480,13 @@ goslint android build -o myapp.apk .     # signed APK (arm64-v8a + x86_64)
 ```
 
 On **Windows**, `goslint build` links the app as a GUI subsystem binary, so
-double-clicking it shows only your window — no console pops up alongside. (A side
+double-clicking it shows only your window - no console pops up alongside. (A side
 effect: stdout/stderr go nowhere in a built app, as with any GUI program. Need a
-console build for debugging? Pass your own `-ldflags` — e.g. `goslint build
--ldflags= .` — and goslint leaves the subsystem at the default.)
+console build for debugging? Pass your own `-ldflags` - e.g. `goslint build
+-ldflags= .` - and goslint leaves the subsystem at the default.)
 
 Prefer plain `go`? `eval "$(goslint env)"` exports `CGO_LDFLAGS`, then
-`go build -tags goslint_extlib .` — no pkg-config required. (If you'd rather use
+`go build -tags goslint_extlib .` - no pkg-config required. (If you'd rather use
 pkg-config, the `goslint_pkgconfig` tag still works with the `goslint.pc` that
 `setup` also writes.) On Windows add `-ldflags=-H=windowsgui` yourself to suppress
 the console.
@@ -495,9 +502,9 @@ debug keystore is created automatically).
 
 ## Renderers
 
-go-slint ships Slint's **GPU renderer** (femtovg/OpenGL — the default, best on most
+go-slint ships Slint's **GPU renderer** (femtovg/OpenGL - the default, best on most
 machines) and a **software renderer**. On **low-end / integrated GPUs**, OpenGL
-window *resize* can stutter badly (a Slint/driver limitation, not the bindings — it
+window *resize* can stutter badly (a Slint/driver limitation, not the bindings - it
 reproduces in Slint's own examples). Switch to the software renderer via an env var,
 no rebuild:
 
@@ -514,8 +521,8 @@ before creating a window if you want to force it for your app.)
 
 ## Reference
 
-- [`cmd/examples`](cmd/examples) — runnable examples (typed: `counter`, `clock`,
+- [`cmd/examples`](cmd/examples) - runnable examples (typed: `counter`, `clock`,
   `typed`, `multifile`, `image`; dynamic: `todo`, `window`, `gradient`, `interop`,
   `multiwindow`, `threadcheck`, `dragdrop`, `systray`). The last four show the
   thread-affinity guard and the Slint 1.17 features (drag & drop, system tray).
-- [README.md](README.md) — overview, install, platform support, license.
+- [README.md](README.md) - overview, install, platform support, license.

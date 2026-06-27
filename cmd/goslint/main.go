@@ -28,6 +28,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 )
 
 // modulePath is the go-slint module; the CLI reads the version the user's project
@@ -99,7 +100,7 @@ func usage() {
 Usage:
   goslint init [-module path] [dir]                   scaffold a new go-slint project
   goslint setup [-target <goos>_<goarch>] [-force]   pre-fetch the native lib (optional; build/run/dev auto-fetch)
-  goslint generate [-o out.go] [-package p] <in.slint>  generate a typed Go API from a .slint
+  goslint generate [-o out.go] [-package p] [<in.slint>|<dir>]  typed Go from .slint (no file/a dir: whole project)
   goslint dev   [package]                             run with live reload (edit .slint, save)
   goslint build [go build args...]                    go build with the lib wired up
   goslint run   [go run args...]                      go run   with the lib wired up
@@ -352,6 +353,7 @@ Libs: %s
 // ---- go build/run wrappers ----
 
 func cmdGo(sub string, args []string) error {
+	start := time.Now()
 	tgt := hostTarget()
 	env, err := wrapperEnv(tgt)
 	if err != nil {
@@ -386,7 +388,15 @@ func cmdGo(sub string, args []string) error {
 	cmd := exec.Command("go", goArgs...)
 	cmd.Env = env
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-	return cmd.Run()
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+	// `run` keeps running the user's app, so its wall-clock isn't a build time;
+	// only report it for `build` (gen + compile).
+	if sub == "build" {
+		fmt.Println("goslint: built in", time.Since(start).Round(time.Millisecond))
+	}
+	return nil
 }
 
 // hasLdflags reports whether the args already set -ldflags (so we don't clobber it).

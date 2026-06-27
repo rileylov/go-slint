@@ -52,10 +52,15 @@ func cmdDev(args []string) error {
 
 	build := func() error {
 		fmt.Println(">> building")
+		s := time.Now()
 		c := exec.Command("go", "build", "-tags", buildTag, "-o", bin, pkg)
 		c.Env = env
 		c.Stdout, c.Stderr = os.Stdout, os.Stderr
-		return c.Run()
+		if err := c.Run(); err != nil {
+			return err
+		}
+		fmt.Println(">> built in", time.Since(s).Round(time.Millisecond))
+		return nil
 	}
 
 	var proc *exec.Cmd

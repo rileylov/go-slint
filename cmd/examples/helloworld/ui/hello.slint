@@ -1,0 +1,21 @@
+import { Button, VerticalBox } from "std-widgets.slint";
+export component HelloWorld inherits Window {
+    preferred-width: 280px;
+    preferred-height: 180px;
+    in property <string> Greeting: "_____";
+    callback Greet();
+
+    VerticalBox {
+        alignment: center;
+        Text {
+            horizontal-alignment: center;
+            text: root.Greeting + " world!";
+            font-size: 28px;
+        }
+
+        Button {
+            text: "Greet!";
+            clicked => { root.Greet() }
+        }
+    }
+}
