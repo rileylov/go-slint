@@ -515,7 +515,7 @@ before creating a window if you want to force it for your app.)
 ## Reference
 
 - [`cmd/examples`](cmd/examples) — runnable examples (typed: `counter`, `clock`,
-  `typed`, `multifile`, `whatsnew`; dynamic: `todo`, `window`, `gradient`, `interop`,
+  `typed`, `multifile`, `image`; dynamic: `todo`, `window`, `gradient`, `interop`,
   `multiwindow`, `threadcheck`, `dragdrop`, `systray`). The last four show the
   thread-affinity guard and the Slint 1.17 features (drag & drop, system tray).
 - [README.md](README.md) — overview, install, platform support, license.

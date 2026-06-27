@@ -38,6 +38,8 @@ func TestGenerate(t *testing.T) {
 		"func (c *AppWindow) SetName(value string) error",
 		"func (c *AppWindow) SetTags(value []string) error",
 		"func (c *AppWindow) Points() ([]Point, error)",
+		// the struct decoder is a private helper, not part of the package's API
+		"func pointFromMap(",
 		"func (c *AppWindow) OnClicked(handler func(a0 int)) error",
 		"func (g *AppWindowLogic) OnMakeGreeting(handler func(a0 string) string) error",
 		"type Point struct",
@@ -53,7 +55,8 @@ func TestGenerate(t *testing.T) {
 		}
 	}
 	// no more string-literal baking / file-map machinery
-	for _, gone := range []string{"generatedSource =", "generatedFiles", "embeddedLoader", "WithFileLoader"} {
+	for _, gone := range []string{"generatedSource =", "generatedFiles", "embeddedLoader", "WithFileLoader",
+		"PointFromMap"} { // the decoder must not be exported
 		if strings.Contains(s, gone) {
 			t.Errorf("output should no longer contain %q (baked-source machinery)", gone)
 		}
@@ -165,6 +168,28 @@ func TestGenerateOutPropertyNoSetter(t *testing.T) {
 	for _, m := range []string{"SetTitle(", "SetLabel("} {
 		if !strings.Contains(src, m) {
 			t.Errorf("in/in-out property should keep its setter %q", m)
+		}
+	}
+}
+
+// TestSanitizePkg checks the default package name (derived from the output
+// directory) is always a usable Go package clause: lowercased, punctuation
+// stripped, and never empty, a Go keyword, or starting with a digit.
+func TestSanitizePkg(t *testing.T) {
+	cases := map[string]string{
+		"ui":       "ui",
+		"My-App":   "myapp",   // hyphen stripped, lowercased
+		"my.pkg":   "mypkg",   // dot stripped
+		"":         "ui",      // empty dir name falls back
+		"___":      "ui",      // all-punctuation falls back
+		"2nd":      "pkg2nd",  // can't start with a digit
+		"func":     "funcpkg", // a Go keyword can't be a package name
+		"package":  "packagepkg",
+		"GoodName": "goodname",
+	}
+	for in, want := range cases {
+		if got := sanitizePkg(in); got != want {
+			t.Errorf("sanitizePkg(%q) = %q, want %q", in, got, want)
 		}
 	}
 }

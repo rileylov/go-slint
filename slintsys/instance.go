@@ -16,6 +16,7 @@ type Instance struct{ ptr *C.GoComponentInstance }
 
 // GetProperty reads a public property and converts it to a Go value.
 func (i *Instance) GetProperty(name string) (any, error) {
+	CheckUIThread("Get", name)
 	cs := C.CString(name)
 	defer C.free(unsafe.Pointer(cs))
 	v := C.goslint_instance_get_property(i.ptr, cs)
@@ -91,6 +92,7 @@ func (i *Instance) TakeSnapshot() (pix []byte, w, h int, err error) {
 
 // GetGlobalProperty reads a property of an exported global singleton.
 func (i *Instance) GetGlobalProperty(global, name string) (any, error) {
+	CheckUIThread("GetGlobal", name)
 	cg := C.CString(global)
 	defer C.free(unsafe.Pointer(cg))
 	cs := C.CString(name)

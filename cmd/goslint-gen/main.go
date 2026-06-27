@@ -13,6 +13,7 @@ import (
 	"flag"
 	"fmt"
 	"go/format"
+	"go/token"
 	"os"
 	"path/filepath"
 	"strings"
@@ -121,10 +122,17 @@ func sanitizePkg(s string) string {
 			b.WriteRune(r)
 		}
 	}
-	if b.Len() == 0 {
+	name := b.String()
+	if name == "" {
 		return "ui"
 	}
-	return b.String()
+	if name[0] >= '0' && name[0] <= '9' { // a package clause can't start with a digit
+		name = "pkg" + name
+	}
+	if token.IsKeyword(name) { // ...or be a Go keyword (e.g. a directory named "func")
+		name += "pkg"
+	}
+	return name
 }
 
 // ---- introspection JSON (mirrors rust/goslint-sys/src/introspect.rs) ----

@@ -55,9 +55,12 @@ func SetTranslator(fn func(msgid string) string) error { return slintsys.SetTran
 // ClearTranslator removes the translator so `@tr` shows its source strings again.
 func ClearTranslator() { slintsys.ClearTranslator() }
 
+// Diagnostic is a single compiler message (error, warning, or note).
+type Diagnostic = slintsys.Diagnostic
+
 // DiagnosticError reports one or more compiler errors.
 type DiagnosticError struct {
-	Diagnostics []slintsys.Diagnostic
+	Diagnostics []Diagnostic
 }
 
 // Error implements the error interface, listing the compiler diagnostics.

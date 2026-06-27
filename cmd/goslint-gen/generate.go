@@ -307,7 +307,7 @@ func emitStruct(b *strings.Builder, name string, s StructInfo) {
 	}
 	p("}\n\n")
 	// FromMap
-	p("func %sFromMap(m map[string]any) %s {\n\tvar s %s\n", t, t, t)
+	p("func %sFromMap(m map[string]any) %s {\n\tvar s %s\n", unexported(t), t, t)
 	for _, f := range s.Fields {
 		p("\tif v, ok := m[%q]; ok {\n\t\ts.%s = %s\n\t}\n", f.Name, exported(f.Name), fromAny("v", f.Ty))
 	}
@@ -385,7 +385,7 @@ func fromAny(expr string, t TypeInfo) string {
 	case "enum":
 		return exported(t.Name) + "(" + expr + ".(slint.Enum).Value)"
 	case "struct":
-		return exported(t.Name) + "FromMap(" + expr + ".(map[string]any))"
+		return unexported(exported(t.Name)) + "FromMap(" + expr + ".(map[string]any))"
 	case "array":
 		// Models read back as []any; convert each element to the typed element.
 		elem := elemOr(t)
@@ -429,6 +429,17 @@ func exported(name string) string {
 		return "X"
 	}
 	return b.String()
+}
+
+// unexported lowercases the first letter, so a generated helper (e.g. fromMap) stays
+// out of the package's public API.
+func unexported(s string) string {
+	if s == "" {
+		return s
+	}
+	r := []rune(s)
+	r[0] = unicode.ToLower(r[0])
+	return string(r)
 }
 
 // validGoIdent reports whether s is a legal Go identifier (a letter or '_', then
