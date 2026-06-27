@@ -1,0 +1,48 @@
+# git-cliff configuration — turns the conventional-commit history between two
+# version tags into grouped "Added / Fixed / Changed …" release notes. The
+# release workflow runs `git-cliff --latest` on a tag push and drops the result
+# into the GitHub Release body. See https://git-cliff.org.
+
+[changelog]
+# No header/footer: the workflow wraps these notes with the install snippet.
+header = ""
+# Rendered once per release. We only emit --latest, so this runs for one tag.
+# Groups are ordered by the hidden "<!-- N -->" prefix, which striptags removes.
+body = """
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group | striptags | trim | upper_first }}
+{% for commit in commits %}
+- {% if commit.breaking %}⚠ **Breaking:** {% endif %}\
+{% if commit.scope %}**{{ commit.scope }}:** {% endif %}\
+{{ commit.message | upper_first }} \
+([`{{ commit.id | truncate(length=7, end="") }}`](https://github.com/rileylov/go-slint/commit/{{ commit.id }}))
+{%- endfor %}
+{% endfor %}
+"""
+trim = true
+footer = ""
+
+[git]
+conventional_commits = true
+filter_unconventional = true   # ignore commits that aren't conventional commits
+filter_commits = true          # drop anything no parser below matches
+protect_breaking_commits = true # keep a "feat!:"/"fix!:" even if its type is skipped
+tag_pattern = "v[0-9]*"        # only real version tags delimit a release
+sort_commits = "newest"
+
+# Map each conventional-commit type to a section. The "<!-- N -->" prefix only
+# sets the order; striptags strips it from the rendered heading.
+commit_parsers = [
+  { message = "^feat", group = "<!-- 1 -->Added" },
+  { message = "^fix", group = "<!-- 2 -->Fixed" },
+  { message = "^refactor", group = "<!-- 3 -->Changed" },
+  { message = "^polish", group = "<!-- 3 -->Changed" },
+  { message = "^perf", group = "<!-- 4 -->Performance" },
+  { message = "^docs", group = "<!-- 5 -->Documentation" },
+  { message = "^build", group = "<!-- 6 -->Build system" },
+  { message = "^revert", group = "<!-- 7 -->Reverted" },
+  { message = "^chore", skip = true },
+  { message = "^ci", skip = true },
+  { message = "^test", skip = true },
+  { message = "^style", skip = true },
+]
