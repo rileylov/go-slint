@@ -319,10 +319,12 @@ pub unsafe extern "C" fn goslint_instance_take_snapshot(
                 if let Some(h) = h.as_mut() {
                     *h = buf.height();
                 }
-                let mut bytes = buf.as_bytes().to_vec();
-                bytes.shrink_to_fit(); // capacity == length, so the free is exact
-                let ptr = bytes.as_mut_ptr();
-                std::mem::forget(bytes);
+                // into_boxed_slice guarantees capacity == length, so goslint_pixels_free
+                // (which rebuilds a Box<[u8]> of length n) deallocs with the exact same
+                // Layout. shrink_to_fit alone does NOT guarantee cap == len.
+                let mut boxed = buf.as_bytes().to_vec().into_boxed_slice();
+                let ptr = boxed.as_mut_ptr();
+                std::mem::forget(boxed);
                 ptr
             }
             Err(e) => {
@@ -342,7 +344,9 @@ pub unsafe extern "C" fn goslint_instance_take_snapshot(
 pub unsafe extern "C" fn goslint_pixels_free(ptr: *mut u8, n: usize) {
     guard((), || {
         if !ptr.is_null() {
-            drop(Vec::from_raw_parts(ptr, n, n));
+            // Rebuild the exact Box<[u8]> take_snapshot leaked (cap == len == n) so
+            // the dealloc Layout matches the allocation.
+            drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(ptr, n)));
         }
     });
 }

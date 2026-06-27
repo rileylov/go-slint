@@ -276,7 +276,7 @@ pub unsafe extern "C" fn goslint_result_diagnostic(
             };
         }
         if !message.is_null() {
-            *message = to_c_string(&d.message().to_string());
+            *message = to_c_string(d.message());
         }
         if !file.is_null() {
             *file = match d.source_file().and_then(|p| p.to_str()) {
