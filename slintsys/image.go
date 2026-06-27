@@ -23,7 +23,14 @@ func LoadImage(path string) (*Image, error) {
 	if p == nil {
 		return nil, errors.New(lastErrorOr("load image " + path))
 	}
-	return &Image{ptr: p}, nil
+	return (&Image{ptr: p}).watch(), nil
+}
+
+// watch arms the dev-only leak warning (GOSLINT_DEV) and returns the image, so callers
+// can `return img.watch(), nil`.
+func (img *Image) watch() *Image {
+	leakWatch(img, func(i *Image) bool { return i.ptr != nil }, "slint.Image", "Free")
+	return img
 }
 
 // ImageFromRGBA builds an image from a tightly-packed RGBA8 buffer (w*h*4 bytes,
@@ -52,7 +59,7 @@ func imageFromPixels(pix []byte, w, h, bpp int, mk func(*C.uint8_t) *C.GoImage) 
 	if p == nil {
 		return nil, errors.New(lastErrorOr("image from pixels"))
 	}
-	return &Image{ptr: p}, nil
+	return (&Image{ptr: p}).watch(), nil
 }
 
 // Size returns the image's pixel dimensions.

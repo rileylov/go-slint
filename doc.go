@@ -69,6 +69,21 @@
 // Build a writable model with [NewSliceModel] (or [NewModel] for a custom
 // [Model]) and assign it to an array/model property; mutating it notifies Slint.
 //
+// # Resource ownership
+//
+// A few types own native (Slint/Rust) memory the Go garbage collector can't reclaim,
+// so release them explicitly — ideally with defer:
+//
+//   - [Compilation.Close] after compiling;
+//   - [Instance.Close] for each window (also released when the window closes);
+//   - [Image.Free] for images you create or read back from a property;
+//   - [Timer.Free] for timers.
+//
+// Forgetting these leaks native memory. During development, run with the GOSLINT_DEV
+// environment variable set: goslint then warns to stderr whenever such an object is
+// garbage-collected without having been released — a quick way to catch a missing
+// Free/Close. (It only warns; it never frees off the UI thread, which would be unsafe.)
+//
 // See the cmd/examples directory for runnable apps (hello, counter, todo, clock,
 // interop, chartstress) and CLAUDE.md for the architecture.
 //

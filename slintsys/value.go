@@ -256,7 +256,7 @@ func goValue(v *C.GoValue) any {
 		// Owned clone (Rc-backed, cheap); caller frees via Image.Free. Without this,
 		// image reads returned nil and the generated getter's type assertion panicked.
 		if p := C.goslint_value_as_image(v); p != nil {
-			return &Image{ptr: p}
+			return (&Image{ptr: p}).watch()
 		}
 		return nil
 	case TypeStruct:

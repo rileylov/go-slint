@@ -21,7 +21,13 @@ import "runtime/cgo"
 // on the event-loop thread, so the loop (RunEventLoop / Instance.Run) must run.
 type Timer struct{ ptr *C.GoTimer }
 
-func NewTimer() *Timer { return &Timer{ptr: C.goslint_timer_new()} }
+func NewTimer() *Timer { return (&Timer{ptr: C.goslint_timer_new()}).watch() }
+
+// watch arms the dev-only leak warning (GOSLINT_DEV) and returns the timer.
+func (t *Timer) watch() *Timer {
+	leakWatch(t, func(t *Timer) bool { return t.ptr != nil }, "slint.Timer", "Free")
+	return t
+}
 
 // Start runs fn every intervalMs (mode TimerRepeated) or once (TimerSingleShot).
 func (t *Timer) Start(mode int, intervalMs uint64, fn func()) {

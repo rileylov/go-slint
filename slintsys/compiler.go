@@ -78,14 +78,14 @@ func (c *Compiler) BuildFromSource(src, path string) *Result {
 	defer C.free(unsafe.Pointer(cs))
 	cp := C.CString(path)
 	defer C.free(unsafe.Pointer(cp))
-	return &Result{ptr: C.goslint_compiler_build_from_source(c.ptr, cs, cp)}
+	return (&Result{ptr: C.goslint_compiler_build_from_source(c.ptr, cs, cp)}).watch()
 }
 
 // BuildFromPath compiles a `.slint` file from disk.
 func (c *Compiler) BuildFromPath(path string) *Result {
 	cp := C.CString(path)
 	defer C.free(unsafe.Pointer(cp))
-	return &Result{ptr: C.goslint_compiler_build_from_path(c.ptr, cp)}
+	return (&Result{ptr: C.goslint_compiler_build_from_path(c.ptr, cp)}).watch()
 }
 
 // Diagnostic is a compiler message. Level: 0=error, 1=warning, 2=note.
@@ -151,6 +151,13 @@ func (r *Result) Free() {
 	}
 }
 
+// watch arms the dev-only leak warning (GOSLINT_DEV) and returns the result. The
+// slint.Compilation wrapper is the sole holder; its Close() frees this.
+func (r *Result) watch() *Result {
+	leakWatch(r, func(r *Result) bool { return r.ptr != nil }, "slint.Compilation", "Close")
+	return r
+}
+
 // Definition wraps slint_interpreter::ComponentDefinition.
 type Definition struct{ ptr *C.GoComponentDefinition }
 
@@ -166,7 +173,7 @@ func (d *Definition) Create() (*Instance, error) {
 	if p == nil {
 		return nil, errors.New(lastErrorOr("create"))
 	}
-	return &Instance{ptr: p}, nil
+	return (&Instance{ptr: p}).watch(), nil
 }
 
 // CreateWithWindow instantiates the component reusing winOwner's window (live
@@ -176,7 +183,7 @@ func (d *Definition) CreateWithWindow(winOwner *Instance) (*Instance, error) {
 	if p == nil {
 		return nil, errors.New(lastErrorOr("create with window"))
 	}
-	return &Instance{ptr: p}, nil
+	return (&Instance{ptr: p}).watch(), nil
 }
 
 func (d *Definition) Free() {

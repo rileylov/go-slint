@@ -193,3 +193,11 @@ func (i *Instance) Free() {
 		i.ptr = nil
 	}
 }
+
+// watch arms the dev-only leak warning (GOSLINT_DEV) and returns the instance. The
+// slint.Instance wrapper is the sole holder of this, and its Close() calls Free, so an
+// un-Closed window is flagged when it's collected. ("Close" is the public verb.)
+func (i *Instance) watch() *Instance {
+	leakWatch(i, func(i *Instance) bool { return i.ptr != nil }, "slint window (Instance)", "Close")
+	return i
+}
