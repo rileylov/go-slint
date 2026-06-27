@@ -310,9 +310,9 @@ func provision(tgt string, force bool) (target, string, string, error) {
 		if !fileHasSHA(libpath, t.SHA256) {
 			return target{}, "", "", fmt.Errorf("checksum mismatch for %s (expected %s)", t.Archive, t.SHA256)
 		}
-	} else {
-		fmt.Println("up to date:", libpath)
 	}
+	// Already cached: stay quiet (matches `goslint build`, which reuses its cached link
+	// line silently). Only an actual download above announces itself.
 	return t, libpath, m.Slint, nil
 }
 
