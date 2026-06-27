@@ -32,7 +32,9 @@ func (i *Instance) SetCallback(name string, fn CallbackFunc) error {
 	cs := C.CString(name)
 	defer C.free(unsafe.Pointer(cs))
 	if C.goslintSetCallbackBridge(i.ptr, cs, C.uintptr_t(h)) != 0 {
-		h.Delete()
+		// Don't Delete here: on the bridge's error path the Rust Drop guard already
+		// released this handle; a second Delete panics ("misuse of an invalid
+		// Handle"). Matches SetTranslator. See translator_bridge.go.
 		return errors.New(lastErrorOr("set callback " + name))
 	}
 	return nil
@@ -46,7 +48,8 @@ func (i *Instance) SetGlobalCallback(global, name string, fn CallbackFunc) error
 	cs := C.CString(name)
 	defer C.free(unsafe.Pointer(cs))
 	if C.goslintSetGlobalCallbackBridge(i.ptr, cg, cs, C.uintptr_t(h)) != 0 {
-		h.Delete()
+		// See SetCallback: the Rust Drop guard already released this handle on the
+		// error path; a second Delete would panic.
 		return errors.New(lastErrorOr("set global callback " + name))
 	}
 	return nil

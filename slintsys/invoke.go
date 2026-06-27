@@ -24,7 +24,8 @@ import (
 func InvokeFromEventLoop(fn func()) error {
 	h := cgo.NewHandle(fn)
 	if C.goslintInvokeBridge(C.uintptr_t(h)) != 0 {
-		h.Delete()
+		// The bridge's error path already released this handle via the Rust Drop
+		// guard (OnceCallback); a second Delete would panic. See callback_bridge.go.
 		return errors.New(lastErrorOr("invoke from event loop"))
 	}
 	return nil

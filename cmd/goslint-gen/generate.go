@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"unicode"
 )
 
 // generate produces the typed Go source for a component interface. relPath is the
@@ -13,6 +14,13 @@ import (
 // //go:embed list, so the .slint stays the single source of truth and the binary is
 // self-contained.
 func generate(iface *Interface, pkg, style, relPath string, files map[string]string) ([]byte, error) {
+	// Fail loudly on identifier collisions/invalid names before emitting anything:
+	// format.Source only parses the output, so a duplicate method would slip through
+	// and break the user's build with a confusing error.
+	if err := validateNames(iface); err != nil {
+		return nil, err
+	}
+
 	var b strings.Builder
 	p := func(format string, a ...any) { fmt.Fprintf(&b, format, a...) }
 
@@ -401,6 +409,129 @@ func exported(name string) string {
 		return "X"
 	}
 	return b.String()
+}
+
+// validGoIdent reports whether s is a legal Go identifier (a letter or '_', then
+// letters/digits/'_').
+func validGoIdent(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i, r := range s {
+		switch {
+		case r == '_' || unicode.IsLetter(r):
+		case i > 0 && unicode.IsDigit(r):
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// validateNames fails loudly when the generated typed API would not compile because two
+// Go identifiers collide — a generated method clashing with a built-in (Run/Show/Close/
+// Inner/…) or with another generated member on the same receiver, two package-level
+// types with the same name, or a name that isn't a valid Go identifier. format.Source
+// only parses the output, so without this an ordinary .slint name like `run`, `show`, or
+// `inner` silently yields uncompilable Go and a confusing `go build` failure.
+func validateNames(iface *Interface) error {
+	comp := exported(iface.Component)
+
+	// methods per receiver: receiver -> method -> origin (origin is used in the message).
+	methods := map[string]map[string]string{}
+	addMethod := func(recv, method, origin string) error {
+		if !validGoIdent(method) {
+			return fmt.Errorf("%s maps to method %q, which is not a valid Go identifier — rename it in the .slint", origin, method)
+		}
+		byName := methods[recv]
+		if byName == nil {
+			byName = map[string]string{}
+			methods[recv] = byName
+		}
+		if prev, ok := byName[method]; ok {
+			return fmt.Errorf("name collision: %s and %s both generate method %q — rename one in the .slint", prev, origin, method)
+		}
+		byName[method] = origin
+		return nil
+	}
+
+	// package-level type namespace: name -> origin.
+	types := map[string]string{}
+	addType := func(name, origin string) error {
+		if !validGoIdent(name) {
+			return fmt.Errorf("%s maps to type %q, which is not a valid Go identifier — rename it in the .slint", origin, name)
+		}
+		if prev, ok := types[name]; ok {
+			return fmt.Errorf("name collision: %s and %s both generate Go type %q — rename one in the .slint", prev, origin, name)
+		}
+		types[name] = origin
+		return nil
+	}
+
+	// registerMembers records the getter/setter/On…/function methods for one receiver.
+	registerMembers := func(recv, scope string, props []Prop, callbacks, functions []Callable) error {
+		for _, pr := range props {
+			m := exported(pr.Name)
+			origin := fmt.Sprintf("%sproperty %q", scope, pr.Name)
+			if err := addMethod(recv, m, origin); err != nil {
+				return err
+			}
+			if err := addMethod(recv, "Set"+m, origin); err != nil {
+				return err
+			}
+		}
+		for _, c := range callbacks {
+			if err := addMethod(recv, "On"+exported(c.Name), fmt.Sprintf("%scallback %q", scope, c.Name)); err != nil {
+				return err
+			}
+		}
+		for _, f := range functions {
+			if err := addMethod(recv, exported(f.Name), fmt.Sprintf("%sfunction %q", scope, f.Name)); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	// component type + its New constructor + built-in methods, then its members.
+	if err := addType(comp, fmt.Sprintf("component %q", iface.Component)); err != nil {
+		return err
+	}
+	types["New"+comp] = fmt.Sprintf("the New%s constructor", comp)
+	methods[comp] = map[string]string{}
+	for _, b := range strings.Fields("Inner Show Hide Close RequestClose Run OnCloseRequested RegisterFontFromPath RegisterFontFromMemory") {
+		methods[comp][b] = "a built-in method"
+	}
+	if err := registerMembers(comp, "", iface.Properties, iface.Callbacks, iface.Functions); err != nil {
+		return err
+	}
+
+	// exported structs and enums become package-level types (sorted for stable errors).
+	for _, name := range sortedKeys(iface.Structs) {
+		if err := addType(exported(name), fmt.Sprintf("struct %q", name)); err != nil {
+			return err
+		}
+	}
+	for _, name := range sortedKeys(iface.Enums) {
+		if err := addType(exported(name), fmt.Sprintf("enum %q", name)); err != nil {
+			return err
+		}
+	}
+
+	// each global: an accessor method on the component + its own type and members.
+	for _, g := range iface.Globals {
+		if err := addMethod(comp, exported(g.Name), fmt.Sprintf("global %q accessor", g.Name)); err != nil {
+			return err
+		}
+		gType := comp + exported(g.Name)
+		if err := addType(gType, fmt.Sprintf("global %q", g.Name)); err != nil {
+			return err
+		}
+		if err := registerMembers(gType, fmt.Sprintf("global %q ", g.Name), g.Properties, g.Callbacks, g.Functions); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func sortedKeys[V any](m map[string]V) []string {

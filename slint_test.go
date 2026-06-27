@@ -930,3 +930,44 @@ func TestDataTransferRoundTrip(t *testing.T) {
 		t.Fatalf("data-transfer round-trip = %q, want %q", got, "hello-payload")
 	}
 }
+
+// TestCallbackBadNameNoPanic is a regression test for a cgo.Handle double-delete:
+// installing a callback (or global callback) with an unknown name must return an
+// error, not panic. The handler's cgo.Handle is released by the Rust Drop guard on
+// the error path, so the Go side must NOT also Delete it. Before the fix the first
+// call below panicked with "runtime/cgo: misuse of an invalid Handle".
+func TestCallbackBadNameNoPanic(t *testing.T) {
+	app, err := slint.Compile(`
+		export global G { callback realg(); }
+		export component App inherits Window { callback real(); }
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Close()
+	inst, err := app.Create("App")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer inst.Close()
+
+	noop := func([]any) any { return nil }
+	if err := inst.OnCallback("does_not_exist", noop); err == nil {
+		t.Error("OnCallback(unknown) should return an error, got nil")
+	}
+	if err := inst.OnGlobalCallback("G", "does_not_exist", noop); err == nil {
+		t.Error("OnGlobalCallback(G, unknown) should return an error, got nil")
+	}
+}
+
+// TestInvokeFromEventLoopErrorNoPanic covers the same double-delete fix on the
+// InvokeFromEventLoop path: when there's no running event loop the call must return an
+// error, not panic. (Skipped when a loop is available and the call succeeds — the bug
+// only existed on the error branch, which is why normal use never tripped it.)
+func TestInvokeFromEventLoopErrorNoPanic(t *testing.T) {
+	err := slint.InvokeFromEventLoop(func() {})
+	if err == nil {
+		t.Skip("InvokeFromEventLoop succeeded (an event loop was available); error path not exercised")
+	}
+	t.Logf("returned an error (no panic) as expected: %v", err)
+}

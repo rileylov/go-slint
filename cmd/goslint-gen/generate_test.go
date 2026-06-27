@@ -104,3 +104,38 @@ func TestCoLocationGuard(t *testing.T) {
 		t.Error("expected an error when an imported .slint is outside the package directory")
 	}
 }
+
+// TestGenerateNameCollision guards against silently emitting uncompilable Go when a
+// .slint name maps onto a built-in method or another generated identifier. Without the
+// guard these produce duplicate methods that parse (so format.Source accepts them) but
+// fail the user's `go build` with a confusing "method already declared".
+func TestGenerateNameCollision(t *testing.T) {
+	cases := []struct {
+		name  string
+		iface *Interface
+		want  string // substring the error must mention
+	}{
+		{"function vs built-in Run", &Interface{Component: "App", Functions: []Callable{{Name: "run"}}}, "Run"},
+		{"property vs built-in Show", &Interface{Component: "App", Properties: []Prop{{Name: "show", Ty: TypeInfo{Kind: "bool"}}}}, "Show"},
+		{"two names normalize to one", &Interface{Component: "App", Properties: []Prop{{Name: "my-prop", Ty: TypeInfo{Kind: "bool"}}, {Name: "my_prop", Ty: TypeInfo{Kind: "bool"}}}}, "MyProp"},
+		{"global accessor vs built-in Close", &Interface{Component: "App", Globals: []GlobalInfo{{Name: "close"}}}, "Close"},
+		{"leading-digit identifier", &Interface{Component: "App", Functions: []Callable{{Name: "2nd"}}}, "valid Go identifier"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := generate(tc.iface, "ui", "fluent", "app.slint", nil)
+			if err == nil {
+				t.Fatal("expected a collision error, got nil (would have produced uncompilable Go)")
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error should mention %q: %v", tc.want, err)
+			}
+		})
+	}
+
+	// a clean interface must still generate without error.
+	clean := &Interface{Component: "App", Properties: []Prop{{Name: "name", Ty: TypeInfo{Kind: "string"}}}}
+	if _, err := generate(clean, "ui", "fluent", "app.slint", nil); err != nil {
+		t.Fatalf("clean interface should generate: %v", err)
+	}
+}
