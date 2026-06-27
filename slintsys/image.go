@@ -63,6 +63,7 @@ func imageFromPixels(pix []byte, w, h, bpp int, mk func(*C.uint8_t) *C.GoImage) 
 }
 
 // Size returns the image's pixel dimensions.
+// Size returns the image's width and height in pixels.
 func (i *Image) Size() (w, h int) {
 	var cw, ch C.uint32_t
 	C.goslint_image_size(i.ptr, &cw, &ch)

@@ -60,6 +60,7 @@ type DiagnosticError struct {
 	Diagnostics []slintsys.Diagnostic
 }
 
+// Error implements the error interface, listing the compiler diagnostics.
 func (e *DiagnosticError) Error() string {
 	var b strings.Builder
 	b.WriteString("slint: compilation failed")
@@ -314,8 +315,10 @@ func NewSliceModel(items ...any) *SliceModel {
 	return s
 }
 
+// RowCount returns the number of rows. Part of the [Model] interface.
 func (s *SliceModel) RowCount() int { return len(s.items) }
 
+// RowData returns the value at row, or nil if out of range. Part of the [Model] interface.
 func (s *SliceModel) RowData(row int) any {
 	if row < 0 || row >= len(s.items) {
 		return nil
@@ -323,6 +326,8 @@ func (s *SliceModel) RowData(row int) any {
 	return s.items[row]
 }
 
+// SetRowData replaces the value at row (when in range) and notifies Slint. Must be
+// called on the UI thread. Part of the [Model] interface.
 func (s *SliceModel) SetRowData(row int, v any) {
 	slintsys.CheckUIThread("model SetRowData", "")
 	if row >= 0 && row < len(s.items) {
@@ -474,27 +479,44 @@ func (i *Instance) SetGlobal(global, name string, v any) error {
 	return i.inner.SetGlobalProperty(global, name, toSys(v))
 }
 
-// Show makes the window visible. Hide hides it. Run shows then runs the loop.
+// Show makes the window visible without blocking.
 func (i *Instance) Show() error { return i.inner.Show() }
-func (i *Instance) Hide() error { return i.inner.Hide() }
-func (i *Instance) Run() error  { return i.inner.Run() }
 
-// Window control. Sizes and positions are in physical pixels; divide by
-// ScaleFactor to get logical (.slint) pixels. These act on the instance's window
-// and are most reliable once it's shown.
-//
-// Note: on Wayland the compositor controls window placement, so
-// SetWindowPosition/WindowPosition are no-ops there (they work on X11, Windows,
-// and macOS). Run on X11 — e.g. with WAYLAND_DISPLAY unset — to use positioning.
-func (i *Instance) WindowSize() (w, h int)     { return i.inner.WindowSize() }
-func (i *Instance) SetWindowSize(w, h int)     { i.inner.SetWindowSize(w, h) }
+// Hide hides the window.
+func (i *Instance) Hide() error { return i.inner.Hide() }
+
+// Run shows the window and runs the event loop, blocking until the window closes.
+func (i *Instance) Run() error { return i.inner.Run() }
+
+// WindowSize returns the window's size in physical pixels (divide by [Instance.ScaleFactor]
+// for logical .slint pixels). Most reliable once the window is shown.
+func (i *Instance) WindowSize() (w, h int) { return i.inner.WindowSize() }
+
+// SetWindowSize sets the window's size in physical pixels.
+func (i *Instance) SetWindowSize(w, h int) { i.inner.SetWindowSize(w, h) }
+
+// WindowPosition returns the window's top-left in physical pixels. It is a no-op on
+// Wayland (the compositor controls placement); it works on X11, Windows, and macOS.
 func (i *Instance) WindowPosition() (x, y int) { return i.inner.WindowPosition() }
+
+// SetWindowPosition moves the window (physical pixels). No-op on Wayland; see
+// [Instance.WindowPosition].
 func (i *Instance) SetWindowPosition(x, y int) { i.inner.SetWindowPosition(x, y) }
-func (i *Instance) ScaleFactor() float32       { return i.inner.WindowScaleFactor() }
-func (i *Instance) SetFullscreen(on bool)      { i.inner.SetWindowFullscreen(on) }
-func (i *Instance) SetMaximized(on bool)       { i.inner.SetWindowMaximized(on) }
-func (i *Instance) SetMinimized(on bool)       { i.inner.SetWindowMinimized(on) }
-func (i *Instance) RequestRedraw()             { i.inner.RequestRedraw() }
+
+// ScaleFactor returns the window's device-pixel ratio (physical ÷ logical pixels).
+func (i *Instance) ScaleFactor() float32 { return i.inner.WindowScaleFactor() }
+
+// SetFullscreen toggles fullscreen for the window.
+func (i *Instance) SetFullscreen(on bool) { i.inner.SetWindowFullscreen(on) }
+
+// SetMaximized toggles the maximized state of the window.
+func (i *Instance) SetMaximized(on bool) { i.inner.SetWindowMaximized(on) }
+
+// SetMinimized toggles the minimized (iconified) state of the window.
+func (i *Instance) SetMinimized(on bool) { i.inner.SetWindowMinimized(on) }
+
+// RequestRedraw asks the window to repaint on the next frame.
+func (i *Instance) RequestRedraw() { i.inner.RequestRedraw() }
 
 // Close releases the instance.
 func (i *Instance) Close() { i.inner.Free() }

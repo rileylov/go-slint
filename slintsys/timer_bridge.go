@@ -35,8 +35,13 @@ func (t *Timer) Start(mode int, intervalMs uint64, fn func()) {
 	C.goslintTimerStartBridge(t.ptr, C.int32_t(mode), C.uint64_t(intervalMs), C.uintptr_t(h))
 }
 
-func (t *Timer) Stop()         { C.goslint_timer_stop(t.ptr) }
-func (t *Timer) Restart()      { C.goslint_timer_restart(t.ptr) }
+// Stop halts the timer; it can be resumed with Restart.
+func (t *Timer) Stop() { C.goslint_timer_stop(t.ptr) }
+
+// Restart restarts the timer from now using its current interval and mode.
+func (t *Timer) Restart() { C.goslint_timer_restart(t.ptr) }
+
+// Running reports whether the timer is currently active.
 func (t *Timer) Running() bool { return bool(C.goslint_timer_running(t.ptr)) }
 
 // Close stops and releases the timer's native memory. Safe to call multiple times.
