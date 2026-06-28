@@ -1,6 +1,6 @@
 # go-slint (wip) <a href="https://pkg.go.dev/github.com/rileylov/go-slint#section-documentation" title="go docs" rel="nofollow"><img src="https://img.shields.io/badge/go-documentation-blue.svg?style=flat" alt="go docs"></a>
 
-An alternate take on Go bindings for [Slint](https://slint.dev) inspired by development process found in [Wails](https://github.com/wailsapp/wails), if you would like to use more faithful bindings that are officially supported, see this [pull request](https://github.com/slint-ui/slint/pull/11308).
+An alternate take on Go bindings for [Slint](https://slint.dev) inspired by the development process found in [Wails](https://github.com/wailsapp/wails), if you would like to use more faithful bindings that are officially supported, see this [pull request](https://github.com/slint-ui/slint/pull/11308).
 
 ## Quickstart
 
@@ -86,6 +86,6 @@ run `goslint` or read through the [Guide](DOCS.md) to see the full list of comma
 
 ## License
 
-**go-slint** is licensed under [MIT](LICENSE).
+the **go-slint** bindings are licensed under [MIT](LICENSE).
 
-Before shipping your application, read the full Slint license (here)[https://github.com/slint-ui/slint/blob/master/LICENSE.md]
+Before shipping your application, read the full Slint license [here](https://github.com/slint-ui/slint/blob/master/LICENSE.md).
