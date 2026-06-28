@@ -170,6 +170,39 @@ func TestGeneratePlan(t *testing.T) {
 	}
 }
 
+// TestGoPkgDir checks the package directory pulled from `go build`/`go run` args —
+// so build/run regenerate the package being built, not the CWD (the bug where
+// `goslint run ./cmd/app` regenerated ".").
+func TestGoPkgDir(t *testing.T) {
+	root := t.TempDir()
+	mkfile(t, root, "ui/app.slint", `export component A inherits Window {}`)
+	sub := filepath.Join(root, "ui")
+	file := filepath.Join(root, "ui", "app.slint")
+
+	cases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"no args -> CWD", nil, "."},
+		{"dot", []string{"."}, "."},
+		{"relative pkg", []string{"./cmd/app/"}, "./cmd/app"},
+		{"-o before pkg", []string{"-o", "bin/app", "./cmd/app"}, "./cmd/app"},
+		{"-o path value not read as pkg", []string{"-o", "./bin/app"}, "."},
+		{"ldflags then pkg", []string{"-ldflags=-s -w", "./cmd/app"}, "./cmd/app"},
+		{"pattern trimmed", []string{"./cmd/..."}, "./cmd"},
+		{"existing dir", []string{sub}, sub},
+		{"file resolves to its dir", []string{file}, sub},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := goPkgDir(tc.args); got != tc.want {
+				t.Errorf("goPkgDir(%v) = %q, want %q", tc.args, got, tc.want)
+			}
+		})
+	}
+}
+
 // TestSkipDir keeps the scan out of dirs that shouldn't hold project markup.
 func TestSkipDir(t *testing.T) {
 	for _, d := range []string{".git", "node_modules", "vendor", ".hidden"} {

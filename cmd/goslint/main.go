@@ -363,10 +363,13 @@ func cmdGo(sub string, args []string) error {
 		return err
 	}
 	// Refresh generated typed wrappers from their .slint first, so build/run reflect
-	// the current markup. Skip when nothing changed — codegen spawns a subprocess and
-	// links the native lib, which is wasteful (and AV-scanned on Windows) per build.
-	if needsGenerate(".") {
-		if err := runGoGenerate(""); err != nil {
+	// the current markup. Target the package being built (e.g. `goslint build
+	// ./path/to/app`), not the CWD — mirroring how `dev` uses its package argument.
+	// Skip when nothing changed — codegen spawns a subprocess and links the native
+	// lib, which is wasteful (and AV-scanned on Windows) per build.
+	pkgDir := goPkgDir(args)
+	if needsGenerate(pkgDir) {
+		if err := regenerate(pkgDir, env); err != nil {
 			return err
 		}
 	}
@@ -397,6 +400,50 @@ func cmdGo(sub string, args []string) error {
 		fmt.Println("goslint: built in", time.Since(start).Round(time.Millisecond))
 	}
 	return nil
+}
+
+// goPkgDir extracts the directory of the local package in a `go build`/`go run`
+// argument list, so we regenerate the right project before building (mirroring how
+// `dev` uses its package argument). go's convention is `go [flags] [packages]` with
+// packages last, so we take the last argument that looks like a local path (./x,
+// ../x, /x, ".", or an existing file/dir), resolve a file to its directory, trim a
+// "/..." pattern, and default to "." when none is given. The token after -o is
+// skipped so an output path isn't mistaken for the package.
+func goPkgDir(args []string) string {
+	pkg := "."
+	for i := 0; i < len(args); i++ {
+		switch a := args[i]; {
+		case a == "-o": // -o <output>: its value is a file path, not a package
+			i++
+		case strings.HasPrefix(a, "-"): // any other flag (incl. -flag=value)
+		case isLocalPath(a):
+			pkg = a
+		}
+	}
+	pkg = strings.TrimSuffix(pkg, "...")      // ./foo/... -> ./foo/
+	if t := strings.TrimRight(pkg, `/\`); t != "" {
+		pkg = t // trim a trailing slash, but keep "/" itself
+	}
+	if fi, err := os.Stat(pkg); err == nil && !fi.IsDir() {
+		return filepath.Dir(pkg) // a file argument -> its directory
+	}
+	return pkg
+}
+
+// isLocalPath reports whether a go package argument names a path on disk, rather
+// than an import path or a meta-pattern like all/std.
+func isLocalPath(a string) bool {
+	switch {
+	case a == "." || a == "..":
+		return true
+	case strings.HasPrefix(a, "./"), strings.HasPrefix(a, "../"),
+		strings.HasPrefix(a, "/"), strings.HasPrefix(a, `.\`), strings.HasPrefix(a, `..\`):
+		return true
+	}
+	if fi, err := os.Stat(a); err == nil {
+		return fi.IsDir() || strings.HasSuffix(a, ".go")
+	}
+	return false
 }
 
 // hasLdflags reports whether the args already set -ldflags (so we don't clobber it).
