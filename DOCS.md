@@ -509,6 +509,21 @@ as a c-shared, and packages + signs. Point `ANDROID_HOME`/`ANDROID_NDK_HOME` at 
 and NDK; flags set `-package`, `-label`, `-abi`, `-min-sdk`, `-keystore`, etc. (a
 debug keystore is created automatically).
 
+**Prerequisites (one-time host setup).** You need a JDK (17+) and the Android
+command-line tools. On macOS via Homebrew:
+
+```sh
+brew install --cask temurin@17 android-commandlinetools
+sdkmanager "platform-tools" "build-tools;35.0.1" "platforms;android-34" \
+           "ndk;29.0.14206865" "emulator" "system-images;android-34;default;arm64-v8a"
+```
+
+(On Linux, install a JDK + the SDK via Android Studio or your package manager, then
+the same `sdkmanager` components.) `goslint android build` auto-finds the SDK at the
+usual locations — including Homebrew's `.../share/android-commandlinetools` and apt's
+`/usr/lib/android-sdk` — so `ANDROID_HOME` is only needed if your SDK lives elsewhere;
+set `JAVA_HOME` if the JDK isn't picked up.
+
 ---
 
 ## Renderers

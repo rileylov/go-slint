@@ -308,8 +308,8 @@ func resolveAndroidTools(sdkArg, ndkArg string) (androidTools, error) {
 	t.sdk = findSDK(sdkArg)
 	if t.sdk == "" {
 		return t, fmt.Errorf("Android SDK not found — looked at -sdk, $ANDROID_HOME, " +
-			"$ANDROID_SDK_ROOT, ~/android-sdk, ~/Android/Sdk, ~/Library/Android/sdk " +
-			"(none had build-tools). Pass -sdk <dir> or set ANDROID_HOME")
+			"$ANDROID_SDK_ROOT, ~/android-sdk, ~/Android/Sdk, ~/Library/Android/sdk, " +
+			"and the Homebrew/apt SDK dir (none had build-tools). Pass -sdk <dir> or set ANDROID_HOME")
 	}
 	bt, err := latestDir(filepath.Join(t.sdk, "build-tools"), "*")
 	if err != nil {
@@ -360,6 +360,7 @@ func findSDK(sdkArg string) string {
 		filepath.Join(home, "Android", "Sdk"),
 		filepath.Join(home, "Library", "Android", "sdk"),
 	}
+	candidates = append(candidates, pkgManagerSDKs()...)
 	for _, c := range candidates {
 		if c == "" {
 			continue
@@ -369,6 +370,22 @@ func findSDK(sdkArg string) string {
 		}
 	}
 	return ""
+}
+
+// pkgManagerSDKs lists SDK roots that common package managers use, so a Homebrew or
+// apt install resolves without setting ANDROID_HOME. Non-existent paths are harmless:
+// findSDK only returns one that actually contains build-tools.
+func pkgManagerSDKs() []string {
+	switch runtime.GOOS {
+	case "darwin": // brew install --cask android-commandlinetools
+		return []string{
+			"/opt/homebrew/share/android-commandlinetools", // Apple Silicon
+			"/usr/local/share/android-commandlinetools",    // Intel
+		}
+	case "linux": // apt install android-sdk
+		return []string{"/usr/lib/android-sdk"}
+	}
+	return nil
 }
 
 func ndkHostTag() string {

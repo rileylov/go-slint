@@ -2,8 +2,45 @@ package main
 
 import "os"
 import "path/filepath"
+import "runtime"
 import "strings"
 import "testing"
+
+// TestFindSDK checks the build-tools validation: a dir that looks like an SDK
+// resolves, and one without build-tools is not accepted as that path.
+func TestFindSDK(t *testing.T) {
+	sdk := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(sdk, "build-tools", "35.0.1"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got := findSDK(sdk); got != sdk { // -sdk is checked first, so this is deterministic
+		t.Errorf("findSDK(valid sdk) = %q, want %q", got, sdk)
+	}
+	if bare := t.TempDir(); findSDK(bare) == bare {
+		t.Errorf("findSDK accepted %q, which has no build-tools", bare)
+	}
+}
+
+// TestPkgManagerSDKs checks the package-manager fallback paths so a Homebrew/apt
+// install resolves without ANDROID_HOME.
+func TestPkgManagerSDKs(t *testing.T) {
+	var want string
+	switch runtime.GOOS {
+	case "darwin":
+		want = "/opt/homebrew/share/android-commandlinetools"
+	case "linux":
+		want = "/usr/lib/android-sdk"
+	default:
+		return // no package-manager fallbacks on other platforms
+	}
+	got := pkgManagerSDKs()
+	for _, p := range got {
+		if p == want {
+			return
+		}
+	}
+	t.Errorf("pkgManagerSDKs() = %v, want it to include %q", got, want)
+}
 
 // TestEnsureAndroidEntry checks that the on-demand Android entry point is written
 // when missing (so `goslint android build` works on a desktop-only scaffold) and
