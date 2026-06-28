@@ -492,10 +492,13 @@ pkg-config, the `goslint_pkgconfig` tag still works with the `goslint.pc` that
 `setup` also writes.) On Windows add `-ldflags=-H=windowsgui` yourself to suppress
 the console.
 
-**Android.** Your package needs a `//go:build android` entry exporting
-`goslint_android_main`; `goslint init` scaffolds it (`app_android.go`). The build
-downloads the prebuilt `libgoslint.so` per ABI, cross-builds your package as a
-c-shared, and packages + signs. Point `ANDROID_HOME`/`ANDROID_NDK_HOME` at your SDK
+**Android.** Your package needs an entry exporting `goslint_android_main`;
+`goslint android build` writes one (`android_main.go`) for you on first run. It's
+gated on a custom `goslint_android` build tag rather than the android GOOS (and
+isn't named `*_android.go`) so editors don't try to cross-build it and flag a
+spurious cgo error — the build passes `-tags=goslint_android` with `GOOS=android`.
+The build downloads the prebuilt `libgoslint.so` per ABI, cross-builds your package
+as a c-shared, and packages + signs. Point `ANDROID_HOME`/`ANDROID_NDK_HOME` at your SDK
 and NDK; flags set `-package`, `-label`, `-abi`, `-min-sdk`, `-keystore`, etc. (a
 debug keystore is created automatically).
 

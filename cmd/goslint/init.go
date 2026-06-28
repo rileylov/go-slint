@@ -12,7 +12,10 @@ import (
 // cmdInit scaffolds a new go-slint project using the TYPED API: ui/app.slint with a
 // co-located, pre-generated ui/app.slint.go (so it builds straight away, and
 // //go:embed can reach the markup), app.go (shared wiring + a //go:generate
-// directive to regenerate), and the desktop + Android entry points.
+// directive to regenerate), and the desktop entry point (main.go). The Android
+// entry point is created on demand by `goslint android build`, so a fresh project
+// stays desktop-only — no //go:build android cgo file to make editors (gopls) spin
+// up a broken cross-build view.
 func cmdInit(args []string) error {
 	fs := flag.NewFlagSet("init", flag.ExitOnError)
 	module := fs.String("module", "", "Go module path (default: directory name)")
@@ -55,7 +58,8 @@ func cmdInit(args []string) error {
 		"ui/app.slint.go": uiTemplate,
 		"app.go":          fmt.Sprintf(appGoTemplate, *module),
 		"main.go":         mainTemplate,
-		"app_android.go":  androidTemplate,
+		// The Android entry (android_main.go) is intentionally omitted — `goslint
+		// android build` writes it on demand. See cmdInit's doc and ensureAndroidEntry.
 	}
 	for rel, content := range files {
 		if err := os.WriteFile(filepath.Join(dir, rel), []byte(content), 0o644); err != nil {
@@ -146,7 +150,7 @@ func run() error {
 }
 `
 
-const mainTemplate = `//go:build !android
+const mainTemplate = `//go:build !goslint_android
 
 package main
 
@@ -161,7 +165,17 @@ func main() {
 }
 `
 
-const androidTemplate = `//go:build android
+// androidTemplate is the Android entry point, written by ensureAndroidEntry on the
+// first `goslint android build`. It calls run() from app.go.
+//
+// It's gated on a CUSTOM tag (goslint_android), not the android GOOS, and named
+// android_main.go (not *_android.go) on purpose: a file constrained to the android
+// GOOS — by an `//go:build android` line OR an `_android.go` filename — makes editors
+// (gopls) spin up an android cross-build view that fails without the NDK, surfacing a
+// confusing "android/386 requires external (cgo) linking" error. A custom tag is
+// ignored by that machinery, so the file is simply excluded from the desktop build
+// (no error). `goslint android build` passes -tags=goslint_android with GOOS=android.
+const androidTemplate = `//go:build goslint_android
 
 package main
 

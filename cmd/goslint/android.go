@@ -31,7 +31,8 @@ func cmdAndroid(args []string) error {
 }
 
 // cmdAndroidBuild packages a Go package (which must export goslint_android_main,
-// e.g. via a //go:build android file) into a signed APK. The native libgoslint.so
+// e.g. via a //go:build goslint_android file — scaffolded on demand) into a signed
+// APK. The native libgoslint.so
 // for each ABI comes from the prebuilt release (downloaded like `goslint setup`);
 // the Go package is cross-built as a c-shared and both land in lib/<abi>/.
 func cmdAndroidBuild(args []string) error {
@@ -66,6 +67,13 @@ func cmdAndroidBuild(args []string) error {
 	}
 	if *out == "" {
 		*out = name + ".apk"
+	}
+
+	// The scaffold ships desktop-only (no Android entry file — one would otherwise
+	// make editors spin up a broken android build view). Create it here, on the first
+	// android build, so Android still works without manual setup.
+	if err := ensureAndroidEntry(pkg); err != nil {
+		return err
 	}
 
 	tc, err := resolveAndroidTools(*sdkArg, *ndkArg)
@@ -113,7 +121,10 @@ func cmdAndroidBuild(args []string) error {
 			"CGO_LDFLAGS=-L" + filepath.Dir(soPath) + " -lgoslint -llog",
 		}
 		fmt.Printf("   cross-building %s (c-shared, %s)…\n", pkg, a.goarch)
-		if err := runEnv(env, "go", "build", "-buildmode=c-shared", "-o", appSO, pkg); err != nil {
+		// -tags=goslint_android selects the Android entry file (gated on that custom
+		// tag, not the android GOOS — see androidTemplate). GOOS=android is set via env
+		// above; a legacy //go:build android entry still matches that and builds too.
+		if err := runEnv(env, "go", "build", "-buildmode=c-shared", "-tags=goslint_android", "-o", appSO, pkg); err != nil {
 			return fmt.Errorf("go build (%s): %w", a.abi, err)
 		}
 		// The APK is only usable if the Go side exports goslint_android_main — the
@@ -195,10 +206,53 @@ func cmdAndroidBuild(args []string) error {
 	return nil
 }
 
+// ensureAndroidEntry makes sure the package at pkg has an Android entry point — the
+// file exporting goslint_android_main. `goslint init` omits it (so a desktop project
+// has nothing to confuse editors), so write it on the first android build. The
+// template calls run(), which the scaffolded app.go provides; a project that defines
+// run() elsewhere gets a working entry too. Any existing entry (whatever its name) is
+// left untouched, so we never create a duplicate. The file is gated on the custom
+// goslint_android tag — see androidTemplate for why — so the build passes that tag.
+func ensureAndroidEntry(pkg string) error {
+	dir := pkg
+	if fi, err := os.Stat(pkg); err == nil && !fi.IsDir() {
+		dir = filepath.Dir(pkg)
+	}
+	if androidEntryFile(dir) != "" {
+		return nil // already has an entry; don't add a second one
+	}
+	entry := filepath.Join(dir, "android_main.go")
+	if err := os.WriteFile(entry, []byte(androidTemplate), 0o644); err != nil {
+		return err
+	}
+	fmt.Printf("created %s — the Android entry point (built only for android)\n", entry)
+	return nil
+}
+
+// androidEntryFile returns the path of a .go file in dir that exports
+// goslint_android_main, or "" if none — so ensureAndroidEntry won't scaffold a
+// duplicate over a hand-written entry (whatever it's named).
+func androidEntryFile(dir string) string {
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		return ""
+	}
+	for _, e := range ents {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") {
+			continue
+		}
+		p := filepath.Join(dir, e.Name())
+		if b, err := os.ReadFile(p); err == nil && strings.Contains(string(b), "//export goslint_android_main") {
+			return p
+		}
+	}
+	return ""
+}
+
 // androidEntryExported reports whether the built c-shared exports goslint_android_main,
 // the symbol the Rust android_main dlsym's and calls (see rust/goslint-sys/src/android.rs).
 // If it's absent the APK installs but the NativeActivity does nothing — the common trap
-// when a package is missing its //go:build android entry file. dlsym resolves against the
+// when a package is missing its Android entry file. dlsym resolves against the
 // dynamic symbol table, so that's what we check.
 func androidEntryExported(soPath string) (bool, error) {
 	f, err := elf.Open(soPath)
@@ -222,9 +276,10 @@ const noAndroidEntryMsg = `package %q builds, but its Android library does not e
 the APK would install yet never launch (Android's NativeActivity loads the Go library and
 calls goslint_android_main; with it missing, nothing happens).
 
-Add an Android entry point in a file built only for android, e.g. app_android.go:
+Add an Android entry point in android_main.go (the custom goslint_android tag, not the
+android GOOS, keeps editors from cross-building it):
 
-    //go:build android
+    //go:build goslint_android
 
     package main
 
@@ -239,7 +294,8 @@ Add an Android entry point in a file built only for android, e.g. app_android.go
 
     func main() {} // required for c-shared; unused on android
 
-Most examples in the go-slint repo are desktop-only and omit this on purpose. ` + "`goslint init`" + ` scaffolds it for you.`
+` + "`goslint android build`" + ` writes this for you on first run; this message only appears if it
+builds but the symbol is still missing (e.g. run() is undefined).`
 
 // ---- android toolchain resolution ----
 
