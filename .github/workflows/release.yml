@@ -5,8 +5,9 @@
 #   - tag push  vX.Y.Z  -> build all targets + publish the release
 #   - manual run        -> build all targets only (no publish), to test the matrix
 #
-# IMPORTANT before tagging a real release: bump `libVersion` in cmd/goslint/main.go
-# to match the tag, so `goslint setup` looks under the right release.
+# Releasing: just push a vX.Y.Z tag. There's no version constant to bump — the CLI
+# resolves the lib version dynamically (the user's go.mod, else this goslint's own
+# install tag), so `goslint setup` fetches the release published at that tag.
 name: release
 
 on:
