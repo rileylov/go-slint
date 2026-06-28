@@ -5,7 +5,7 @@ An alternate take on Go bindings for [Slint](https://slint.dev) inspired by deve
 ## Quickstart
 
 ```sh
-# Requires Go 1.23+ and C compiler for cgo
+# Requires Go 1.23+ and a C compiler for cgo
 go install github.com/rileylov/go-slint/cmd/goslint@latest
 
 goslint init myapp     # scaffold go.mod + app.slint + main.go + ui/
