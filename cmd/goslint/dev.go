@@ -47,7 +47,7 @@ func cmdDev(args []string) error {
 	}
 	gen := func() error {
 		fmt.Println(">> generating")
-		return runGoGenerate(genDir)
+		return regenerate(genDir, env)
 	}
 
 	build := func() error {

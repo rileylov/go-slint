@@ -91,10 +91,11 @@ func main() {
 
 **4. Run it:** `goslint dev .` (or `goslint run .`).
 
-The scaffold puts a `//go:generate goslint generate …` directive atop `main.go`, and
-`goslint dev`/`run`/`build` run it for you - so you can just edit `app.slint` and
-see your changes. (Manual `goslint generate` is only needed if you build outside
-those commands.)
+`goslint dev`/`run`/`build` regenerate the typed wrappers from your `.slint` first,
+so you can just edit `app.slint` and see your changes. The scaffold adds a
+`//go:generate goslint generate …` directive (which they honour), but it's optional:
+without one they fall back to the same convention as bare `goslint generate` -
+generate `<name>.slint.go` beside each entry `.slint`.
 
 ---
 

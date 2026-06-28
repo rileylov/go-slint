@@ -105,15 +105,47 @@ func cmdGenerate(args []string) error {
 		return err
 	}
 	for _, job := range jobs {
-		goArgs := append([]string{"run", "-tags", buildTag, modulePath + "/cmd/goslint-gen"}, job...)
-		cmd := exec.Command("go", goArgs...)
-		cmd.Env = env
-		cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-		if err := cmd.Run(); err != nil {
+		if err := runGoslintGen(env, job); err != nil {
 			return err
 		}
 	}
 	fmt.Println("goslint: generated bindings in", time.Since(start).Round(time.Millisecond))
+	return nil
+}
+
+// runGoslintGen runs the codegen tool (cmd/goslint-gen) once with the native-lib
+// linker env already set up by the caller.
+func runGoslintGen(env []string, args []string) error {
+	goArgs := append([]string{"run", "-tags", buildTag, modulePath + "/cmd/goslint-gen"}, args...)
+	cmd := exec.Command("go", goArgs...)
+	cmd.Env = env
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	return cmd.Run()
+}
+
+// regenerate refreshes a project's typed wrappers before a build/run/dev (dir is the
+// project root, or "" for the current directory). It mirrors bare `goslint
+// generate`: run the project's //go:generate goslint directives if it has them,
+// otherwise discover entry .slint files by convention and generate each. Unlike the
+// command, finding no .slint files is a no-op (a plain Go package builds fine), not
+// an error. env carries the native-lib linker flags the codegen needs.
+func regenerate(dir string, env []string) error {
+	root := dir
+	if root == "" {
+		root = "."
+	}
+	if hasGoslintDirective(root) {
+		return runGoGenerate(dir)
+	}
+	entries, _, err := discoverEntries(root)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if err := runGoslintGen(env, []string{"-o", e + ".go", "-style", "fluent", e}); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
