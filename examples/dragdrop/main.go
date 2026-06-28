@@ -4,7 +4,7 @@
 // it back to reorder. Uses the dynamic API (the new DropEvent/data-transfer types are
 // simplest there).
 //
-//	make lib && go run ./cmd/examples/dragdrop   # then drag a tile onto another
+//	make lib && go run ./examples/dragdrop   # then drag a tile onto another
 package main
 
 import (

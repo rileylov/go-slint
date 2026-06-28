@@ -5,12 +5,12 @@
 //
 // Run it TWO ways to see the difference:
 //
-//	go run ./cmd/examples/threadcheck
+//	go run ./examples/threadcheck
 //	    The "Bad update" button sets a property from a background goroutine with NO
 //	    guard. That's undefined: it may crash deep in Rust, return a confusing error,
 //	    corrupt the window, or *appear to work this time* — the last is the real trap.
 //
-//	GOSLINT_DEV=1 go run ./cmd/examples/threadcheck     (this is what `goslint dev` sets)
+//	GOSLINT_DEV=1 go run ./examples/threadcheck     (this is what `goslint dev` sets)
 //	    The "Bad update" button now panics immediately with a clear message pointing
 //	    you at slint.InvokeFromEventLoop — the silent footgun becomes a loud, obvious
 //	    error. The "Good update" button works the same in both modes.

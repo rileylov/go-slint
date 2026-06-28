@@ -84,7 +84,7 @@
 // garbage-collected without having been released — a quick way to catch a missing
 // Free/Close. (It only warns; it never frees off the UI thread, which would be unsafe.)
 //
-// See the cmd/examples directory for runnable apps (hello, counter, todo, clock,
+// See the examples directory for runnable apps (hello, counter, todo, clock,
 // interop, chartstress) and CLAUDE.md for the architecture.
 //
 // [Slint]: https://slint.dev

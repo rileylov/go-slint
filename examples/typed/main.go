@@ -4,8 +4,8 @@
 // methods, checked by the compiler.
 //
 //	make lib
-//	go generate ./cmd/examples/typed   # regenerates ui/app.slint.go from app.slint
-//	go run ./cmd/examples/typed        # or: goslint dev ./cmd/examples/typed (live reload)
+//	go generate ./examples/typed   # regenerates ui/app.slint.go from app.slint
+//	go run ./examples/typed        # or: goslint dev ./examples/typed (live reload)
 package main
 
 //go:generate goslint generate -o ui/app.slint.go -package ui ui/app.slint
@@ -15,7 +15,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/rileylov/go-slint/cmd/examples/typed/ui"
+	"github.com/rileylov/go-slint/examples/typed/ui"
 )
 
 func init() { runtime.LockOSThread() } // Slint is thread-affine

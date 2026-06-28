@@ -4,7 +4,7 @@ import (
 	"log"
 	"runtime"
 
-	"github.com/rileylov/go-slint/cmd/examples/helloworld/ui"
+	"github.com/rileylov/go-slint/examples/helloworld/ui"
 )
 
 func init() { runtime.LockOSThread() }

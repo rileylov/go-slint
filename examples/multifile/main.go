@@ -3,8 +3,8 @@
 // built binary compiles the whole UI from memory — no .slint tree on disk.
 //
 //	make lib
-//	go generate ./cmd/examples/multifile   # regenerates ui/app.slint.go
-//	go run ./cmd/examples/multifile
+//	go generate ./examples/multifile   # regenerates ui/app.slint.go
+//	go run ./examples/multifile
 package main
 
 //go:generate goslint generate -o ui/app.slint.go -package ui ui/app.slint
@@ -12,7 +12,7 @@ package main
 import (
 	"runtime"
 
-	"github.com/rileylov/go-slint/cmd/examples/multifile/ui"
+	"github.com/rileylov/go-slint/examples/multifile/ui"
 )
 
 func init() { runtime.LockOSThread() } // Slint is thread-affine

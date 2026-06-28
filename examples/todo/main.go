@@ -1,7 +1,7 @@
 // Command todo is an interactive go-slint example showing a live model: a Go
 // SliceModel backs the list, and add/delete are handled in Go.
 //
-//	make lib && go run ./cmd/examples/todo
+//	make lib && go run ./examples/todo
 package main
 
 import (

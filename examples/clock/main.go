@@ -4,7 +4,7 @@
 // runtime API compose freely.)
 //
 //	make lib
-//	go run ./cmd/examples/clock
+//	go run ./examples/clock
 package main
 
 //go:generate goslint generate -o ui/app.slint.go -package ui ui/app.slint
@@ -15,7 +15,7 @@ import (
 	"runtime"
 
 	"github.com/rileylov/go-slint"
-	"github.com/rileylov/go-slint/cmd/examples/clock/ui"
+	"github.com/rileylov/go-slint/examples/clock/ui"
 )
 
 // Slint is thread-affine: pin the main goroutine.

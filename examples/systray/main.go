@@ -2,7 +2,7 @@
 // the system tray with a menu (Show/Hide, Quit). Uses the dynamic API because it has
 // two top-level components (a Window and the tray); the tray icon is generated in Go.
 //
-//	make lib && go run ./cmd/examples/systray
+//	make lib && go run ./examples/systray
 //
 // SystemTrayIcon is cross-platform (macOS / Windows / Linux), but the icon only shows
 // where the desktop has a tray/status area. Notably, modern GNOME does NOT display

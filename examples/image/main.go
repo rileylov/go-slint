@@ -3,8 +3,8 @@
 // image.Image works: decoded PNG/JPEG, a plot, or procedural content like here.
 //
 //	make lib
-//	go generate ./cmd/examples/image
-//	go run ./cmd/examples/image
+//	go generate ./examples/image
+//	go run ./examples/image
 package main
 
 //go:generate goslint generate -o ui/app.slint.go -package ui ui/app.slint
@@ -15,7 +15,7 @@ import (
 	"runtime"
 
 	slint "github.com/rileylov/go-slint"
-	"github.com/rileylov/go-slint/cmd/examples/image/ui"
+	"github.com/rileylov/go-slint/examples/image/ui"
 )
 
 func init() { runtime.LockOSThread() } // Slint is thread-affine

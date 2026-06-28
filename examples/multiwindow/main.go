@@ -5,7 +5,7 @@
 // to keep running across windows). This uses the dynamic API because the typed
 // generator currently wraps a single component per .slint.
 //
-//	make lib && go run ./cmd/examples/multiwindow
+//	make lib && go run ./examples/multiwindow
 package main
 
 import (

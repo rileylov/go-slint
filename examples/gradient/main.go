@@ -2,7 +2,7 @@
 // and assigning them to a `brush` property: linear at various angles, radial,
 // a multi-stop rainbow, and an animated rotating gradient driven by a timer.
 //
-//	make lib && go run ./cmd/examples/gradient
+//	make lib && go run ./examples/gradient
 package main
 
 import (

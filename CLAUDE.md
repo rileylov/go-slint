@@ -97,7 +97,7 @@ from the published link line, so the shipped archive is self-contained.
 dirs) through the Go API, mirroring Slint's interpreter test driver
 (SLINT_ENABLE_EXPERIMENTAL_FEATURES + test fonts + OS=Windows): 0 failures.
 `internal/timertest` verifies timers fire via the integration backend. Each
-`cmd/examples/*` has a compile-smoke `*_test.go` (validates markup, no display).
+`examples/*` has a compile-smoke `*_test.go` (validates markup, no display).
 
 ### Known platform limitations
 
@@ -112,7 +112,7 @@ dirs) through the Go API, mirroring Slint's interpreter test driver
   not bare `Compile` with an empty path, and ship the asset alongside the markup. A
   `data:` URL or an image pushed in from Go renders as a black box. With a real file
   via `@image-url`, the overlay renders on every platform including Wayland (see
-  `cmd/examples/dragdrop`, which mirrors Slint's own `dnd-kanban`).
+  `examples/dragdrop`, which mirrors Slint's own `dnd-kanban`).
 
 ## Toward v1.0
 

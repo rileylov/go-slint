@@ -11,10 +11,10 @@
 //     sustain per second: the BINDING throughput ceiling.
 //
 //   - Slint's own render FPS is separate; surface it with
-//     SLINT_DEBUG_PERFORMANCE=refresh_full_speed,overlay go run ./cmd/examples/chartstress
+//     SLINT_DEBUG_PERFORMANCE=refresh_full_speed,overlay go run ./examples/chartstress
 //
-//     go run ./cmd/examples/chartstress                 # interactive (buttons)
-//     GOSLINT_BENCH=1 go run ./cmd/examples/chartstress # auto-ramp the load, log throughput
+//     go run ./examples/chartstress                 # interactive (buttons)
+//     GOSLINT_BENCH=1 go run ./examples/chartstress # auto-ramp the load, log throughput
 //
 // The same logic runs on Android via android_main.go (shares chartstress.go).
 package main

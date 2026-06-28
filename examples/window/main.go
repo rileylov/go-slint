@@ -3,7 +3,7 @@
 // (OnCloseRequested / RequestClose — confirm before exit). A repeating timer keeps
 // the on-screen readout fresh, so manual drag-resizes show up too.
 //
-//	make lib && go run ./cmd/examples/window
+//	make lib && go run ./examples/window
 package main
 
 import (

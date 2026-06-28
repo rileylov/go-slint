@@ -210,7 +210,7 @@ defer img.Close()
 `NewImage` accepts any `image.Image`, so the whole Go ecosystem works - decode with
 `image/png`/`image/jpeg`, draw with `image/draw` or a plotting library, or generate
 procedurally. (It handles Go's premultiplied-alpha `image.RGBA` correctly.) See
-[`cmd/examples/image`](cmd/examples/image).
+[`examples/image`](examples/image).
 
 **Embedded SVGs.** `NewImageFromSVG` takes raw SVG bytes and lets Slint rasterize
 them at render size — so a `go:embed`'d vector asset stays crisp at any scale and
@@ -299,7 +299,7 @@ import { Card } from "components/card.slint";
 `goslint generate` walks the import graph and **embeds every imported file**, so the
 built binary is still self-contained - no `.slint` tree is needed at run time.
 (`@library` imports are the exception: they still resolve via library paths.) See
-[`cmd/examples/multifile`](cmd/examples/multifile).
+[`examples/multifile`](examples/multifile).
 
 ---
 
@@ -434,7 +434,7 @@ dialog.Show()        // opened on demand; both share one loop
 slint.Run()          // or slint.RunUntilQuit() for tray-style / dynamic-window apps
 ```
 
-See [`cmd/examples/multiwindow`](cmd/examples/multiwindow). (One `.slint` with several
+See [`examples/multiwindow`](examples/multiwindow). (One `.slint` with several
 window components works via the dynamic API today; the typed generator currently wraps
 a single component per file.)
 
@@ -532,7 +532,7 @@ before creating a window if you want to force it for your app.)
 
 ## Reference
 
-- [`cmd/examples`](cmd/examples) - runnable examples (typed: `counter`, `clock`,
+- [`examples`](examples) - runnable examples (typed: `counter`, `clock`,
   `typed`, `multifile`, `image`; dynamic: `todo`, `window`, `gradient`, `interop`,
   `multiwindow`, `threadcheck`, `dragdrop`, `systray`). The last four show the
   thread-affinity guard and the Slint 1.17 features (drag & drop, system tray).

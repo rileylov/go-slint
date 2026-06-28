@@ -68,7 +68,7 @@ lib-windows:
 	cp $(RUST_DIR)/target/$(WIN_TARGET)/release/libgoslint.dll.a $(WIN_LIBDIR)/
 	@echo "staged Windows shim in $(WIN_LIBDIR)"
 
-# Android APKs are built with the CLI: `goslint android build ./cmd/examples/interop`.
+# Android APKs are built with the CLI: `goslint android build ./examples/interop`.
 
 # Cross-compile all examples to Windows .exe (proves the cgo link works). Console
 # subsystem keeps stdout visible; add `-ldflags -H=windowsgui` for a GUI-only build.
@@ -77,7 +77,7 @@ build-windows: lib-windows
 	mkdir -p build/windows
 	for ex in hello counter todo clock; do \
 		GOOS=windows GOARCH=amd64 CGO_ENABLED=1 CC=$(WIN_CC) \
-			go build -o build/windows/$$ex.exe ./cmd/examples/$$ex || exit 1; \
+			go build -o build/windows/$$ex.exe ./examples/$$ex || exit 1; \
 	done
 	cp $(WIN_LIBDIR)/goslint.dll build/windows/
 	@echo "built build/windows/{hello,counter,todo,clock}.exe (+ goslint.dll) — copy the folder to a Windows box"
