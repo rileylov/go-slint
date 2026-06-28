@@ -651,6 +651,21 @@ func cmdDoctor(args []string) error {
 	} else {
 		fmt.Println("  – pkg-config (optional; not needed — goslint sets CGO_LDFLAGS directly)")
 	}
+
+	// Android SDK — optional, only for `goslint android build`. Show where it
+	// resolves (and any remaining gap) so it can be verified without a full build.
+	if sdk := findSDK(""); sdk != "" {
+		report("Android SDK (optional)", true)
+		fmt.Printf("               → SDK: %s\n", sdk)
+		if tc, err := resolveAndroidTools("", ""); err == nil {
+			fmt.Printf("               → NDK: %s\n", tc.ndkBin)
+		} else {
+			fmt.Printf("               → %s\n", err)
+		}
+	} else {
+		fmt.Println("  – Android SDK (optional; only for `goslint android build`): not found")
+		fmt.Println("               → set ANDROID_HOME, pass -sdk <dir>, or install via Homebrew/apt")
+	}
 	return nil
 }
 
