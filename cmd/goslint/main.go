@@ -420,7 +420,7 @@ func goPkgDir(args []string) string {
 			pkg = a
 		}
 	}
-	pkg = strings.TrimSuffix(pkg, "...")      // ./foo/... -> ./foo/
+	pkg = strings.TrimSuffix(pkg, "...") // ./foo/... -> ./foo/
 	if t := strings.TrimRight(pkg, `/\`); t != "" {
 		pkg = t // trim a trailing slash, but keep "/" itself
 	}
