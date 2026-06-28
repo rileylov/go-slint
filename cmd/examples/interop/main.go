@@ -1,4 +1,4 @@
-//go:build !android
+//go:build !goslint_android
 
 // Command interop is a stress-test of the Go ⇄ Slint boundary. It deliberately
 // exercises the Go features that matter for real apps and pushes their results
@@ -14,7 +14,7 @@
 //
 // All UI mutations from background goroutines are marshalled onto the Slint thread
 // with InvokeFromEventLoop — the only threading rule the bindings impose. The same
-// logic runs on Android via app_android.go (it shares interop.go).
+// logic runs on Android via android_main.go (it shares interop.go).
 package main
 
 import (

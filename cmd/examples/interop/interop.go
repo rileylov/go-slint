@@ -1,5 +1,5 @@
 // Shared Go ⇄ Slint interop logic, used by both the desktop entry (main.go) and
-// the Android entry (app_android.go). See main.go for the feature checklist.
+// the Android entry (android_main.go). See main.go for the feature checklist.
 package main
 
 import (

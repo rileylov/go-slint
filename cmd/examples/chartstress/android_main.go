@@ -1,6 +1,8 @@
-//go:build android
+//go:build goslint_android
 
-// Android entry for the throughput harness. Always runs the auto-ramp benchmark
+// Android entry for the throughput harness. Gated on the custom goslint_android tag
+// (not the android GOOS) so editors don't cross-build it and flag a spurious cgo
+// error; `goslint android build` passes -tags=goslint_android. Always runs the auto-ramp benchmark
 // (we can't click buttons during a headless capture), routes log output to logcat
 // (tag "goslintapp"), and asks Slint for an on-screen FPS overlay so render FPS can
 // be read from a screenshot. Setting SLINT_DEBUG_PERFORMANCE via os.Setenv works

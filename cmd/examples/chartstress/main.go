@@ -1,4 +1,4 @@
-//go:build !android
+//go:build !goslint_android
 
 // Command chartstress is a throughput harness for the Go ⇄ Slint boundary and
 // Slint's renderer. A goroutine generates a multi-series sine waveform, packs it
@@ -16,7 +16,7 @@
 //     go run ./cmd/examples/chartstress                 # interactive (buttons)
 //     GOSLINT_BENCH=1 go run ./cmd/examples/chartstress # auto-ramp the load, log throughput
 //
-// The same logic runs on Android via app_android.go (shares chartstress.go).
+// The same logic runs on Android via android_main.go (shares chartstress.go).
 package main
 
 import (

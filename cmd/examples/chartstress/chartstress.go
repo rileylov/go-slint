@@ -1,5 +1,5 @@
 // Shared throughput-harness logic for desktop (main.go) and Android
-// (app_android.go). See main.go for the full description and metrics.
+// (android_main.go). See main.go for the full description and metrics.
 package main
 
 import (
