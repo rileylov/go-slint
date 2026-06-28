@@ -34,7 +34,10 @@ i-slint-backend-testing = { path = "../../slint/internal/backends/testing", feat
 # Direct dep so we can name Model / ModelRc / ModelNotify (not re-exported by the
 # interpreter). Same path as the interpreter's dep, so Cargo unifies the crate.
 # "tr" enables runtime translation of @tr via an external translator we set from Go.
-i-slint-core = { path = "../../slint/internal/core", features = ["default", "tr"] }
+# "svg" makes Image::load_from_svg_data available (goslint_image_load_from_svg_data):
+# it's enabled transitively by the femtovg renderer today, but pin it so it can't
+# silently drop out if Slint reshuffles its renderer feature graph.
+i-slint-core = { path = "../../slint/internal/core", features = ["default", "tr", "svg"] }
 # The same translation crate i-slint-core uses, so we can implement tr::Translator.
 tr = { version = "0.1", default-features = false }
 spin_on = "0.1"

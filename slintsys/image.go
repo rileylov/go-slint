@@ -48,6 +48,36 @@ func ImageFromRGB(pix []byte, w, h int) (*Image, error) {
 	})
 }
 
+// ImageFromSVG builds an image from in-memory SVG data, rasterized by Slint at render
+// size (so it stays resolution-independent). Use it for embedded vector assets that
+// must work without an on-disk path, e.g. inside an APK.
+func ImageFromSVG(data []byte) (*Image, error) {
+	if len(data) == 0 {
+		return nil, errors.New("image: empty SVG data")
+	}
+	p := C.goslint_image_load_from_svg_data((*C.uint8_t)(unsafe.Pointer(&data[0])), C.size_t(len(data)))
+	if p == nil {
+		return nil, errors.New(lastErrorOr("load SVG image"))
+	}
+	return (&Image{ptr: p}).watch(), nil
+}
+
+// ImageFromData builds a raster image from in-memory encoded bytes (PNG/JPEG/…),
+// decoded by Slint. format is an optional lowercase hint ("png", "jpeg", …); "" lets
+// Slint auto-detect.
+func ImageFromData(data []byte, format string) (*Image, error) {
+	if len(data) == 0 {
+		return nil, errors.New("image: empty image data")
+	}
+	cf := C.CString(format)
+	defer C.free(unsafe.Pointer(cf))
+	p := C.goslint_image_load_from_data((*C.uint8_t)(unsafe.Pointer(&data[0])), C.size_t(len(data)), cf)
+	if p == nil {
+		return nil, errors.New(lastErrorOr("load image data"))
+	}
+	return (&Image{ptr: p}).watch(), nil
+}
+
 func imageFromPixels(pix []byte, w, h, bpp int, mk func(*C.uint8_t) *C.GoImage) (*Image, error) {
 	if w <= 0 || h <= 0 {
 		return nil, errors.New("image: width and height must be positive")

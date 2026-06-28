@@ -434,6 +434,20 @@ func NewImageRGBA(pix []byte, w, h int) (*Image, error) { return slintsys.ImageF
 // NewImageRGB builds an image from a tightly-packed RGB8 buffer (w*h*3 bytes).
 func NewImageRGB(pix []byte, w, h int) (*Image, error) { return slintsys.ImageFromRGB(pix, w, h) }
 
+// NewImageFromSVG builds an image from in-memory SVG bytes (e.g. a go:embed'd .svg).
+// Slint rasterizes the SVG at render size, so it stays crisp at any scale and needs
+// no file on disk — ideal for self-contained binaries and APKs, where @image-url
+// can't resolve a path. Assign it to an `image` property; Close it when done.
+func NewImageFromSVG(data []byte) (*Image, error) { return slintsys.ImageFromSVG(data) }
+
+// NewImageFromData builds a raster image from in-memory encoded bytes (PNG/JPEG/…),
+// decoded by Slint. format is an optional lowercase hint ("png", "jpeg", …); "" lets
+// Slint auto-detect. For a Go image.Image (decoded, drawn, or generated), use
+// NewImage instead.
+func NewImageFromData(data []byte, format string) (*Image, error) {
+	return slintsys.ImageFromData(data, format)
+}
+
 // Timer fires a Go callback after an interval. Timers fire only while the event
 // loop runs (Run); create and start them after Create.
 //

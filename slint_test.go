@@ -1012,3 +1012,41 @@ func TestImagePropertyRoundTrip(t *testing.T) {
 	}
 	pic.Close()
 }
+
+// TestNewImageFromSVG checks an SVG loaded from in-memory bytes flows through the
+// public API as a real image: assigned to an `image` property, Slint reads its
+// intrinsic 320x200 size off the bound width/height — proving the whole chain
+// (Go → cgo → Rust → Slint), the embedded-vector path that needs no file on disk.
+func TestNewImageFromSVG(t *testing.T) {
+	lockSlint(t)
+	comp, err := slint.Compile(`
+		export component App inherits Window {
+			in property <image> pic;
+			out property <int> pic-w: pic.width;
+			out property <int> pic-h: pic.height;
+		}`)
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	defer comp.Close()
+	inst, err := comp.Create("App")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	defer inst.Close()
+
+	img, err := slint.NewImageFromSVG([]byte(`<svg width="320" height="200" xmlns="http://www.w3.org/2000/svg"></svg>`))
+	if err != nil {
+		t.Fatalf("NewImageFromSVG: %v", err)
+	}
+	defer img.Close()
+	if err := inst.Set("pic", img); err != nil {
+		t.Fatalf("Set(pic): %v", err)
+	}
+	if w, _ := inst.Int("pic-w"); w != 320 {
+		t.Errorf("pic.width = %d; want 320 (SVG didn't flow through as a real image)", w)
+	}
+	if h, _ := inst.Int("pic-h"); h != 200 {
+		t.Errorf("pic.height = %d; want 200", h)
+	}
+}

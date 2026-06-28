@@ -75,6 +75,63 @@ pub unsafe extern "C" fn goslint_image_load_from_path(path: *const c_char) -> *m
     })
 }
 
+/// Build an image from in-memory SVG data (`len` bytes). Slint rasterizes the SVG at
+/// render size, so it stays resolution-independent (unlike a pre-rasterized bitmap) —
+/// ideal for `go:embed`'d vector assets that must work without an on-disk path (e.g.
+/// inside an APK). The data is parsed, not retained, so the caller can free it after.
+/// NULL on bad args or invalid SVG (see goslint_last_error).
+///
+/// # Safety
+/// `data` must point to at least `len` bytes (or be NULL, which returns NULL).
+#[no_mangle]
+pub unsafe extern "C" fn goslint_image_load_from_svg_data(data: *const u8, len: usize) -> *mut Image {
+    guard(std::ptr::null_mut(), || {
+        if data.is_null() || len == 0 {
+            set_last_error("load_from_svg_data: NULL data or zero length");
+            return std::ptr::null_mut();
+        }
+        let bytes = std::slice::from_raw_parts(data, len);
+        match Image::load_from_svg_data(bytes) {
+            Ok(img) => Box::into_raw(Box::new(img)),
+            Err(e) => {
+                set_last_error(format!("load SVG image: {e:?}"));
+                std::ptr::null_mut()
+            }
+        }
+    })
+}
+
+/// Build a raster image from in-memory encoded data (`len` bytes), e.g. PNG/JPEG.
+/// `format` is an optional lowercase hint ("png", "jpeg", …); NULL or empty
+/// auto-detects. The data is decoded, not retained. NULL on bad args or a decode
+/// failure (see goslint_last_error).
+///
+/// # Safety
+/// `data` must point to at least `len` bytes (or be NULL). `format` a valid C string
+/// or NULL.
+#[no_mangle]
+pub unsafe extern "C" fn goslint_image_load_from_data(
+    data: *const u8,
+    len: usize,
+    format: *const c_char,
+) -> *mut Image {
+    guard(std::ptr::null_mut(), || {
+        if data.is_null() || len == 0 {
+            set_last_error("load_from_data: NULL data or zero length");
+            return std::ptr::null_mut();
+        }
+        let bytes = std::slice::from_raw_parts(data, len);
+        let fmt = opt_str(format).unwrap_or("");
+        match i_slint_core::graphics::load_image_from_dynamic_data(bytes, fmt) {
+            Ok(img) => Box::into_raw(Box::new(img)),
+            Err(e) => {
+                set_last_error(format!("load image data: {e:?}"));
+                std::ptr::null_mut()
+            }
+        }
+    })
+}
+
 /// # Safety
 /// `img` must be NULL or a pointer from this library.
 #[no_mangle]

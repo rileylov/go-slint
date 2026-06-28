@@ -201,6 +201,8 @@ pixels you generated/decoded in Go (Slint's `SharedPixelBuffer` equivalent):
 img, _ := slint.LoadImage("logo.png")          // from a file
 img, _ := slint.NewImage(goImage)              // any image.Image: decoded, drawn, generated
 img, _ := slint.NewImageRGBA(pixels, w, h)     // raw RGBA8 bytes (w*h*4)
+img, _ := slint.NewImageFromSVG(svgBytes)      // SVG bytes (e.g. go:embed'd) — Slint rasterizes
+img, _ := slint.NewImageFromData(pngBytes, "") // encoded bytes (PNG/JPEG/…); "" auto-detects
 win.SetIcon(img)
 defer img.Close()
 ```
@@ -209,6 +211,11 @@ defer img.Close()
 `image/png`/`image/jpeg`, draw with `image/draw` or a plotting library, or generate
 procedurally. (It handles Go's premultiplied-alpha `image.RGBA` correctly.) See
 [`cmd/examples/image`](cmd/examples/image).
+
+**Embedded SVGs.** `NewImageFromSVG` takes raw SVG bytes and lets Slint rasterize
+them at render size — so a `go:embed`'d vector asset stays crisp at any scale and
+needs no file on disk. Prefer it to `@image-url` when shipping a self-contained
+binary or an APK, where `@image-url` can't resolve a path (it would render blank).
 
 ### Custom fonts
 
