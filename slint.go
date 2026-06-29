@@ -305,6 +305,13 @@ type ModelHandle = slintsys.ModelHandle
 // NewModel binds a custom Model implementation so it can be assigned to a property.
 func NewModel(m Model) *ModelHandle { return slintsys.NewModelHandle(m) }
 
+// LiveModel is a model bindable to a `[T]` property so its rows update in place — a
+// *SliceModel, or the *ModelHandle returned by NewModel. The generated typed
+// Set<Name>Model setters (emitted only for array properties) accept it; unlike the
+// snapshot Set<Name>([]T), the binding stays live (Append/SetRowData/RemoveAt flow
+// to the UI per row).
+type LiveModel interface{ Handle() *ModelHandle }
+
 // SliceModel is a built-in slice-backed Model whose mutators auto-notify Slint.
 type SliceModel struct {
 	items  []any

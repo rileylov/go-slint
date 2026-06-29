@@ -203,6 +203,24 @@ func emitProperties(b *strings.Builder, recv, _ string, props []Prop, a propAcce
 			p("%s", recordReplay(a.base, a.comp, "t."+a.accessor+"().Set"+m+"(value)"))
 			p("\treturn %s.inner.SetGlobal(%q, %q, %s)\n}\n\n", a.base, a.global, pr.Name, toAny("value", pr.Ty))
 		}
+
+		// Array properties also get a live-model setter: bind a *slint.SliceModel or
+		// slint.NewModel(m) so rows update in place (Append/SetRowData/RemoveAt) instead
+		// of replacing the whole list from a snapshot. Only arrays — a model backs a
+		// `for`, so there's nothing to bind on a scalar property.
+		if pr.Ty.Kind == "array" {
+			p("// Set%sModel binds %q to a live model — rows update in place (Append,\n", m, pr.Name)
+			p("// SetRowData, RemoveAt) without resending the whole list, unlike Set%s which\n", m)
+			p("// replaces it from a snapshot. Pass a *slint.SliceModel or slint.NewModel(m).\n")
+			p("func (%s) Set%sModel(m slint.LiveModel) error {\n", recv, m)
+			if a.global == "" {
+				p("%s", recordReplay(a.base, a.comp, "t.Set"+m+"Model(m)"))
+				p("\treturn %s.inner.Set(%q, m.Handle())\n}\n\n", a.base, pr.Name)
+			} else {
+				p("%s", recordReplay(a.base, a.comp, "t."+a.accessor+"().Set"+m+"Model(m)"))
+				p("\treturn %s.inner.SetGlobal(%q, %q, m.Handle())\n}\n\n", a.base, a.global, pr.Name)
+			}
+		}
 	}
 }
 

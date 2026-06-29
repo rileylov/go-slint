@@ -49,6 +49,11 @@ func (mh *ModelHandle) NotifyReset() {
 	C.goslint_model_notify_reset(mh.ptr)
 }
 
+// Handle returns the handle itself, so a *ModelHandle satisfies the same
+// `interface{ Handle() *ModelHandle }` (slint.LiveModel) that a SliceModel does —
+// letting the typed Set<Name>Model setters accept either directly.
+func (mh *ModelHandle) Handle() *ModelHandle { return mh }
+
 // Close releases the Rust-side handle. The Go handle backing the model is released
 // once the last Value::Model reference also drops. Safe to call multiple times.
 func (mh *ModelHandle) Close() {

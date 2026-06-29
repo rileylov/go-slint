@@ -28,6 +28,13 @@ func lockSlint(t *testing.T) {
 	_ = slint.InitHeadless()
 }
 
+// Both built-in live-model types satisfy LiveModel, the type the generated
+// Set<Name>Model setters accept (a *SliceModel, or the *ModelHandle from NewModel).
+var (
+	_ slint.LiveModel = (*slint.SliceModel)(nil)
+	_ slint.LiveModel = (*slint.ModelHandle)(nil)
+)
+
 // TestLibraryPaths covers WithLibraryPaths resolving an `@library` import.
 func TestLibraryPaths(t *testing.T) {
 	dir := t.TempDir()

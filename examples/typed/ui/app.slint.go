@@ -185,6 +185,16 @@ func (c *AppWindow) SetLog(value []string) error {
 	}())
 }
 
+// SetLogModel binds "log" to a live model — rows update in place (Append,
+// SetRowData, RemoveAt) without resending the whole list, unlike SetLog which
+// replaces it from a snapshot. Pass a *slint.SliceModel or slint.NewModel(m).
+func (c *AppWindow) SetLogModel(m slint.LiveModel) error {
+	if c.rec != nil && c.rec.recording {
+		c.rec.replays = append(c.rec.replays, func(t *AppWindow) error { return t.SetLogModel(m) })
+	}
+	return c.inner.Set("log", m.Handle())
+}
+
 // Name returns the "name" property.
 func (c *AppWindow) Name() (string, error) {
 	v, err := c.inner.Get("name")

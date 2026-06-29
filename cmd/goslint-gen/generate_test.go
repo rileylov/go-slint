@@ -38,6 +38,9 @@ func TestGenerate(t *testing.T) {
 		"func (c *AppWindow) SetName(value string) error",
 		"func (c *AppWindow) SetTags(value []string) error",
 		"func (c *AppWindow) Points() ([]Point, error)",
+		// array properties also get a live-model setter
+		"func (c *AppWindow) SetTagsModel(m slint.LiveModel) error",
+		"func (c *AppWindow) SetPointsModel(m slint.LiveModel) error",
 		// the struct decoder is a private helper, not part of the package's API
 		"func pointFromMap(",
 		"func (c *AppWindow) OnClicked(handler func(a0 int)) error",
@@ -54,9 +57,13 @@ func TestGenerate(t *testing.T) {
 			t.Errorf("generated code missing: %s", want)
 		}
 	}
-	// no more string-literal baking / file-map machinery
+	// no more string-literal baking / file-map machinery; and a live-model setter is
+	// emitted ONLY for arrays — never for scalar/struct/enum properties.
 	for _, gone := range []string{"generatedSource =", "generatedFiles", "embeddedLoader", "WithFileLoader",
-		"PointFromMap"} { // the decoder must not be exported
+		"PointFromMap",     // the decoder must not be exported
+		"SetNameModel",     // string scalar
+		"SetModeModel",     // enum scalar
+		"SetOriginModel"} { // struct scalar (single value, not a list)
 		if strings.Contains(s, gone) {
 			t.Errorf("output should no longer contain %q (baked-source machinery)", gone)
 		}

@@ -251,8 +251,21 @@ win.SetItems([]string{"a", "b", "c"})
 items, _ := win.Items()
 ```
 
-For lists that update row-by-row at runtime (insert/remove/edit while shown), use a
-live model via the [dynamic API](#dynamic-runtime-api).
+For lists that update **row-by-row at runtime** (insert/remove/edit while shown),
+bind a *live model* instead of resending the whole slice. Every array property also
+gets a typed `Set<Name>Model` setter that takes a `slint.LiveModel` (a `*SliceModel`,
+or `slint.NewModel(yourModel)`):
+
+```go
+m := slint.NewSliceModel("a", "b")
+win.SetItemsModel(m)   // bind once; the model stays live
+m.Append("c")          // one row added → Slint updates just that row (no re-set)
+m.SetRowData(0, "A")   // one row changed → only row 0 re-renders
+```
+
+`SetItems([]T)` replaces the list from a snapshot (full re-render); `SetItemsModel`
+keeps a persistent model whose per-row changes flow to the UI incrementally — use it
+for progressively-filled or frequently-edited lists.
 
 ### Structs
 

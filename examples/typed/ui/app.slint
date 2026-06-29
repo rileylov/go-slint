@@ -1,4 +1,4 @@
-import { Button, VerticalBox, Palette } from "std-widgets.slint";
+import { Button, VerticalBox, Palette, HorizontalBox } from "std-widgets.slint";
 
 export global App {
     pure callback Greeting(string) -> string;
@@ -21,7 +21,12 @@ export component AppWindow inherits Window {
         Text { text: App.Greeting(root.name); horizontal-alignment: center; font-size: 22px; }
         Text { text: "clicks: " + root.clicks; horizontal-alignment: center; color: #ec9f23; }
         Button { text: "Click me now!"; clicked => { App.Clicked(); } }
-        for entry in root.log : Text { text: entry; horizontal-alignment: center; color: #44aa88; }
+        Text {
+            text: "click log (live model):"; horizontal-alignment: center; font-size: 11px; color: #888;
+        }
+        HorizontalBox {
+            for entry in root.log : Text { text: entry; horizontal-alignment: center; color: #44aa88; }
+        }
     }
 }
 

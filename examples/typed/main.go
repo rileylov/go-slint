@@ -15,6 +15,7 @@ import (
 	"runtime"
 	"strings"
 
+	slint "github.com/rileylov/go-slint"
 	"github.com/rileylov/go-slint/examples/typed/ui"
 )
 
@@ -36,14 +37,24 @@ func main() {
 		panic(err)
 	}
 
+	logs := slint.NewSliceModel()
+	if err := win.SetLogModel(logs); err != nil {
+		panic(err)
+	}
+
 	if err := app.OnClicked(func() {
 		n, _ := app.Calls()
 		if err := app.SetCalls(n + 1); err != nil {
-			fmt.Println("set global Logic.calls failed:", err)
+			fmt.Println("set global App.calls failed:", err)
 			return
 		}
 		win.SetClicks(n + 1)
 
+		// Slint rerenders only the changed rows, not the whole list.
+		logs.Append(fmt.Sprintf("click #%d", n+1))
+		for logs.Len() > 5 {
+			logs.RemoveAt(0)
+		}
 	}); err != nil {
 		panic(err)
 	}

@@ -107,3 +107,36 @@ func TestGlobalHandleSurvivesReload(t *testing.T) {
 		t.Fatalf("Calls after reload = %d, want 5", n)
 	}
 }
+
+// TestSetLogModelLive exercises the array-only typed live-model setter end to end:
+// binding a *slint.SliceModel via SetLogModel keeps the binding live, so a later
+// Append flows through to the `[string] log` property without re-setting it (read
+// back through the snapshot getter). Both a SliceModel and a NewModel-wrapped model
+// satisfy slint.LiveModel.
+func TestSetLogModelLive(t *testing.T) {
+	runtime.LockOSThread()
+	_ = slint.InitHeadless() // ignore "already set" if this thread was reused
+
+	win, err := NewAppWindow()
+	if err != nil {
+		t.Fatalf("NewAppWindow: %v", err)
+	}
+	defer win.Close()
+
+	m := slint.NewSliceModel("a", "b")
+	if err := win.SetLogModel(m); err != nil { // *SliceModel is a slint.LiveModel
+		t.Fatalf("SetLogModel: %v", err)
+	}
+	if got, _ := win.Log(); len(got) != 2 {
+		t.Fatalf("after bind, log = %v; want 2 rows", got)
+	}
+	m.Append("c") // live update — no re-set
+	if got, _ := win.Log(); len(got) != 3 || got[2] != "c" {
+		t.Fatalf("after Append, log = %v; want [a b c] — live binding didn't flow through", got)
+	}
+
+	// the *ModelHandle from NewModel also satisfies slint.LiveModel
+	if err := win.SetLogModel(slint.NewModel(m)); err != nil {
+		t.Fatalf("SetLogModel(NewModel): %v", err)
+	}
+}
