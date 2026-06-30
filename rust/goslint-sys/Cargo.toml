@@ -60,12 +60,9 @@ i-slint-backend-android-activity = { path = "../../slint/internal/backends/andro
 # directly; Cargo unifies this with the selector the interpreter already pulls in.
 i-slint-backend-selector = { path = "../../slint/internal/backends/selector", features = ["backend-android-activity"] }
 
-# Fat LTO does whole-program cross-crate dead-code elimination: it shrinks the shipped
-# static lib ~63% (≈153MB→56MB) and a stripped user binary ~58% (62MB→26MB). Cost is
-# ~2.4x build time, and the LTO step is mostly single-threaded so it's slower still on
-# low-core CI runners (acceptable: the desktop release build is only ~6 min). opt-level
-# stays at the release default (3), so there's no runtime cost. Thin LTO is the lighter
-# alternative (≈free build time, but only ~37% lib / ~30% binary). panic stays "unwind"
-# — the FFI shim relies on catch_unwind (panic=abort would break the guards).
+
+# using lto = "fat" resulted in a 63% static lib size reduction from about 153mb to 56mb
+# using codegen-units = 1 resulted in about a 5% size reduction from about 56mb to 53mb
 [profile.release]
 lto = "fat"
+codegen-units = 1
