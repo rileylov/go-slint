@@ -944,6 +944,7 @@ func TestDataTransferRoundTrip(t *testing.T) {
 // the error path, so the Go side must NOT also Delete it. Before the fix the first
 // call below panicked with "runtime/cgo: misuse of an invalid Handle".
 func TestCallbackBadNameNoPanic(t *testing.T) {
+	lockSlint(t) // creates an instance — needs the headless backend on a locked thread
 	app, err := slint.Compile(`
 		export global G { callback realg(); }
 		export component App inherits Window { callback real(); }
@@ -984,6 +985,7 @@ func TestInvokeFromEventLoopErrorNoPanic(t *testing.T) {
 // `got.(*slint.Image)`; before goValue handled images, reads returned nil and that
 // assertion panicked with "interface conversion: interface {} is nil, not *slint.Image".
 func TestImagePropertyRoundTrip(t *testing.T) {
+	lockSlint(t) // creates an instance — needs the headless backend on a locked thread
 	app, err := slint.Compile(`export component App inherits Window { in-out property <image> pic; }`)
 	if err != nil {
 		t.Fatal(err)
