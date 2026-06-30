@@ -136,6 +136,38 @@ func TestHasGoslintDirective(t *testing.T) {
 	}
 }
 
+// TestDiscoverEntriesSkipsPackageMain guards the regression where auto-discovery
+// generated a wrapper for a dynamic-API .slint (one embedded next to package main),
+// producing a package conflict. Such a .slint must NOT be a generatable entry; a
+// .slint in its own (non-main) package still is.
+func TestDiscoverEntriesSkipsPackageMain(t *testing.T) {
+	// dynamic-API layout: app.slint next to `package main` → skipped
+	dyn := t.TempDir()
+	mkfile(t, dyn, "app.slint", `export component App inherits Window {}`)
+	mkfile(t, dyn, "main.go", "package main\nfunc main() {}\n")
+	entries, others, err := discoverEntries(dyn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("entries = %v, want none (a .slint beside package main is dynamic-API)", relSlash(t, dyn, entries))
+	}
+	if others != 1 {
+		t.Errorf("others = %d, want 1 (the skipped dynamic .slint)", others)
+	}
+
+	// scaffold layout: the .slint lives in its own (non-main) package → still an entry
+	scaffold := t.TempDir()
+	mkfile(t, scaffold, "ui/app.slint", `export component App inherits Window {}`)
+	mkfile(t, scaffold, "ui/app.slint.go", "package ui\n")
+	mkfile(t, scaffold, "main.go", "package main\nfunc main() {}\n")
+	got, _, err := discoverEntries(scaffold)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eq(t, relSlash(t, scaffold, got), []string{"ui/app.slint"})
+}
+
 // TestGeneratePlan checks how a `goslint generate` invocation is classified:
 // no args / a directory => whole-project discovery; an explicit file or anything
 // unrecognised => forward verbatim to goslint-gen.

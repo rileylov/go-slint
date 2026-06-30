@@ -3,6 +3,8 @@ package main
 import (
 	"flag"
 	"fmt"
+	"go/parser"
+	"go/token"
 	"io"
 	"io/fs"
 	"os"
@@ -78,8 +80,9 @@ func cmdGenerate(args []string) error {
 		if len(entries) == 0 {
 			root, _ := filepath.Abs(scanRoot)
 			if others > 0 {
-				return fmt.Errorf("found %d .slint file(s) under %s but each is imported by another, "+
-					"so there's no top-level component to wrap — pass one explicitly: goslint generate <input.slint>", others, root)
+				return fmt.Errorf("found %d .slint file(s) under %s but none is a generatable entry — each is "+
+					"either imported by another .slint or used via the dynamic API (next to package main). "+
+					"Pass one explicitly if you do want a typed wrapper: goslint generate <input.slint>", others, root)
 			}
 			return fmt.Errorf("no .slint files found under %s — pass one explicitly: goslint generate <input.slint>", root)
 		}
@@ -211,14 +214,41 @@ func discoverEntries(root string) (entries []string, others int, err error) {
 	}
 	for _, p := range all {
 		abs, _ := filepath.Abs(p)
-		if imported[abs] {
+		switch {
+		case imported[abs]:
+			others++ // a component/widget imported by another .slint — wrapped via its entry
+		case dirIsPackageMain(filepath.Dir(p)):
+			// A .slint living next to `package main` is used via the dynamic API
+			// (//go:embed + slint.Compile): a typed wrapper there can't compile (it
+			// would be `package <dir>`, not `main`), so never generate one for it.
 			others++
-		} else {
+		default:
 			entries = append(entries, p)
 		}
 	}
 	sort.Strings(entries)
 	return entries, others, nil
+}
+
+// dirIsPackageMain reports whether any Go file in dir declares `package main` — the
+// signal that a co-located .slint is consumed dynamically, not as a typed wrapper.
+// Parses only the package clause, so it's cheap and ignores comments/strings.
+func dirIsPackageMain(dir string) bool {
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	fset := token.NewFileSet()
+	for _, e := range ents {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") {
+			continue
+		}
+		f, err := parser.ParseFile(fset, filepath.Join(dir, e.Name()), nil, parser.PackageClauseOnly)
+		if err == nil && f.Name != nil && f.Name.Name == "main" {
+			return true
+		}
+	}
+	return false
 }
 
 // slintImports returns the absolute paths of the local .slint files imported by
