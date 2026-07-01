@@ -76,7 +76,7 @@ run `goslint` or read through the [Guide](DOCS.md) to see the full list of comma
 | Android (arm64-v8a) | ✅ tested |
 | Windows (amd64) | ✅ tested |
 | macOS (arm64) | ✅ tested |
-| iOS | ❌ (no hardware to test on) |
+| iOS (arm64) | ✅ tested (simulator) |
 
 ## Documentation
 
