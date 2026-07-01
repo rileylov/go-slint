@@ -10,12 +10,15 @@ the bindings.
 - **`rust/goslint-sys/`** — the Rust shim: a flat C ABI (`extern "C"`) over
   `slint-interpreter`, built to `libgoslint.{a,so}`. Features: `backend-winit` +
   `renderer-femtovg` (GPU, desktop default) + `renderer-software` + the headless
-  testing backend. Android pulls `i-slint-backend-android-activity` (skia).
+  testing backend. Android pulls `i-slint-backend-android-activity` (skia). iOS needs
+  no Cargo change: Slint's winit `build.rs` auto-enables the Skia/Metal renderer and
+  compiles out femtovg/GL (`ios_and_friends` cfg), so the same crate builds for
+  `aarch64-apple-ios{,-sim}` with the renderer-femtovg feature harmlessly inert.
 - **`include/goslint.h`** — the hand-written C header (the ABI contract).
 - **`slintsys/`** — Layer 1: low-level cgo, 1:1 with the C ABI.
 - **`slint.go` / `slint_dev.go` / `doc.go`** (package `slint`) — Layer 2: the
   idiomatic Go API.
-- **`cmd/goslint/`** — the user-facing CLI (init/setup/dev/build/run/android/doctor).
+- **`cmd/goslint/`** — the user-facing CLI (init/setup/dev/build/run/android/ios/doctor).
 
 ## Build & test (from source)
 
@@ -83,7 +86,22 @@ remains for explicit pre-fetch, CI, `-force`, and `-target` cross-provisioning. 
 version = the tag, and `setup` matches it from `go.mod`. Android targets ship the
 cdylib `.so`; `goslint android build` cross-builds the user's package as a
 c-shared, bundles both `.so` per ABI, and signs the APK (Go has no c-archive on
-android, so the Rust `android_main` `dlopen`s the Go lib).
+android, so the Rust `android_main` `dlopen`s the Go lib). `goslint android dev`
+builds, installs, and launches on a running device or a booted emulator (building
+only that device's ABI for speed), then rebuilds/reinstalls on each edit — the shared
+`mobileDev` driver, same as `goslint ios dev`.
+
+**iOS** ships static `.a`s (`ios_arm64` device + `ios_sim_arm64` Apple-Silicon
+simulator; `make lib-ios` builds them, the release matrix publishes them). Unlike
+android, iOS needs **no entry-point inversion**: winit calls `UIApplicationMain`
+itself when the event loop runs, so a plain desktop-style `func main()` (open a
+window, `Run()`, with `runtime.LockOSThread`) *is* the iOS app. `goslint ios build`
+cross-compiles that package (`GOOS=ios GOARCH=arm64`, `CC=clang -target
+arm64-apple-ios<min>{-simulator} -isysroot <sdk>`, the extlib link path), links the
+prebuilt shim + recorded frameworks, and wraps the binary in a signed `.app`
+(ad-hoc for the simulator; `-device` needs a real identity). `-run` installs +
+launches it in the booted simulator via `simctl`. Needs a full Xcode selected
+(`xcode-select -p`).
 
 **Windows static lib:** the `windows` crate (via winit) lists umbrella import libs
 (`-lwindows.0.52.0` …) in `native-static-libs`; those `.a` files live inside the

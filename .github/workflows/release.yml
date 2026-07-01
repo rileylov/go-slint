@@ -47,6 +47,12 @@ jobs:
           - { target: windows_amd64, runner: ubuntu-latest, rust: x86_64-pc-windows-gnu, kind: static, apt: gcc-mingw-w64-x86-64 }
           - { target: android_arm64, runner: ubuntu-latest, rust: aarch64-linux-android, kind: shared, apt: "" }
           - { target: android_amd64, runner: ubuntu-latest, rust: x86_64-linux-android, kind: shared, apt: "" }
+          # iOS: static .a built on macos-14 (Xcode ships the iOS SDKs). Like darwin these
+          # only archive objects, so cross-compiling to the device (aarch64-apple-ios) and
+          # the Apple-Silicon simulator (aarch64-apple-ios-sim) needs no target link/exec.
+          # `goslint ios build` downloads these; the frameworks come from native-static-libs.
+          - { target: ios_arm64, runner: macos-14, rust: aarch64-apple-ios, kind: static, apt: "" }
+          - { target: ios_sim_arm64, runner: macos-14, rust: aarch64-apple-ios-sim, kind: static, apt: "" }
     steps:
       - uses: actions/checkout@v4
 
@@ -83,7 +89,7 @@ jobs:
             rust/goslint-sys/target
           key: cargo-${{ matrix.target }}-${{ steps.slint.outputs.ref }}-${{ hashFiles('rust/goslint-sys/Cargo.toml') }}
 
-      - name: Build static lib (desktop)
+      - name: Build static lib (desktop + iOS)
         if: matrix.kind == 'static'
         working-directory: rust/goslint-sys
         env:

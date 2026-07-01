@@ -13,7 +13,7 @@ TARGET    := $(RUST_DIR)/target/release
 # Which upstream Slint to build against. Default tracks main; pin a tag for stability.
 SLINT_REF ?= origin/master
 
-.PHONY: lib slint test conformance clean update-slint lib-windows build-windows
+.PHONY: lib slint test conformance clean update-slint lib-windows build-windows lib-ios
 
 # Fetch the pinned upstream Slint source (gitignored; needed only to build the
 # native shim from source — most users use prebuilt libs via `goslint setup`).
@@ -67,6 +67,25 @@ lib-windows:
 	cp $(RUST_DIR)/target/$(WIN_TARGET)/release/goslint.dll $(WIN_LIBDIR)/
 	cp $(RUST_DIR)/target/$(WIN_TARGET)/release/libgoslint.dll.a $(WIN_LIBDIR)/
 	@echo "staged Windows shim in $(WIN_LIBDIR)"
+
+# --- iOS cross-build (from macOS with a full Xcode selected) ---
+# Builds the Skia/Metal shim staticlib for the device (aarch64-apple-ios) and the
+# Apple-Silicon simulator (aarch64-apple-ios-sim). No Cargo changes are needed: Slint's
+# winit backend auto-selects Skia+Metal and compiles out femtovg/GL on iOS. Contributors
+# use these with `goslint ios build -lib lib/ios_sim_arm64 …`; the release ships them so
+# users' `goslint ios build` just downloads them. iOS apps are built with the CLI:
+# `goslint ios build ./examples/helloworld` (simulator) or `-device`.
+IOS_SIM_TARGET := aarch64-apple-ios-sim
+IOS_DEV_TARGET := aarch64-apple-ios
+
+lib-ios:
+	rustup target add $(IOS_SIM_TARGET) $(IOS_DEV_TARGET)
+	cd $(RUST_DIR) && cargo build --release --target $(IOS_SIM_TARGET)
+	cd $(RUST_DIR) && cargo build --release --target $(IOS_DEV_TARGET)
+	mkdir -p lib/ios_sim_arm64 lib/ios_arm64
+	cp $(RUST_DIR)/target/$(IOS_SIM_TARGET)/release/libgoslint.a lib/ios_sim_arm64/libgoslint.a
+	cp $(RUST_DIR)/target/$(IOS_DEV_TARGET)/release/libgoslint.a lib/ios_arm64/libgoslint.a
+	@echo "staged iOS shim in lib/ios_sim_arm64 and lib/ios_arm64"
 
 # Android APKs are built with the CLI: `goslint android build ./examples/interop`.
 

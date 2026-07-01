@@ -92,6 +92,30 @@ func TestEnsureAndroidEntry(t *testing.T) {
 	}
 }
 
+// TestResolveAndroidCfg checks the defaults `goslint android build`/`dev` derive from
+// the package (name/application-id/label/output), and that explicit values win.
+func TestResolveAndroidCfg(t *testing.T) {
+	// Defaults derive from the package base name (absolute path -> deterministic base).
+	def := resolveAndroidCfg("/tmp/cool", "", "", "", "1.0", 1, 24, 34,
+		"arm64-v8a", "", "", "", "", "android", "androiddebugkey", "android")
+	if def.pkg != "/tmp/cool" || def.label != "cool" || def.appID != "dev.goslint.cool" || def.out != "cool.apk" {
+		t.Errorf("defaults: %+v", def)
+	}
+
+	// Explicit flags win over the derived defaults.
+	ov := resolveAndroidCfg("/tmp/cool", "Out.apk", "com.x.y", "My Label", "2.0", 5, 21, 33,
+		"x86_64", "Manifest.xml", "/sdk", "/ndk", "/ks", "pw", "alias", "kp")
+	if ov.out != "Out.apk" || ov.appID != "com.x.y" || ov.label != "My Label" ||
+		ov.abiList != "x86_64" || ov.manifestArg != "Manifest.xml" || ov.keystore != "/ks" {
+		t.Errorf("overrides: %+v", ov)
+	}
+
+	// Empty package resolves to "." (current directory).
+	if cur := resolveAndroidCfg("", "", "", "", "1.0", 1, 24, 34, "arm64-v8a", "", "", "", "", "android", "androiddebugkey", "android"); cur.pkg != "." {
+		t.Errorf("empty pkg -> %q, want %q", cur.pkg, ".")
+	}
+}
+
 func TestSelectABIs(t *testing.T) {
 	got, err := selectABIs("arm64-v8a,x86_64")
 	if err != nil || len(got) != 2 {

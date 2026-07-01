@@ -79,6 +79,8 @@ func main() {
 		err = cmdDoctor(os.Args[2:])
 	case "android":
 		err = cmdAndroid(os.Args[2:])
+	case "ios":
+		err = cmdIOS(os.Args[2:])
 	case "uninstall":
 		err = cmdUninstall(os.Args[2:])
 	case "help", "-h", "--help":
@@ -107,6 +109,9 @@ Usage:
   goslint env                                         print the PKG_CONFIG_PATH export line
   goslint doctor                                      check the toolchain and cached lib
   goslint android build [flags] <package>            build a signed APK of a Go package
+  goslint android dev [flags] [package]              run in the emulator, rebuild+reload on edits
+  goslint ios build [flags] <package>                build a signed .app for iOS (simulator or -device)
+  goslint ios dev [flags] [package]                  run in the iOS simulator, rebuild+reload on edits
   goslint uninstall [-keep-binary]                    remove downloaded libs + the binary
 
 Environment:
@@ -666,6 +671,9 @@ func cmdDoctor(args []string) error {
 		fmt.Println("  – Android SDK (optional; only for `goslint android build`): not found")
 		fmt.Println("               → set ANDROID_HOME, pass -sdk <dir>, or install via Homebrew/apt")
 	}
+
+	// iOS toolchain — optional, macOS-only, for `goslint ios build`.
+	iosDoctor()
 	return nil
 }
 
