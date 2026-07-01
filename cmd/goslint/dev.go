@@ -30,7 +30,8 @@ func cmdDev(args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := ensureCC(); err != nil {
+	env, err = withCC(env)
+	if err != nil {
 		return err
 	}
 

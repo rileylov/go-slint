@@ -45,6 +45,13 @@ jobs:
           - { target: darwin_amd64, runner: macos-14, rust: x86_64-apple-darwin, kind: static, apt: "" }
           # Windows + Android cross-compile from x86_64 (neither uses fontconfig).
           - { target: windows_amd64, runner: ubuntu-latest, rust: x86_64-pc-windows-gnu, kind: static, apt: gcc-mingw-w64-x86-64 }
+          # A second Windows lib for the LLVM ABI (windows-gnullvm): its exception-handling
+          # runtime is LLVM libunwind (not libgcc), so `zig cc` links it self-sufficiently —
+          # no MinGW/MSVC needed. This is what goslint links when building Windows with zig
+          # (cross-compiling from Linux/macOS, or on a Windows box that has only zig). The
+          # staticlib is pure Rust (no C toolchain to build it); zig is used only for the
+          # `zig ar` step that folds the import lib in so the shipped archive is self-contained.
+          - { target: windows_gnullvm_amd64, runner: ubuntu-latest, rust: x86_64-pc-windows-gnullvm, kind: static, apt: "" }
           - { target: android_arm64, runner: ubuntu-latest, rust: aarch64-linux-android, kind: shared, apt: "" }
           - { target: android_amd64, runner: ubuntu-latest, rust: x86_64-linux-android, kind: shared, apt: "" }
           # iOS: static .a built on macos-14 (Xcode ships the iOS SDKs). Like darwin these
@@ -79,6 +86,15 @@ jobs:
       - name: Install build deps
         if: matrix.apt != ''
         run: sudo apt-get update && sudo apt-get install -y ${{ matrix.apt }}
+
+      # gnullvm only: `zig ar` (llvm-ar) is used to fold the LLVM short-import umbrella
+      # lib into libgoslint.a (GNU ar mangles those members). Nothing else needs zig —
+      # the lib itself is pure Rust.
+      - name: Setup zig (gnullvm import-lib merge)
+        if: matrix.target == 'windows_gnullvm_amd64'
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.14.1
 
       - name: Cache cargo
         uses: actions/cache@v4
@@ -138,6 +154,40 @@ jobs:
               cat merge.mri
               "$artool" -M < merge.mri
               echo "merged windows import libs:$merge"
+            fi
+            libs="$(echo "$newlibs" | xargs)"
+          fi
+
+          # Windows (gnullvm / LLVM ABI): same self-contained goal, but the umbrella import
+          # libs are LLVM short-import archives that GNU ar mangles — so fold them in with
+          # `zig ar` (llvm-ar) via an MRI CREATE script. -lunwind is NOT merged: it stays on
+          # the published link line because the user's zig supplies libunwind (the LLVM EH
+          # runtime) at link time — that's what makes gnullvm zig-self-sufficient.
+          if [ "${{ matrix.target }}" = "windows_gnullvm_amd64" ]; then
+            newlibs=""
+            merge=""
+            for tok in $libs; do
+              case "$tok" in
+                -lwindows.*)
+                  name="lib${tok#-l}.a"
+                  path="$(find "$HOME/.cargo/registry/src" -path "*gnullvm*" -name "$name" 2>/dev/null | head -1)"
+                  if [ -n "$path" ]; then
+                    merge="$merge $path"
+                  else
+                    echo "WARN: $name not found; keeping $tok on the link line" >&2
+                    newlibs="$newlibs $tok"
+                  fi
+                  ;;
+                *) newlibs="$newlibs $tok" ;;
+              esac
+            done
+            if [ -n "$merge" ]; then
+              # llvm-ar's MRI dialect uses CREATE (a fresh archive), not GNU ar's OPEN.
+              { echo "CREATE $dest.merged"; echo "ADDLIB $dest"; for p in $merge; do echo "ADDLIB $p"; done; echo "SAVE"; echo "END"; } > merge.mri
+              cat merge.mri
+              zig ar -M < merge.mri
+              mv "$dest.merged" "$dest"
+              echo "merged gnullvm windows import libs into $dest:$merge"
             fi
             libs="$(echo "$newlibs" | xargs)"
           fi

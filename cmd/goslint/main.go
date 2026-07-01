@@ -104,7 +104,10 @@ Usage:
   goslint setup [-target <goos>_<goarch>] [-force]   pre-fetch the native lib (optional; build/run/dev auto-fetch)
   goslint generate [-o out.go] [-package p] [<in.slint>|<dir>]  typed Go from .slint (no file/a dir: whole project)
   goslint dev   [package]                             run with live reload (edit .slint, save)
-  goslint build [go build args...]                    go build with the lib wired up
+  goslint build [-target <goos>_<goarch>] [go args]   go build with the lib wired up
+                                                      (-target cross-compiles via zig: windows_amd64,
+                                                       linux_amd64, linux_arm64, darwin_amd64, darwin_arm64;
+                                                       darwin needs GOSLINT_MACOS_SDK)
   goslint run   [go run args...]                      go run   with the lib wired up
   goslint env                                         print the PKG_CONFIG_PATH export line
   goslint doctor                                      check the toolchain and cached lib
@@ -279,11 +282,11 @@ func ensureProvisioned(tgt string, force bool) (target, string, string, error) {
 		return t, libpath, slint, err
 	}
 	libdir := filepath.Dir(libpath)
-	if err := os.WriteFile(filepath.Join(pcdir, "goslint.pc"), []byte(buildPC(libdir, t.Libs, slint)), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(pcdir, "goslint.pc"), []byte(buildPC(tgt, libdir, t.Libs, slint)), 0o644); err != nil {
 		return t, libpath, slint, err
 	}
 	// Also write the raw cgo link line so the CLI can build without pkg-config.
-	if err := os.WriteFile(filepath.Join(pcdir, "cgo_ldflags"), []byte(linkLine(libdir, t.Libs)), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(pcdir, "cgo_ldflags"), []byte(linkLine(tgt, libdir, t.Libs)), 0o644); err != nil {
 		return t, libpath, slint, err
 	}
 	return t, libpath, slint, nil
@@ -339,7 +342,7 @@ func provision(tgt string, force bool) (target, string, string, error) {
 	return t, libpath, m.Slint, nil
 }
 
-func buildPC(libdir, libs, slint string) string {
+func buildPC(tgt, libdir, libs, slint string) string {
 	// Cflags are intentionally empty: the goslint.h include path comes from the Go
 	// module itself (slintsys' own #cgo CFLAGS -I${SRCDIR}/../include). This file
 	// only supplies the link line; staticLibLink makes it static-archive-safe per
@@ -352,43 +355,58 @@ Description: Slint Go bindings native shim (static) — Slint %s
 Version: %s
 Cflags:
 Libs: %s
-`, libdir, slint, strings.TrimPrefix(version(), "v"), staticLibLink("${libdir}", libs))
+`, libdir, slint, strings.TrimPrefix(version(), "v"), staticLibLink(tgt, "${libdir}", libs))
 }
 
 // ---- go build/run wrappers ----
 
 func cmdGo(sub string, args []string) error {
 	start := time.Now()
-	tgt := hostTarget()
-	env, err := wrapperEnv(tgt)
-	if err != nil {
-		return err
+	// -target <goos>_<goarch> cross-compiles (build only). Pull it out so it isn't
+	// forwarded to `go build`, which wouldn't understand it.
+	target, args := extractTargetFlag(args)
+	if target != "" && sub != "build" {
+		return fmt.Errorf("-target applies to `goslint build` only (a cross-compiled binary can't be run on this host)")
 	}
-	if err := ensureCC(); err != nil {
-		return err
-	}
-	// Refresh generated typed wrappers from their .slint first, so build/run reflect
-	// the current markup. Target the package being built (e.g. `goslint build
-	// ./path/to/app`), not the CWD — mirroring how `dev` uses its package argument.
-	// Skip when nothing changed — codegen spawns a subprocess and links the native
-	// lib, which is wasteful (and AV-scanned on Windows) per build.
+
+	// Refresh generated typed wrappers from their .slint first, so the build reflects the
+	// current markup. Codegen ALWAYS runs on the host (goslint-gen links the host lib),
+	// even for a cross build, so it uses the host env — not the target one. Target the
+	// package being built, not the CWD. Skip when nothing changed — codegen spawns a
+	// subprocess and links the native lib, wasteful (and AV-scanned on Windows) per build.
 	pkgDir := goPkgDir(args)
-	if needsGenerate(pkgDir) {
-		if err := regenerate(pkgDir, env); err != nil {
+	if needsGenerate(pkgDir) && generationPlanned(pkgDir) {
+		hostEnv, err := hostBuildEnv()
+		if err != nil {
+			return err
+		}
+		if err := regenerate(pkgDir, hostEnv); err != nil {
 			return err
 		}
 	}
+
+	// The build env: the host toolchain, or a zig-driven cross target.
+	env, goos, err := buildEnvFor(target)
+	if err != nil {
+		return err
+	}
+
 	goArgs := []string{sub, "-tags", buildTag}
 	// For `build` (the "ship it" command) strip the symbol table + DWARF (-s -w): it
-	// roughly halves the binary (e.g. 62MB→44MB) with no runtime effect; dev/run keep
-	// symbols for debuggable panic traces. On Windows also select the "windowsgui"
-	// subsystem so double-clicking the app doesn't pop a console window alongside the
-	// UI. We only inject -ldflags when the user didn't pass their own (Go keeps just
-	// the last -ldflags, so we'd clobber it) — pass any -ldflags to opt out of strip.
+	// roughly halves the binary with no runtime effect; dev/run keep symbols for
+	// debuggable panic traces. For a Windows target (host or cross) also select the
+	// "windowsgui" subsystem so double-clicking the app doesn't pop a console window. We
+	// only inject -ldflags when the user didn't pass their own (Go keeps just the last
+	// -ldflags, so we'd clobber it) — pass any -ldflags to opt out of strip.
 	if sub == "build" && !hasLdflags(args) {
 		ldflags := "-s -w"
-		if runtime.GOOS == "windows" {
+		if goos == "windows" {
 			ldflags += " -H=windowsgui"
+			if target != "" {
+				// Cross-linking via zig's lld-link: Go's internal -H doesn't reach it, so
+				// also set the PE subsystem on the external linker or the app pops a console.
+				ldflags += " -extldflags=-Wl,--subsystem,windows"
+			}
 		}
 		goArgs = append(goArgs, "-ldflags="+ldflags)
 	}
@@ -399,12 +417,129 @@ func cmdGo(sub string, args []string) error {
 	if err := cmd.Run(); err != nil {
 		return err
 	}
-	// `run` keeps running the user's app, so its wall-clock isn't a build time;
-	// only report it for `build` (gen + compile).
+	// `run` keeps running the user's app, so its wall-clock isn't a build time; only
+	// report it for `build` (gen + compile).
 	if sub == "build" {
-		fmt.Println("goslint: built in", time.Since(start).Round(time.Millisecond))
+		where := ""
+		if target != "" {
+			where = " for " + target
+		}
+		fmt.Printf("goslint: built%s in %s\n", where, time.Since(start).Round(time.Millisecond))
 	}
 	return nil
+}
+
+// hostBuildEnv is the cgo env for a host build or for codegen: the host lib's link line
+// plus a C compiler (a native one, or zig as a fallback).
+func hostBuildEnv() ([]string, error) {
+	env, err := wrapperEnv(hostTarget())
+	if err != nil {
+		return nil, err
+	}
+	return withCC(env)
+}
+
+// buildEnvFor returns the cgo env and target GOOS for a build: the host toolchain when
+// target is "", otherwise a zig-driven cross target (GOOS/GOARCH + CC=zig + the target
+// lib's link line). goos drives the windowsgui subsystem choice.
+func buildEnvFor(target string) (env []string, goos string, err error) {
+	if target == "" {
+		env, err = hostBuildEnv()
+		return env, runtime.GOOS, err
+	}
+	ct, err := crossTargetFor(target)
+	if err != nil {
+		return nil, "", err
+	}
+	if !inPath("zig") {
+		return nil, "", fmt.Errorf("cross-compiling to %s needs zig (it links the LLVM-ABI native lib) — "+
+			"install it (one download, no system packages): https://ziglang.org/download/", target)
+	}
+	libEnv, err := wrapperEnv(ct.libTarget)
+	if err != nil {
+		return nil, "", err
+	}
+	return append(libEnv, ct.env...), ct.goos, nil
+}
+
+// crossTarget describes how a user-facing `-target` maps onto a cross build: which
+// prebuilt lib to link, and the GOOS/GOARCH/CC env that drives zig.
+type crossTarget struct {
+	libTarget string   // manifest/target key of the lib to link
+	goos      string   // GOOS of the target (drives windowsgui)
+	env       []string // GOOS, GOARCH, CC for `go build`
+}
+
+// crossTargetFor maps a `-target <goos>_<goarch>` to its cross build: which prebuilt lib
+// to link and the GOOS/GOARCH/CC that drives zig. Windows links the gnullvm lib (LLVM
+// ABI) so zig needs no external libgcc; Linux links its normal lib (fontconfig is
+// dlopen'd, so nothing external to resolve); macOS links its normal lib but needs an
+// Apple SDK. See the Distribution notes in CLAUDE.md.
+func crossTargetFor(target string) (crossTarget, error) {
+	switch target {
+	case "windows_amd64":
+		return crossTarget{
+			libTarget: "windows_gnullvm_amd64",
+			goos:      "windows",
+			env:       []string{"GOOS=windows", "GOARCH=amd64", "CC=zig cc -target x86_64-windows-gnu"},
+		}, nil
+	case "linux_amd64":
+		return crossTarget{libTarget: "linux_amd64", goos: "linux",
+			env: []string{"GOOS=linux", "GOARCH=amd64", "CC=zig cc -target x86_64-linux-gnu"}}, nil
+	case "linux_arm64":
+		return crossTarget{libTarget: "linux_arm64", goos: "linux",
+			env: []string{"GOOS=linux", "GOARCH=arm64", "CC=zig cc -target aarch64-linux-gnu"}}, nil
+	case "darwin_amd64":
+		return darwinCross("darwin_amd64", "amd64", "x86_64-macos")
+	case "darwin_arm64":
+		return darwinCross("darwin_arm64", "arm64", "aarch64-macos")
+	default:
+		return crossTarget{}, fmt.Errorf("-target %q is not supported (supported: "+
+			"windows_amd64, linux_amd64, linux_arm64, darwin_amd64, darwin_arm64)", target)
+	}
+}
+
+// darwinCross builds a macOS cross target. Unlike Windows/Linux, macOS needs an Apple
+// SDK (frameworks + headers) that goslint can't bundle (Apple's license), so the user
+// points GOSLINT_MACOS_SDK at one (e.g. from github.com/joseluisq/macosx-sdks). The
+// -isysroot/-F/-L flags let zig find the SDK; `goslint build` already strips DWARF
+// (-s -w), which sidesteps the host-strip step Go otherwise runs on darwin.
+func darwinCross(libTarget, goarch, zigTriple string) (crossTarget, error) {
+	sdk := os.Getenv("GOSLINT_MACOS_SDK")
+	if sdk == "" {
+		return crossTarget{}, fmt.Errorf("cross-compiling to %s needs a macOS SDK — set GOSLINT_MACOS_SDK to an "+
+			"SDK directory (e.g. one from https://github.com/joseluisq/macosx-sdks). Apple's license means goslint can't ship it", libTarget)
+	}
+	if !isDir(sdk) {
+		return crossTarget{}, fmt.Errorf("GOSLINT_MACOS_SDK=%q is not a directory", sdk)
+	}
+	cc := fmt.Sprintf("CC=zig cc -target %s -isysroot %s -F%s/System/Library/Frameworks -L%s/usr/lib",
+		zigTriple, sdk, sdk, sdk)
+	return crossTarget{libTarget: libTarget, goos: "darwin",
+		env: []string{"GOOS=darwin", "GOARCH=" + goarch, cc}}, nil
+}
+
+// extractTargetFlag pulls a `-target <v>` / `-target=<v>` (or the `--target` spellings)
+// out of the go args, returning it plus the remaining args — so the flag reaches goslint
+// (to choose a cross toolchain) without being forwarded to `go build`.
+func extractTargetFlag(args []string) (target string, rest []string) {
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "-target" || a == "--target":
+			if i+1 < len(args) {
+				target = args[i+1]
+				i++
+			}
+		case strings.HasPrefix(a, "-target="):
+			target = strings.TrimPrefix(a, "-target=")
+		case strings.HasPrefix(a, "--target="):
+			target = strings.TrimPrefix(a, "--target=")
+		default:
+			rest = append(rest, a)
+		}
+	}
+	return target, rest
 }
 
 // goPkgDir extracts the directory of the local package in a `go build`/`go run`
@@ -513,9 +648,22 @@ func isProvisioned(tgt string) bool {
 }
 
 // linkLine builds the CGO_LDFLAGS for the static shim in libdir with libs being the
-// native-static-libs the manifest records.
-func linkLine(libdir, libs string) string {
-	return staticLibLink(filepath.ToSlash(libdir), libs)
+// native-static-libs the manifest records. tgt selects the archive-reference form (see
+// linkByPath).
+func linkLine(tgt, libdir, libs string) string {
+	return staticLibLink(tgt, filepath.ToSlash(libdir), libs)
+}
+
+// linkByPath reports whether tgt's linker wants libgoslint.a named by PATH rather than
+// GNU ld's `-Wl,--start-group -l:libgoslint.a … --end-group`. macOS's ld64 and zig's
+// linkers (lld-link for windows-gnullvm, ld.lld for linux) reject `-l:NAME`; the second
+// archive pass those forms rely on is instead supplied by `go build` doubling
+// CGO_LDFLAGS (there's no archive↔syslib cycle to resolve once fontconfig is dlopen'd).
+// Path form also works with native gcc/ld, so Linux uses it for both native and zig
+// cross builds. Only the windows-gnu (mingw) lib keeps the GNU group form. Keyed on the
+// TARGET, not the host, so it's correct when cross-compiling.
+func linkByPath(tgt string) bool {
+	return strings.HasPrefix(tgt, "darwin_") || strings.HasPrefix(tgt, "linux_") || strings.Contains(tgt, "gnullvm")
 }
 
 // staticLibLink returns the linker tokens that pull in the whole libgoslint.a
@@ -533,25 +681,47 @@ func linkLine(libdir, libs string) string {
 // The "duplicate libraries" warning is benign (GNU ld simply doesn't print it). If Go
 // ever stops doubling CGO_LDFLAGS, name the archive twice here (or use
 // -Wl,-force_load,<path>) to keep the second pass on macOS.
-func staticLibLink(libdir, libs string) string {
-	if runtime.GOOS == "darwin" {
+func staticLibLink(tgt, libdir, libs string) string {
+	if linkByPath(tgt) {
 		return fmt.Sprintf("-L%s %s/libgoslint.a %s", libdir, libdir, libs)
 	}
 	return fmt.Sprintf("-L%s -Wl,--start-group -l:libgoslint.a %s -Wl,--end-group",
 		libdir, libs)
 }
 
-// ensureCC verifies a C compiler is available (cgo needs one) and returns an
-// actionable, OS-specific error if not. It does not run the compiler.
-func ensureCC() error {
+// pickCC decides the cgo C compiler for a host build: nil means a native cc/gcc/clang
+// is on PATH and Go should use its own default; ["CC=zig cc"] means none was found but
+// `zig` is, so fall back to it (zig bundles clang + the platform libc, so a bare
+// machine can build without installing a full toolchain); ok=false means neither is
+// present. Split out from ensureCC so the choice is unit-testable without touching PATH.
+func pickCC(onPath func(string) bool, goos string) (env []string, ok bool) {
 	candidates := []string{os.Getenv("CC"), "cc", "gcc", "clang"}
-	if runtime.GOOS == "windows" {
+	if goos == "windows" {
 		candidates = []string{os.Getenv("CC"), "gcc", "x86_64-w64-mingw32-gcc", "cc", "clang"}
 	}
 	for _, c := range candidates {
-		if c != "" && inPath(c) {
-			return nil
+		if c != "" && onPath(c) {
+			return nil, true // a native compiler exists; let Go pick it
 		}
+	}
+	// zig is a drop-in cc EXCEPT on Windows: the prebuilt Windows lib is the
+	// x86_64-pc-windows-gnu Rust target, which needs libgcc's exception-handling
+	// runtime (_GCC_specific_handler, _Unwind_*) that zig's LLVM libunwind doesn't
+	// supply, so the link fails. Don't offer zig there until a windows-gnullvm lib
+	// ships (its EH runtime is the libunwind/compiler-rt zig already bundles).
+	if goos != "windows" && onPath("zig") {
+		return []string{"CC=zig cc"}, true // fall back to zig as a drop-in cc
+	}
+	return nil, false
+}
+
+// ensureCC returns the cgo compiler env overrides for a host build: nil when a native
+// compiler is on PATH, ["CC=zig cc"] when falling back to zig. It errors — with an
+// actionable, OS-specific hint — only if neither a C compiler nor zig is available. It
+// does not run the compiler.
+func ensureCC() ([]string, error) {
+	if env, ok := pickCC(inPath, runtime.GOOS); ok {
+		return env, nil
 	}
 	hint := "install a C compiler and ensure it's on PATH"
 	switch runtime.GOOS {
@@ -563,7 +733,22 @@ func ensureCC() error {
 	case "linux":
 		hint = "install gcc or clang and the fontconfig dev headers (e.g. `apt install build-essential libfontconfig-dev`)"
 	}
-	return fmt.Errorf("no C compiler found — cgo needs one.\n  → %s", hint)
+	// zig is a single-download alternative goslint uses automatically when present.
+	hint += "\n  → or install zig (one download, no system packages) and goslint will use it: https://ziglang.org/download/"
+	return nil, fmt.Errorf("no C compiler found — cgo needs one.\n  → %s", hint)
+}
+
+// withCC appends the cgo compiler env (ensureCC) to env, announcing a zig fallback so
+// the user knows why the build used zig rather than a system compiler.
+func withCC(env []string) ([]string, error) {
+	ccEnv, err := ensureCC()
+	if err != nil {
+		return nil, err
+	}
+	if len(ccEnv) > 0 {
+		fmt.Fprintln(os.Stderr, "goslint: no system C compiler found — building with `zig cc`")
+	}
+	return append(env, ccEnv...), nil
 }
 
 // runGoGenerate runs `go generate ./...` in dir (CWD if empty) so //go:generate
@@ -633,11 +818,24 @@ func cmdDoctor(args []string) error {
 	report("go toolchain", inPath("go"))
 
 	// C compiler (required for cgo). Surface the actionable hint if missing.
-	if err := ensureCC(); err != nil {
+	if ccEnv, err := ensureCC(); err != nil {
 		report("C compiler", false)
 		fmt.Printf("               → %s\n", strings.TrimPrefix(err.Error(), "no C compiler found — cgo needs one.\n  → "))
 	} else {
 		report("C compiler", true)
+		if len(ccEnv) > 0 {
+			fmt.Println("               → no system C compiler on PATH; using zig (`zig cc`)")
+		}
+	}
+
+	// zig — optional, but it's what `goslint build -target` cross-compiles with, and the
+	// C-compiler fallback when no cc/gcc/clang is installed.
+	if v := zigVersion(); v != "" {
+		report("zig (optional)", true)
+		fmt.Printf("               → %s — enables `goslint build -target` and the no-compiler fallback\n", v)
+	} else {
+		fmt.Println("  – zig (optional; for `goslint build -target` cross-compiles + the no-compiler fallback): not found")
+		fmt.Println("               → install from https://ziglang.org/download/ (one download, no system packages)")
 	}
 
 	if isProvisioned(tgt) {
@@ -686,6 +884,18 @@ func report(name string, ok bool) {
 }
 
 func inPath(bin string) bool { _, err := exec.LookPath(bin); return err == nil }
+
+// zigVersion returns `zig version` (e.g. "0.14.1"), or "" if zig isn't on PATH.
+func zigVersion() string {
+	if !inPath("zig") {
+		return ""
+	}
+	out, err := exec.Command("zig", "version").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
 
 // ---- fetch helpers (http:// and file://) ----
 

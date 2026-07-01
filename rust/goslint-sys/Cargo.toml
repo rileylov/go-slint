@@ -38,6 +38,12 @@ i-slint-backend-testing = { path = "../../slint/internal/backends/testing", feat
 # it's enabled transitively by the femtovg renderer today, but pin it so it can't
 # silently drop out if Slint reshuffles its renderer feature graph.
 i-slint-core = { path = "../../slint/internal/core", features = ["default", "tr", "svg"] }
+# Load libfontconfig at RUNTIME via dlopen instead of linking it. fontconfig's build
+# emits `-lfontconfig -lfreetype`, the only external (non-glibc) link deps of the Linux
+# lib — dropping them lets the Linux lib CROSS-compile with zig (mac/Windows→Linux, or
+# amd64→arm64) while system-font discovery still works at runtime (fontconfig is
+# dlopen'd on the target). Feature is linux/BSD-gated, so it's a no-op on macOS/Windows.
+i-slint-common = { path = "../../slint/internal/common", features = ["fontconfig-dlopen"] }
 # The same translation crate i-slint-core uses, so we can implement tr::Translator.
 tr = { version = "0.1", default-features = false }
 spin_on = "0.1"

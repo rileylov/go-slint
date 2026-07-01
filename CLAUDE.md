@@ -109,6 +109,41 @@ launches it in the booted simulator via `simctl`. Needs a full Xcode selected
 into `libgoslint.a` (an `ar -M` MRI `ADDLIB`) and strips the `-lwindows.*` tokens
 from the published link line, so the shipped archive is self-contained.
 
+**Windows gnullvm lib (for zig):** the release ships a *second* Windows lib built for
+`x86_64-pc-windows-gnullvm` (target key `windows_gnullvm_amd64`). Same ABI as gnu but
+its exception-handling runtime is LLVM libunwind/compiler-rt instead of libgcc — so
+`zig cc` links it with no external toolchain (the gnu lib needs libgcc's
+`_GCC_specific_handler`, which zig can't supply). This is the lib goslint uses when it
+builds Windows with zig: cross-compiling from Linux/macOS, or a Windows box with only
+zig and no MinGW/MSVC. The staticlib is **pure Rust** (no C toolchain to build it — the
+only `-sys` dep, `windows-sys`, is bindings). Its umbrella import libs are LLVM
+*short-import* archives that GNU `ar` mangles, so the release folds them in with
+`zig ar` (llvm-ar) via an MRI `CREATE` script; `-lunwind` stays on the published link
+line (the user's zig provides libunwind at link time). The published link line must
+name `libgoslint.a` by path — zig's `lld-link` rejects GNU `-l:` and `--start-group`.
+
+**Cross-compiling with zig (`goslint build -target <goos>_<goarch>`).** Sets
+`GOOS`/`GOARCH` + `CC="zig cc -target <triple>"` and links the right prebuilt lib. Each
+OS needs a different thing to be zig-linkable, and the reason is always *where its
+unwinder / external deps live*:
+- **windows_amd64** → the `windows_gnullvm_amd64` lib (LLVM unwinder zig bundles; the
+  gnu lib's libgcc can't be supplied by zig).
+- **linux_amd64 / linux_arm64** → the normal linux lib. Its only non-glibc link deps were
+  `fontconfig`/`freetype`; the `fontconfig-dlopen` feature (in goslint-sys' Cargo.toml)
+  makes fontconfig load at runtime via `dlopen`, so nothing external is left to resolve
+  at link time (system fonts still work; falls back to the embedded font if fontconfig is
+  absent). Linux/BSD-gated, so it's a no-op on macOS/Windows.
+- **darwin_amd64 / darwin_arm64** → the normal darwin lib, but macOS needs an Apple SDK
+  (frameworks/headers) that can't be bundled (Apple license). The user sets
+  `GOSLINT_MACOS_SDK` to one (e.g. from github.com/joseluisq/macosx-sdks); goslint passes
+  `-isysroot`/`-F`/`-L`. The default `-s -w` skips DWARF, avoiding the host-`strip` step
+  Go otherwise runs on darwin.
+
+The archive-reference form is chosen per-TARGET by `linkByPath` (main.go): macOS, linux,
+and windows-gnullvm name the archive by path (zig's linkers reject GNU `-l:`); only the
+windows-gnu/mingw lib keeps the `--start-group -l:` form. Codegen always runs on the host
+(the host lib), even for a cross build.
+
 ## Tests
 
 `internal/conformance` runs Slint's full `.slint` corpus (auto-discovers all case

@@ -104,7 +104,8 @@ func cmdGenerate(args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := ensureCC(); err != nil {
+	env, err = withCC(env)
+	if err != nil {
 		return err
 	}
 	for _, job := range jobs {
@@ -150,6 +151,23 @@ func regenerate(dir string, env []string) error {
 		}
 	}
 	return nil
+}
+
+// generationPlanned reports whether regenerate would actually run codegen for dir — a
+// project with //go:generate goslint directives, or discoverable entry .slint files. A
+// dynamic-API project (inline/embedded markup next to package main) has neither, so it
+// needs no host lib: the caller can skip provisioning it and (when cross-compiling) build
+// with only the target lib.
+func generationPlanned(dir string) bool {
+	root := dir
+	if root == "" {
+		root = "."
+	}
+	if hasGoslintDirective(root) {
+		return true
+	}
+	entries, _, err := discoverEntries(root)
+	return err == nil && len(entries) > 0
 }
 
 // generatePlan decides how a `goslint generate` invocation maps to work. forward

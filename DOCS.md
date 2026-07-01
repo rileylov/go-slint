@@ -539,6 +539,44 @@ set `JAVA_HOME` if the JDK isn't picked up.
 
 ---
 
+## Cross-compiling
+
+Build for another OS/arch from one machine with `-target`:
+
+```sh
+goslint build -target windows_amd64 -o myapp.exe .
+goslint build -target linux_arm64   -o myapp     .
+```
+
+This uses [**zig**](https://ziglang.org/download/) as the C toolchain — `cgo` needs a
+C compiler, and zig ships one that targets every platform. Install zig and put it on
+`PATH`; that's all Windows and Linux targets need. The matching prebuilt `libgoslint`
+is downloaded automatically, exactly like a native build. Supported targets:
+
+| `-target` | Notes |
+|---|---|
+| `windows_amd64` | links the LLVM-ABI lib — no MinGW or MSVC required |
+| `linux_amd64`, `linux_arm64` | fontconfig is loaded at runtime, so nothing external to link |
+| `darwin_amd64`, `darwin_arm64` | needs an Apple SDK (see below) |
+
+**macOS targets need an Apple SDK.** Apple's license means goslint can't ship one, so
+point `GOSLINT_MACOS_SDK` at a copy — e.g. download and unpack a `MacOSX*.sdk` from
+[macosx-sdks](https://github.com/joseluisq/macosx-sdks):
+
+```sh
+export GOSLINT_MACOS_SDK=/path/to/MacOSX14.sdk
+goslint build -target darwin_arm64 -o myapp .
+```
+
+Only `build` takes `-target` (you can't run a cross-built binary on the host, so
+`run`/`dev` don't). `goslint doctor` shows whether zig is installed.
+
+> zig doubles as a **fallback C compiler** for *native* builds too: if you have no
+> `cc`/`gcc`/`clang` but zig is on `PATH`, `goslint build`/`run`/`dev` use it
+> automatically — handy on a fresh machine (Windows especially).
+
+---
+
 ## Renderers
 
 go-slint ships Slint's **GPU renderer** (femtovg/OpenGL - the default, best on most
