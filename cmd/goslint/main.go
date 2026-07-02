@@ -392,23 +392,11 @@ func cmdGo(sub string, args []string) error {
 	}
 
 	goArgs := []string{sub, "-tags", buildTag}
-	// For `build` (the "ship it" command) strip the symbol table + DWARF (-s -w): it
-	// roughly halves the binary with no runtime effect; dev/run keep symbols for
-	// debuggable panic traces. For a Windows target (host or cross) also select the
-	// "windowsgui" subsystem so double-clicking the app doesn't pop a console window. We
-	// only inject -ldflags when the user didn't pass their own (Go keeps just the last
-	// -ldflags, so we'd clobber it) — pass any -ldflags to opt out of strip.
+	// Inject default -ldflags only for `build` and only when the user didn't pass their
+	// own (Go keeps just the last -ldflags, so we'd clobber it). runtime.GOOS is threaded
+	// into defaultLdflags so the host-specific darwin fixups stay unit-testable.
 	if sub == "build" && !hasLdflags(args) {
-		ldflags := "-s -w"
-		if goos == "windows" {
-			ldflags += " -H=windowsgui"
-			if target != "" {
-				// Cross-linking via zig's lld-link: Go's internal -H doesn't reach it, so
-				// also set the PE subsystem on the external linker or the app pops a console.
-				ldflags += " -extldflags=-Wl,--subsystem,windows"
-			}
-		}
-		goArgs = append(goArgs, "-ldflags="+ldflags)
+		goArgs = append(goArgs, "-ldflags="+defaultLdflags(goos, target, runtime.GOOS))
 	}
 	goArgs = append(goArgs, args...)
 	cmd := exec.Command("go", goArgs...)
@@ -594,6 +582,49 @@ func hasLdflags(args []string) bool {
 		}
 	}
 	return false
+}
+
+// defaultLdflags is the -ldflags string goslint injects for `build` when the user didn't
+// supply their own. goos/target describe the binary being produced; hostGOOS is the build
+// host (runtime.GOOS at the call site), passed in as a parameter so the host-specific
+// darwin fixups are unit-testable without a Mac/Linux box.
+func defaultLdflags(goos, target, hostGOOS string) string {
+	// -s -w: strip the symbol table + DWARF for the "ship it" build — roughly halves the
+	// binary with no runtime effect (dev/run keep symbols for debuggable panic traces).
+	ldflags := "-s -w"
+
+	if goos == "windows" {
+		// Select the "windowsgui" subsystem so double-clicking the app doesn't pop a
+		// console window (host or cross). On a zig cross-link Go's internal -H doesn't
+		// reach lld-link, so also set the PE subsystem on the external linker.
+		ldflags += " -H=windowsgui"
+		if target != "" {
+			ldflags += " -extldflags=-Wl,--subsystem,windows"
+		}
+	}
+
+	if goos == "darwin" && target != "" {
+		// Every darwin cross-build links with zig's Mach-O linker (darwinCross always sets
+		// CC=zig cc), which — unlike Apple's ld64 — doesn't coalesce duplicate
+		// LC_LOAD_DYLIB commands. go build doubles CGO_LDFLAGS for the cyclic
+		// archive<->framework second pass (see staticLibLink) and Rust's native-static-libs
+		// lists -lobjc twice, so libobjc/libiconv end up duplicated and dyld aborts at
+		// launch with "duplicate linked dylib '/usr/lib/libobjc.A.dylib'".
+		// -dead_strip_dylibs regenerates one load command per dylib that supplies a symbol,
+		// removing the duplicates. Linker behaviour, not host — applies from any host.
+		ldflags += " -extldflags=-Wl,-dead_strip_dylibs"
+		if hostGOOS == "windows" {
+			// Windows host only: skip Go's post-link LC_UUID rewrite, which does
+			// open(out) -> write out~ -> remove(out) -> rename(out~, out) while holding the
+			// out handle open. Windows can't remove/rename a file with an open handle, so
+			// the rename fails "Access is denied"; POSIX hosts allow it and keep the build
+			// ID. -B= yields no UUID (unlike -B=none, which adds a -no_uuid arg zig
+			// rejects); -buildid= stops Go promoting the empty -B back to "gobuildid".
+			ldflags += " -B= -buildid="
+		}
+	}
+
+	return ldflags
 }
 
 // wrapperEnv returns the process env plus the cgo settings that link the prebuilt

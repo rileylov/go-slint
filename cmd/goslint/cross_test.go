@@ -105,3 +105,36 @@ func TestLinkByPath(t *testing.T) {
 		t.Error("linkByPath(windows_amd64) = true, want false (mingw uses the GNU group form)")
 	}
 }
+
+// TestDefaultLdflags pins the -ldflags goslint injects for each host x target combination.
+// It is the CI guarantee for the darwin cross-build fixups (the Linux->macOS branch can't
+// be exercised at runtime on a Windows box), so keep the host cases exhaustive.
+func TestDefaultLdflags(t *testing.T) {
+	const strip = "-s -w"
+	cases := []struct {
+		name, goos, target, host, want string
+	}{
+		{"native linux", "linux", "", "linux", strip},
+		{"native darwin (ld64, no fixups)", "darwin", "", "darwin", strip},
+		{"native windows host", "windows", "", "windows", strip + " -H=windowsgui"},
+		{"cross windows from linux", "windows", "windows_amd64", "linux",
+			strip + " -H=windowsgui -extldflags=-Wl,--subsystem,windows"},
+		{"cross windows from darwin (host-independent)", "windows", "windows_amd64", "darwin",
+			strip + " -H=windowsgui -extldflags=-Wl,--subsystem,windows"},
+		{"cross linux from windows (no fixups)", "linux", "linux_arm64", "windows", strip},
+		{"cross darwin from windows", "darwin", "darwin_arm64", "windows",
+			strip + " -extldflags=-Wl,-dead_strip_dylibs -B= -buildid="},
+		{"cross darwin from linux", "darwin", "darwin_arm64", "linux",
+			strip + " -extldflags=-Wl,-dead_strip_dylibs"},
+		{"cross darwin from darwin", "darwin", "darwin_amd64", "darwin",
+			strip + " -extldflags=-Wl,-dead_strip_dylibs"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := defaultLdflags(tc.goos, tc.target, tc.host); got != tc.want {
+				t.Errorf("defaultLdflags(%q, %q, %q) = %q, want %q",
+					tc.goos, tc.target, tc.host, got, tc.want)
+			}
+		})
+	}
+}
