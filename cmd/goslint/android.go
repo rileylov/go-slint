@@ -705,6 +705,11 @@ func injectFiles(apk string, files map[string]string) error {
 	if err := out.Close(); err != nil {
 		return err
 	}
+	// Release the input handle before renaming over apk: on Windows a file with an open
+	// handle can't be replaced, so os.Rename fails with "Access is denied" while the
+	// zip.Reader still holds apk open (POSIX allows the rename regardless). The deferred
+	// r.Close() above then no-ops.
+	r.Close()
 	return os.Rename(tmp, apk)
 }
 
