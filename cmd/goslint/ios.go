@@ -352,7 +352,9 @@ func parseOrientations(s string) []string {
 func genIOSPlist(bundleID, label, execName, versionName string, versionCode int, minOS, platform string, orientations []string) string {
 	var orient strings.Builder
 	for _, o := range orientations {
-		orient.WriteString("\n        <string>" + o + "</string>")
+		orient.WriteString("\n        <string>")
+		orient.WriteString(o)
+		orient.WriteString("</string>")
 	}
 	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

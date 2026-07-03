@@ -1059,3 +1059,20 @@ func TestNewImageFromSVG(t *testing.T) {
 		t.Errorf("pic.height = %d; want 200", h)
 	}
 }
+
+// TestAs checks the guarded conversion the generated typed getters build on: the right
+// type passes through, and a wrong type returns an error instead of panicking (§1.3).
+func TestAs(t *testing.T) {
+	if got, err := slint.As[string](any("hi")); err != nil || got != "hi" {
+		t.Errorf(`As[string]("hi") = %q, %v`, got, err)
+	}
+	if got, err := slint.As[float64](any(3.5)); err != nil || got != 3.5 {
+		t.Errorf("As[float64](3.5) = %v, %v", got, err)
+	}
+	if _, err := slint.As[string](any(123)); err == nil {
+		t.Error("As[string](123) should error, not panic")
+	}
+	if _, err := slint.As[float64](any("nope")); err == nil {
+		t.Error(`As[float64]("nope") should error`)
+	}
+}

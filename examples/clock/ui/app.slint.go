@@ -140,7 +140,11 @@ func (c *Clock) Ticks() (int, error) {
 		var zero int
 		return zero, err
 	}
-	return int(v.(float64)), nil
+	n, err := slint.As[float64](v)
+	if err != nil {
+		return 0, err
+	}
+	return int(n), nil
 }
 
 // SetTicks sets the "ticks" property.

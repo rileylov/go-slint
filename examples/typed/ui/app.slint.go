@@ -142,7 +142,11 @@ func (c *AppWindow) Clicks() (int, error) {
 		var zero int
 		return zero, err
 	}
-	return int(v.(float64)), nil
+	n, err := slint.As[float64](v)
+	if err != nil {
+		return 0, err
+	}
+	return int(n), nil
 }
 
 // SetClicks sets the "clicks" property.
@@ -160,14 +164,19 @@ func (c *AppWindow) Log() ([]string, error) {
 		var zero []string
 		return zero, err
 	}
-	return func() []string {
-		raw, _ := v.([]any)
-		out := make([]string, 0, len(raw))
-		for _, e := range raw {
-			out = append(out, e.(string))
+	raw, err := slint.As[[]any](v)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(raw))
+	for _, e := range raw {
+		x, err := slint.As[string](e)
+		if err != nil {
+			return nil, err
 		}
-		return out
-	}(), nil
+		out = append(out, x)
+	}
+	return out, nil
 }
 
 // SetLog sets the "log" property.
@@ -202,7 +211,7 @@ func (c *AppWindow) Name() (string, error) {
 		var zero string
 		return zero, err
 	}
-	return v.(string), nil
+	return slint.As[string](v)
 }
 
 // SetName sets the "name" property.
@@ -228,7 +237,11 @@ func (g *AppWindowApp) Calls() (int, error) {
 		var zero int
 		return zero, err
 	}
-	return int(v.(float64)), nil
+	n, err := slint.As[float64](v)
+	if err != nil {
+		return 0, err
+	}
+	return int(n), nil
 }
 
 // SetCalls sets the "calls" property.

@@ -4,16 +4,10 @@
 
 use crate::{guard, opt_str, set_last_error, to_c_string};
 use slint_interpreter::{CompilationResult, Compiler, ComponentDefinition, DiagnosticLevel};
-use std::ffi::{c_char, c_void, CStr, CString};
+use std::ffi::{c_char, CStr, CString};
 use std::future::{ready, Future};
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
-
-extern "C" {
-    // The Go-returned source string is a C-heap (malloc) string; free it with the
-    // matching C free, not Rust's allocator.
-    fn free(ptr: *mut c_void);
-}
 
 #[no_mangle]
 pub extern "C" fn goslint_compiler_new() -> *mut Compiler {
@@ -103,8 +97,9 @@ pub unsafe extern "C" fn goslint_compiler_set_library_paths(
     })
 }
 
-/// A Go-backed fallback loader for `.slint` imports. `load(handle, path)` returns
-/// owned C-heap source (this side frees it) or NULL for "not found".
+/// A Go-backed fallback loader for `.slint` imports. `load(handle, path)` returns a
+/// C-heap source string owned and freed by Go (this side only copies it), or NULL for
+/// "not found".
 struct GoFileLoader {
     handle: usize,
     load: extern "C" fn(usize, *const c_char) -> *mut c_char,
@@ -124,7 +119,10 @@ impl GoFileLoader {
         let s = unsafe { CStr::from_ptr(raw) }
             .to_string_lossy()
             .into_owned();
-        unsafe { free(raw as *mut c_void) };
+        // The buffer is owned and freed by the Go side (it frees the previous return on
+        // the next call / on drop). We must NOT free it here: cgo's malloc and this lib's
+        // libc free can be different CRTs (e.g. a UCRT MinGW cgo build + this msvcrt lib),
+        // and a cross-allocator free corrupts the heap.
         Some(s)
     }
 }
@@ -143,9 +141,9 @@ impl Drop for GoFileLoader {
 /// lets normal resolution proceed. Builtins (e.g. std-widgets) never reach it.
 ///
 /// # Safety
-/// `c` must be a valid compiler pointer. `load` must return a C-heap (malloc)
-/// string or NULL. `drop`, if non-NULL, is called once with `handle` when the
-/// loader is released (the compiler is freed).
+/// `c` must be a valid compiler pointer. `load` must return a C-heap string the Go side
+/// owns and frees (this code only copies it), or NULL. `drop`, if non-NULL, is called
+/// once with `handle` when the loader is released (the compiler is freed).
 #[no_mangle]
 pub unsafe extern "C" fn goslint_compiler_set_file_loader(
     c: *mut Compiler,

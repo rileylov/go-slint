@@ -73,6 +73,8 @@ func main() {
 		err = cmdGo("build", os.Args[2:])
 	case "run":
 		err = cmdGo("run", os.Args[2:])
+	case "test":
+		err = cmdGo("test", os.Args[2:])
 	case "env":
 		err = cmdEnv(os.Args[2:])
 	case "doctor":
@@ -83,6 +85,8 @@ func main() {
 		err = cmdIOS(os.Args[2:])
 	case "uninstall":
 		err = cmdUninstall(os.Args[2:])
+	case "version", "--version", "-v":
+		err = cmdVersion(os.Args[2:])
 	case "help", "-h", "--help":
 		usage()
 	default:
@@ -109,6 +113,7 @@ Usage:
                                                        linux_amd64, linux_arm64, darwin_amd64, darwin_arm64;
                                                        darwin needs GOSLINT_MACOS_SDK)
   goslint run   [go run args...]                      go run   with the lib wired up
+  goslint test  [go test args...]                     go test  with the lib wired up (plain go test fails at link)
   goslint env                                         print the PKG_CONFIG_PATH export line
   goslint doctor                                      check the toolchain and cached lib
   goslint android build [flags] <package>            build a signed APK of a Go package
@@ -116,6 +121,7 @@ Usage:
   goslint ios build [flags] <package>                build a signed .app for iOS (simulator or -device)
   goslint ios dev [flags] [package]                  run in the iOS simulator, rebuild+reload on edits
   goslint uninstall [-keep-binary]                    remove downloaded libs + the binary
+  goslint version                                     print the goslint (and resolved lib) version
 
 Environment:
   GOSLINT_BASE_URL     override the release base (e.g. file:///path/to/release)
@@ -192,6 +198,48 @@ func selfVersion() string {
 		return ""
 	}
 	return v
+}
+
+// cmdVersion prints the goslint CLI's own version, and — when it resolves to a real one
+// (inside a project, or via GOSLINT_LIB_VERSION) — the native-lib version it would use.
+func cmdVersion(args []string) error {
+	fmt.Printf("goslint %s\n", goslintVersion())
+	if v := version(); v != defaultLibVersion {
+		fmt.Printf("native lib %s (%s)\n", v, versionSource())
+	}
+	return nil
+}
+
+// goslintVersion is the goslint binary's own version string: its module install tag
+// (e.g. "v0.17.1"), or a short VCS revision for a source-tree build, else "devel".
+// Unlike selfVersion (which returns "" for local builds so the LIB version can fall
+// through), this always yields something printable.
+func goslintVersion() string {
+	bi, ok := debug.ReadBuildInfo()
+	if !ok {
+		return "devel"
+	}
+	if v := bi.Main.Version; v != "" && v != "(devel)" {
+		return v
+	}
+	var rev, dirty string
+	for _, s := range bi.Settings {
+		switch s.Key {
+		case "vcs.revision":
+			rev = s.Value
+		case "vcs.modified":
+			if s.Value == "true" {
+				dirty = "+dirty"
+			}
+		}
+	}
+	if rev != "" {
+		if len(rev) > 12 {
+			rev = rev[:12]
+		}
+		return "devel-" + rev + dirty
+	}
+	return "devel"
 }
 
 // moduleVersion reports the go-slint version the current project requires, by

@@ -142,7 +142,7 @@ func (c *HelloWorld) Greeting() (string, error) {
 		var zero string
 		return zero, err
 	}
-	return v.(string), nil
+	return slint.As[string](v)
 }
 
 // SetGreeting sets the "Greeting" property.

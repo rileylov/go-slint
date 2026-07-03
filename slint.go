@@ -19,6 +19,18 @@ func Version() string { return slintsys.Version() }
 // windows). Intended for tests; call once per process on the UI thread.
 func InitHeadless() error { return slintsys.InitHeadless() }
 
+// As converts a dynamic property/callback value to the typed T, returning a clear
+// error instead of panicking when the value isn't that type. The generated typed
+// getters build on it, so an unexpected value surfaces as an error — matching the
+// dynamic API (Instance.Int, etc.) rather than a panic mid-getter.
+func As[T any](v any) (T, error) {
+	if t, ok := v.(T); ok {
+		return t, nil
+	}
+	var zero T
+	return zero, fmt.Errorf("goslint: value has type %T, want %T", v, zero)
+}
+
 // MockElapsedTime advances the headless backend's mock clock by ms milliseconds.
 func MockElapsedTime(ms uint64) { slintsys.MockElapsedTime(ms) }
 

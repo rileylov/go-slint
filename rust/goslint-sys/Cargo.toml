@@ -72,3 +72,9 @@ i-slint-backend-selector = { path = "../../slint/internal/backends/selector", fe
 [profile.release]
 lto = "fat"
 codegen-units = 1
+# Pin the unwind strategy explicitly: every `extern "C"` body relies on `guard`
+# (catch_unwind) to stop a Rust panic crossing into C. `panic = "abort"` — a tempting
+# size optimization — would make catch_unwind a no-op and turn any panic into an
+# immediate process abort, silently breaking the whole FFI safety model. This is the
+# default today; pinning it makes that dependency explicit and abort-proof.
+panic = "unwind"

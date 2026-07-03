@@ -20,7 +20,7 @@ import "runtime/cgo"
 // translations. Replaces any previous translator. Needs a backend (call after init /
 // the first window), on the UI thread.
 func SetTranslator(fn Translator) error {
-	h := cgo.NewHandle(fn)
+	h := cgo.NewHandle(&translatorState{fn: fn})
 	return rc(C.goslintSetTranslatorBridge(C.uintptr_t(h)), "set translator")
 }
 

@@ -20,6 +20,6 @@ import "runtime/cgo"
 // a multi-file component from embedded source. The handle is released when the
 // compiler is freed.
 func (c *Compiler) SetFileLoader(fn FileLoader) {
-	h := cgo.NewHandle(fn)
+	h := cgo.NewHandle(&fileLoaderState{fn: fn})
 	C.goslintCompilerSetFileLoaderBridge(c.ptr, C.uintptr_t(h))
 }

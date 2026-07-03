@@ -4,11 +4,7 @@
 
 use crate::{guard, set_last_error};
 use std::borrow::Cow;
-use std::ffi::{c_char, c_void, CStr};
-
-extern "C" {
-    fn free(ptr: *mut c_void); // Go-returned C.CString is malloc'd; free with libc free
-}
+use std::ffi::{c_char, CStr};
 
 /// A Go-backed translator. `translate(handle, msgid)` returns an owned C string (the
 /// translation) or NULL to fall back to the original. `drop` releases `handle`.
@@ -32,7 +28,9 @@ impl GoTranslator {
         let out = unsafe { CStr::from_ptr(raw) }
             .to_string_lossy()
             .into_owned();
-        unsafe { free(raw as *mut c_void) };
+        // Owned and freed by the Go side (see compiler.rs and translator.go). Freeing a
+        // cgo-malloc'd pointer here with this lib's libc would be a cross-allocator free
+        // (heap corruption when the two link different CRTs).
         Some(out)
     }
 }
@@ -73,8 +71,9 @@ impl tr::Translator for GoTranslator {
 /// after init / the first window), on the UI thread.
 ///
 /// # Safety
-/// `translate` must return a heap C string (malloc) or NULL; `drop`, if non-NULL, is
-/// called once with `handle` when the translator is replaced/cleared.
+/// `translate` must return a C-heap string the Go side owns and frees (this code only
+/// copies it), or NULL; `drop`, if non-NULL, is called once with `handle` when the
+/// translator is replaced/cleared.
 #[no_mangle]
 pub unsafe extern "C" fn goslint_set_translator(
     handle: usize,

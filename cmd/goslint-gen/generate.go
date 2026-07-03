@@ -187,7 +187,8 @@ func emitProperties(b *strings.Builder, recv, _ string, props []Prop, a propAcce
 			p("\tv, err := %s.inner.GetGlobal(%q, %q)\n", a.base, a.global, pr.Name)
 		}
 		p("\tif err != nil {\n\t\tvar zero %s\n\t\treturn zero, err\n\t}\n", gt)
-		p("\treturn %s, nil\n}\n\n", fromAny("v", pr.Ty))
+		emitGuardedReturn(b, "v", pr.Ty)
+		p("}\n\n")
 		// setter — skipped for output-only properties (setting an `out` property fails
 		// at runtime; an empty direction, e.g. from an older lib, keeps the setter).
 		// Records for live-reload replay.
@@ -250,7 +251,8 @@ func emitCallables(b *strings.Builder, recv, _ string, cs []Callable, isFn bool,
 				p("\tr, err := %s.inner.InvokeGlobal(%q, %q%s)\n", a.base, a.global, c.Name, commaList(invokeArgs))
 			}
 			p("\tif err != nil {\n\t\tvar zero %s\n\t\treturn zero, err\n\t}\n", rt)
-			p("\treturn %s, nil\n}\n\n", fromAny("r", c.Ret))
+			emitGuardedReturn(b, "r", c.Ret)
+			p("}\n\n")
 			continue
 		}
 		// callback -> On<Name>(handler)
@@ -411,6 +413,56 @@ func fromAny(expr string, t TypeInfo) string {
 			goType(t), expr, goType(t), fromAny("e", elem))
 	default:
 		return expr
+	}
+}
+
+// emitGuardedReturn writes a getter/function-return body that converts the `any` value
+// in expr to the typed value t and returns it — or returns a clear error on a type
+// mismatch, instead of the panic a raw type assertion would cause. (Callback-arg
+// conversion still uses fromAny: a callback handler has no error channel, and a mismatch
+// there is recovered by the FFI bridge rather than crossing into C.)
+func emitGuardedReturn(b *strings.Builder, expr string, t TypeInfo) {
+	p := func(f string, x ...any) { fmt.Fprintf(b, f, x...) }
+	gt := goType(t)
+	switch t.Kind {
+	case "float", "string", "bool", "color", "image":
+		// slint.As returns (T, error) directly, matching the getter signature.
+		p("\treturn slint.As[%s](%s)\n", gt, expr)
+	case "int":
+		p("\tn, err := slint.As[float64](%s)\n\tif err != nil {\n\t\treturn 0, err\n\t}\n\treturn int(n), nil\n", expr)
+	case "enum":
+		p("\te, err := slint.As[slint.Enum](%s)\n\tif err != nil {\n\t\tvar zero %s\n\t\treturn zero, err\n\t}\n\treturn %s(e.Value), nil\n", expr, gt, exported(t.Name))
+	case "struct":
+		p("\tm, err := slint.As[map[string]any](%s)\n\tif err != nil {\n\t\tvar zero %s\n\t\treturn zero, err\n\t}\n\treturn %sFromMap(m), nil\n", expr, gt, unexported(exported(t.Name)))
+	case "array":
+		elem := elemOr(t)
+		p("\traw, err := slint.As[[]any](%s)\n\tif err != nil {\n\t\treturn nil, err\n\t}\n", expr)
+		p("\tout := make(%s, 0, len(raw))\n\tfor _, e := range raw {\n", gt)
+		emitElemAppend(b, elem)
+		p("\t}\n\treturn out, nil\n")
+	default:
+		p("\treturn %s, nil\n", expr) // untyped element (`any`) — nothing to assert
+	}
+}
+
+// emitElemAppend writes the guarded per-element conversion inside an array getter's
+// loop, appending to `out` or returning `nil, err` on a mismatch. Common element kinds
+// are guarded; nested arrays / untyped elements keep the existing fromAny conversion
+// (rare, and still compile-checked).
+func emitElemAppend(b *strings.Builder, elem TypeInfo) {
+	p := func(f string, x ...any) { fmt.Fprintf(b, f, x...) }
+	egt := goType(elem)
+	switch elem.Kind {
+	case "float", "string", "bool", "color", "image":
+		p("\t\tx, err := slint.As[%s](e)\n\t\tif err != nil {\n\t\t\treturn nil, err\n\t\t}\n\t\tout = append(out, x)\n", egt)
+	case "int":
+		p("\t\tn, err := slint.As[float64](e)\n\t\tif err != nil {\n\t\t\treturn nil, err\n\t\t}\n\t\tout = append(out, int(n))\n")
+	case "enum":
+		p("\t\tev, err := slint.As[slint.Enum](e)\n\t\tif err != nil {\n\t\t\treturn nil, err\n\t\t}\n\t\tout = append(out, %s(ev.Value))\n", exported(elem.Name))
+	case "struct":
+		p("\t\tm, err := slint.As[map[string]any](e)\n\t\tif err != nil {\n\t\t\treturn nil, err\n\t\t}\n\t\tout = append(out, %sFromMap(m))\n", unexported(exported(elem.Name)))
+	default:
+		p("\t\tout = append(out, %s)\n", fromAny("e", elem))
 	}
 }
 

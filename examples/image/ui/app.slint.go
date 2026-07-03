@@ -142,7 +142,7 @@ func (c *AppWindow) Frame() (*slint.Image, error) {
 		var zero *slint.Image
 		return zero, err
 	}
-	return v.(*slint.Image), nil
+	return slint.As[*slint.Image](v)
 }
 
 // SetFrame sets the "frame" property.

@@ -47,7 +47,9 @@ int  goslint_run_event_loop_until_quit(void);      /* blocks; does not quit on l
 int  goslint_quit_event_loop(void);
 int  goslint_invoke_from_event_loop(void (*cb)(uintptr_t), uintptr_t handle, void (*drop)(uintptr_t));
 
-/* runtime translation of @tr(...): translate(handle, msgid) returns malloc'd text or NULL */
+/* runtime translation of @tr(...): translate(handle, msgid) returns malloc'd text or
+   NULL. Ownership as for GoFileLoaderLoad: the caller (Go side) frees it, the library
+   only copies. */
 typedef char *(*GoTranslate)(uintptr_t handle, const char *msgid);
 int  goslint_set_translator(uintptr_t handle, GoTranslate translate, void (*drop)(uintptr_t));
 void goslint_clear_translator(void);
@@ -62,7 +64,10 @@ void        goslint_compiler_free(GoCompiler *c);
 void        goslint_compiler_set_style(GoCompiler *c, const char *style);
 void        goslint_compiler_set_include_paths(GoCompiler *c, const char *const *paths, size_t n);
 void        goslint_compiler_set_library_paths(GoCompiler *c, const char *const *names, const char *const *paths, size_t n);
-/* fallback import loader: returns malloc'd source (freed by the library) or NULL */
+/* fallback import loader: returns malloc'd source or NULL. The CALLER (Go side) owns
+   and frees the buffer; the library only copies it before returning — never free it in
+   the library (its libc free may be a different CRT than the caller's malloc on
+   Windows: cross-allocator free = heap corruption). */
 typedef char *(*GoFileLoaderLoad)(uintptr_t handle, const char *path);
 void        goslint_compiler_set_file_loader(GoCompiler *c, uintptr_t handle, GoFileLoaderLoad load, void (*drop)(uintptr_t));
 GoCompilationResult *goslint_compiler_build_from_source(GoCompiler *c, const char *src, const char *path);
