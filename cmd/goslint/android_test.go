@@ -265,3 +265,32 @@ func TestFindSDKWindowsDefault(t *testing.T) {
 		t.Errorf("findSDK() = %q, want the LOCALAPPDATA default %q", got, sdk)
 	}
 }
+
+// TestJavaEnv pins the apksigner JVM handoff: with JAVA_HOME set or java on PATH
+// nothing is added; with only a keytool findable (e.g. Android Studio's bundled
+// JDK), JAVA_HOME is derived from it so apksigner's launcher script finds java.
+func TestJavaEnv(t *testing.T) {
+	// Already configured -> no overrides.
+	t.Setenv("JAVA_HOME", "/some/jdk")
+	if got := javaEnv(); got != nil {
+		t.Errorf("with JAVA_HOME set, javaEnv() = %v, want nil", got)
+	}
+
+	// No JAVA_HOME, no java on PATH, keytool findable -> derive JAVA_HOME.
+	t.Setenv("JAVA_HOME", "")
+	t.Setenv("HOME", t.TempDir()) // keep real JDK install dirs out of the search
+	jdk := filepath.Join(t.TempDir(), "jdk")
+	bin := filepath.Join(jdk, "bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	kt := filepath.Join(bin, exeName(runtime.GOOS, "keytool"))
+	if err := os.WriteFile(kt, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin) // keytool resolvable, java NOT
+	got := javaEnv()
+	if len(got) != 1 || got[0] != "JAVA_HOME="+jdk {
+		t.Errorf("javaEnv() = %v, want [JAVA_HOME=%s]", got, jdk)
+	}
+}

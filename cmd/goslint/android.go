@@ -202,8 +202,10 @@ func buildAPK(cfg androidBuildCfg) error {
 		}
 	}
 
-	// 7. apksigner sign -> output
-	if err := run(tc.apksigner, "sign", "--ks", ks, "--ks-pass", "pass:"+cfg.ksPass,
+	// 7. apksigner sign -> output. apksigner is a script that launches `java`, and
+	// it only looks at PATH and JAVA_HOME — javaEnv points it at the same JDK we
+	// found keytool in (e.g. Android Studio's bundled one) when neither is set.
+	if err := runEnv(javaEnv(), tc.apksigner, "sign", "--ks", ks, "--ks-pass", "pass:"+cfg.ksPass,
 		"--ks-key-alias", cfg.keyAlias, "--key-pass", "pass:"+cfg.keyPass,
 		"--out", cfg.out, aligned); err != nil {
 		return fmt.Errorf("apksigner: %w", err)
@@ -626,6 +628,22 @@ func jdkBinDirs(goos, javaHome, programFiles, home string) []string {
 		glob("/usr/lib/jvm/*/bin")
 	}
 	return dirs
+}
+
+// javaEnv returns env overrides that let JDK-launching SDK tools (apksigner is a
+// .bat/.sh wrapper around `java -jar`) find a JVM. If JAVA_HOME is set or java is
+// already on PATH, nothing is needed. Otherwise derive JAVA_HOME from the JDK we
+// found keytool in (keytool lives in <java-home>/bin), so a machine whose only
+// JVM is Android Studio's bundled one still signs without any setup.
+func javaEnv() []string {
+	if os.Getenv("JAVA_HOME") != "" || inPath("java") {
+		return nil
+	}
+	kt := findKeytool()
+	if kt == "" {
+		return nil
+	}
+	return []string{"JAVA_HOME=" + filepath.Dir(filepath.Dir(kt))}
 }
 
 // findSDK returns the first candidate location that actually contains build-tools,
