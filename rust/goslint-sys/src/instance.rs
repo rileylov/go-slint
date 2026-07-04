@@ -295,9 +295,12 @@ pub unsafe extern "C" fn goslint_instance_on_close_requested(
     drop: Option<extern "C" fn(usize)>,
 ) {
     guard((), || {
-        if let Some(i) = i.as_ref() {
-            let data = CloseCallback { handle, cb, drop };
-            i.window().on_close_requested(move || data.call());
+        // Owner-first: constructed before the instance check, so a NULL instance
+        // still releases the Go handle when `data` drops here.
+        let data = CloseCallback { handle, cb, drop };
+        match i.as_ref() {
+            Some(i) => i.window().on_close_requested(move || data.call()),
+            None => crate::set_last_error("on_close_requested: instance is NULL"),
         }
     })
 }
@@ -666,6 +669,15 @@ pub unsafe extern "C" fn goslint_instance_set_callback(
     drop: Option<extern "C" fn(usize)>,
 ) -> i32 {
     guard(1, || {
+        // Own the Go handle FIRST: if validation below fails, dropping `data` releases
+        // the cgo.Handle via `drop`. Validating before constructing the owner leaked
+        // the handle on every rejected registration — the Go side relies on the error
+        // path releasing it (see slintsys/callback_bridge.go).
+        let data = GoCallbackData {
+            user_data,
+            drop,
+            cb,
+        };
         let inst = match i.as_ref() {
             Some(i) => i,
             None => {
@@ -679,11 +691,6 @@ pub unsafe extern "C" fn goslint_instance_set_callback(
                 crate::set_last_error("set_callback: name is NULL or not valid UTF-8");
                 return 1;
             }
-        };
-        let data = GoCallbackData {
-            user_data,
-            drop,
-            cb,
         };
         match inst.set_callback(name, move |args| data.call(args)) {
             Ok(()) => 0,
@@ -812,6 +819,13 @@ pub unsafe extern "C" fn goslint_instance_set_global_callback(
     drop: Option<extern "C" fn(usize)>,
 ) -> i32 {
     guard(1, || {
+        // Owner-first, like set_callback: a rejected registration must still release
+        // the Go handle when `data` drops.
+        let data = GoCallbackData {
+            user_data,
+            drop,
+            cb,
+        };
         let inst = match i.as_ref() {
             Some(i) => i,
             None => {
@@ -821,12 +835,10 @@ pub unsafe extern "C" fn goslint_instance_set_global_callback(
         };
         let (g, nm) = match (opt_str(global), opt_str(name)) {
             (Some(g), Some(n)) => (g, n),
-            _ => return 1,
-        };
-        let data = GoCallbackData {
-            user_data,
-            drop,
-            cb,
+            _ => {
+                crate::set_last_error("set_global_callback: global or name is NULL or not valid UTF-8");
+                return 1;
+            }
         };
         match inst.set_global_callback(g, nm, move |args| data.call(args)) {
             Ok(()) => 0,

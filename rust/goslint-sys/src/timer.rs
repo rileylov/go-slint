@@ -70,6 +70,10 @@ pub unsafe extern "C" fn goslint_timer_start(
     drop: Option<extern "C" fn(usize)>,
 ) {
     guard((), || {
+        // Owner-first: constructed before the timer check, so starting a NULL (e.g.
+        // already-Closed) timer still releases the Go handle when `data` drops here —
+        // previously each such Start leaked one handle.
+        let data = TimerCallback { handle, cb, drop };
         let t = match t.as_ref() {
             Some(t) => t,
             None => {
@@ -77,7 +81,6 @@ pub unsafe extern "C" fn goslint_timer_start(
                 return;
             }
         };
-        let data = TimerCallback { handle, cb, drop };
         t.start(
             timer_mode(mode),
             std::time::Duration::from_millis(interval_ms),

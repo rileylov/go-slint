@@ -158,6 +158,9 @@ pub unsafe extern "C" fn goslint_compiler_set_file_loader(
     drop: Option<extern "C" fn(usize)>,
 ) {
     guard((), || {
+        // Owner-first: constructed before the compiler check, so a NULL compiler
+        // still releases the Go handle when `loader` drops here.
+        let loader = GoFileLoader { handle, load, drop };
         let c = match c.as_mut() {
             Some(c) => c,
             None => {
@@ -165,7 +168,6 @@ pub unsafe extern "C" fn goslint_compiler_set_file_loader(
                 return;
             }
         };
-        let loader = GoFileLoader { handle, load, drop };
         c.set_file_loader(
             move |path| -> Pin<Box<dyn Future<Output = Option<std::io::Result<String>>>>> {
                 Box::pin(ready(loader.fetch(path).map(Ok)))
