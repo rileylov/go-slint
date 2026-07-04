@@ -188,7 +188,13 @@ func buildAPK(cfg androidBuildCfg) error {
 				return err
 			}
 			fmt.Println(">> creating debug keystore", ks)
-			if err := run("keytool", "-genkeypair", "-keystore", ks, "-alias", cfg.keyAlias,
+			kt := findKeytool()
+			if kt == "" {
+				return fmt.Errorf("keytool not found — creating the signing keystore needs a JDK.\n" +
+					"  → install one (e.g. Temurin 17+: https://adoptium.net) or set JAVA_HOME.\n" +
+					"    Android Studio's bundled JDK works too (goslint looks for it automatically)")
+			}
+			if err := run(kt, "-genkeypair", "-keystore", ks, "-alias", cfg.keyAlias,
 				"-storepass", cfg.ksPass, "-keypass", cfg.keyPass, "-keyalg", "RSA", "-keysize", "2048",
 				"-validity", "10000", "-dname", "CN=Android Debug,O=Android,C=US"); err != nil {
 				return fmt.Errorf("keytool: %w", err)
@@ -503,20 +509,21 @@ func resolveAndroidTools(sdkArg, ndkArg string) (androidTools, error) {
 	if t.sdk == "" {
 		return t, fmt.Errorf("Android SDK not found — looked at -sdk, $ANDROID_HOME, " +
 			"$ANDROID_SDK_ROOT, ~/android-sdk, ~/Android/Sdk, ~/Library/Android/sdk, " +
-			"and the Homebrew/apt SDK dir (none had build-tools). Pass -sdk <dir> or set ANDROID_HOME")
+			"%%LOCALAPPDATA%%\\Android\\Sdk, and the Homebrew/apt SDK dir (none had " +
+			"build-tools). Pass -sdk <dir> or set ANDROID_HOME")
 	}
 	// Only `goslint android dev` uses these; existence is checked there (a plain build
 	// needs neither), so record the paths unconditionally.
-	t.adb = filepath.Join(t.sdk, "platform-tools", "adb")
-	t.emulator = filepath.Join(t.sdk, "emulator", "emulator")
+	t.adb = toolPath(filepath.Join(t.sdk, "platform-tools"), "adb")
+	t.emulator = toolPath(filepath.Join(t.sdk, "emulator"), "emulator")
 	bt, err := latestDir(filepath.Join(t.sdk, "build-tools"), "*")
 	if err != nil {
 		return t, fmt.Errorf("no build-tools under %s: %w", t.sdk, err)
 	}
 	t.buildTools = bt
-	t.aapt2 = filepath.Join(bt, "aapt2")
-	t.zipalign = filepath.Join(bt, "zipalign")
-	t.apksigner = filepath.Join(bt, "apksigner")
+	t.aapt2 = toolPath(bt, "aapt2")
+	t.zipalign = toolPath(bt, "zipalign")
+	t.apksigner = toolPath(bt, "apksigner")
 
 	plat, err := latestDir(filepath.Join(t.sdk, "platforms"), "android-*")
 	if err != nil {
@@ -546,6 +553,81 @@ func resolveAndroidTools(sdkArg, ndkArg string) (androidTools, error) {
 	return t, nil
 }
 
+// toolPath returns dir/name with the extension the tool actually has on this OS.
+// On Windows the SDK ships aapt2/zipalign/adb as .exe but apksigner (and
+// sdkmanager) as .bat — and while CreateProcess auto-appends .exe for a bare
+// name, it does NOT try .bat, so the extension must be explicit or the exec
+// fails with "file not found" despite the tool being right there.
+func toolPath(dir, name string) string {
+	return toolPathFor(dir, name, runtime.GOOS)
+}
+
+func toolPathFor(dir, name, goos string) string {
+	exts := []string{""}
+	if goos == "windows" {
+		exts = []string{".exe", ".bat", ".cmd"}
+	}
+	for _, e := range exts {
+		if p := filepath.Join(dir, name+e); exists(p) {
+			return p
+		}
+	}
+	return filepath.Join(dir, name) // let exec fail with a clear, concrete path
+}
+
+// findKeytool locates the JDK's keytool, which APK signing needs (keystore
+// creation): PATH first, then JAVA_HOME, then Android Studio's bundled JDK and
+// common JDK install locations. "" if none — the caller prints how to get one.
+func findKeytool() string {
+	if p, err := exec.LookPath("keytool"); err == nil {
+		return p
+	}
+	home, _ := os.UserHomeDir()
+	for _, dir := range jdkBinDirs(runtime.GOOS, os.Getenv("JAVA_HOME"), os.Getenv("ProgramFiles"), home) {
+		if p := filepath.Join(dir, exeName(runtime.GOOS, "keytool")); exists(p) {
+			return p
+		}
+	}
+	return ""
+}
+
+// jdkBinDirs lists candidate JDK bin directories, most specific first: JAVA_HOME,
+// Android Studio's bundled runtime (present on any machine with Studio — the
+// common case for someone building an APK), then vendor install dirs.
+func jdkBinDirs(goos, javaHome, programFiles, home string) []string {
+	var dirs []string
+	if javaHome != "" {
+		dirs = append(dirs, filepath.Join(javaHome, "bin"))
+	}
+	glob := func(pattern string) {
+		if m, err := filepath.Glob(pattern); err == nil {
+			sort.Slice(m, func(i, j int) bool { return naturalLess(m[i], m[j]) })
+			for i := len(m) - 1; i >= 0; i-- { // newest first
+				dirs = append(dirs, m[i])
+			}
+		}
+	}
+	switch goos {
+	case "windows":
+		if programFiles == "" {
+			programFiles = `C:\Program Files`
+		}
+		dirs = append(dirs, filepath.Join(programFiles, "Android", "Android Studio", "jbr", "bin"))
+		glob(filepath.Join(programFiles, "Eclipse Adoptium", "jdk*", "bin"))
+		glob(filepath.Join(programFiles, "Microsoft", "jdk*", "bin"))
+		glob(filepath.Join(programFiles, "Java", "jdk*", "bin"))
+	case "darwin":
+		dirs = append(dirs, "/Applications/Android Studio.app/Contents/jbr/Contents/Home/bin")
+		glob("/Library/Java/JavaVirtualMachines/*/Contents/Home/bin")
+	default: // linux
+		dirs = append(dirs,
+			"/opt/android-studio/jbr/bin",
+			filepath.Join(home, "android-studio", "jbr", "bin"))
+		glob("/usr/lib/jvm/*/bin")
+	}
+	return dirs
+}
+
 // findSDK returns the first candidate location that actually contains build-tools,
 // so an empty/stale ANDROID_HOME doesn't win over a real SDK on disk.
 func findSDK(sdkArg string) string {
@@ -555,8 +637,13 @@ func findSDK(sdkArg string) string {
 		os.Getenv("ANDROID_HOME"),
 		os.Getenv("ANDROID_SDK_ROOT"),
 		filepath.Join(home, "android-sdk"),
-		filepath.Join(home, "Android", "Sdk"),
-		filepath.Join(home, "Library", "Android", "sdk"),
+		filepath.Join(home, "Android", "Sdk"),            // Linux default
+		filepath.Join(home, "Library", "Android", "sdk"), // macOS default
+	}
+	// Windows default: %LOCALAPPDATA%\Android\Sdk is where Android Studio installs
+	// the SDK (NOT under the user profile root, so the entries above never hit it).
+	if lad := os.Getenv("LOCALAPPDATA"); lad != "" {
+		candidates = append(candidates, filepath.Join(lad, "Android", "Sdk"))
 	}
 	candidates = append(candidates, pkgManagerSDKs()...)
 	for _, c := range candidates {
@@ -751,8 +838,47 @@ func latestDir(parent, glob string) (string, error) {
 	if len(dirs) == 0 {
 		return "", fmt.Errorf("nothing matching %s in %s", glob, parent)
 	}
-	sort.Strings(dirs)
+	// Natural (numeric-aware) order: a plain string sort ranks "9.0.0" above
+	// "35.0.1" and "android-9" above "android-10", silently picking an ancient
+	// build-tools/platform when an old one is installed alongside the current one.
+	sort.Slice(dirs, func(i, j int) bool { return naturalLess(dirs[i], dirs[j]) })
 	return dirs[len(dirs)-1], nil
+}
+
+// naturalLess compares strings with digit runs compared as numbers ("android-9" <
+// "android-10", "9.0.0" < "35.0.1") and everything else bytewise.
+func naturalLess(a, b string) bool {
+	for a != "" && b != "" {
+		ad, an := splitLeadingDigits(a)
+		bd, bn := splitLeadingDigits(b)
+		if ad != "" && bd != "" {
+			// Compare the digit runs numerically: longer run (sans leading zeros)
+			// wins; equal length compares lexically (same as numerically for digits).
+			at, bt := strings.TrimLeft(ad, "0"), strings.TrimLeft(bd, "0")
+			if len(at) != len(bt) {
+				return len(at) < len(bt)
+			}
+			if at != bt {
+				return at < bt
+			}
+		} else {
+			if a[0] != b[0] {
+				return a[0] < b[0]
+			}
+			an, bn = a[1:], b[1:]
+		}
+		a, b = an, bn
+	}
+	return len(a) < len(b)
+}
+
+// splitLeadingDigits splits s into its leading digit run (possibly empty) and the rest.
+func splitLeadingDigits(s string) (digits, rest string) {
+	i := 0
+	for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+		i++
+	}
+	return s[:i], s[i:]
 }
 
 func copyFile(src, dst string) error {

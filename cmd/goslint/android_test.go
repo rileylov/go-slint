@@ -156,3 +156,112 @@ func TestGenManifest(t *testing.T) {
 		}
 	}
 }
+
+// TestNaturalLess pins the version-aware ordering that keeps latestDir from
+// picking "9.0.0" over "35.0.1" (a plain string sort does exactly that).
+func TestNaturalLess(t *testing.T) {
+	less := []struct{ a, b string }{
+		{"android-9", "android-10"},
+		{"9.0.0", "35.0.1"},
+		{"28.0.3", "35.0.1"},
+		{"1.2", "1.10"},
+		{"ndk/25.2.9519653", "ndk/29.0.14206865"},
+		{"abc", "abd"},
+	}
+	for _, c := range less {
+		if !naturalLess(c.a, c.b) {
+			t.Errorf("naturalLess(%q, %q) = false, want true", c.a, c.b)
+		}
+		if naturalLess(c.b, c.a) {
+			t.Errorf("naturalLess(%q, %q) = true, want false", c.b, c.a)
+		}
+	}
+}
+
+// TestLatestDirNaturalOrder checks the real-world shapes: old build-tools or an
+// old platform installed alongside the current one must not win.
+func TestLatestDirNaturalOrder(t *testing.T) {
+	root := t.TempDir()
+	for _, d := range []string{"build-tools/9.0.0", "build-tools/28.0.3", "build-tools/35.0.1"} {
+		if err := os.MkdirAll(filepath.Join(root, filepath.FromSlash(d)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := latestDir(filepath.Join(root, "build-tools"), "*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Base(got) != "35.0.1" {
+		t.Errorf("latestDir picked %s, want 35.0.1", filepath.Base(got))
+	}
+
+	for _, d := range []string{"platforms/android-9", "platforms/android-34"} {
+		if err := os.MkdirAll(filepath.Join(root, filepath.FromSlash(d)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err = latestDir(filepath.Join(root, "platforms"), "android-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Base(got) != "android-34" {
+		t.Errorf("latestDir picked %s, want android-34", filepath.Base(got))
+	}
+}
+
+// TestToolPathFor checks the Windows extension resolution: apksigner is a .bat
+// (CreateProcess only auto-appends .exe, so the extension must be explicit),
+// aapt2 is an .exe, and non-Windows keeps bare names.
+func TestToolPathFor(t *testing.T) {
+	dir := t.TempDir()
+	for _, f := range []string{"apksigner.bat", "aapt2.exe", "zipalign"} {
+		if err := os.WriteFile(filepath.Join(dir, f), []byte("x"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := toolPathFor(dir, "apksigner", "windows"); filepath.Base(got) != "apksigner.bat" {
+		t.Errorf("windows apksigner -> %s, want apksigner.bat", got)
+	}
+	if got := toolPathFor(dir, "aapt2", "windows"); filepath.Base(got) != "aapt2.exe" {
+		t.Errorf("windows aapt2 -> %s, want aapt2.exe", got)
+	}
+	if got := toolPathFor(dir, "zipalign", "linux"); filepath.Base(got) != "zipalign" {
+		t.Errorf("linux zipalign -> %s, want zipalign", got)
+	}
+	// missing tool: return the plain path so exec fails with something concrete
+	if got := toolPathFor(dir, "nope", "windows"); filepath.Base(got) != "nope" {
+		t.Errorf("missing tool -> %s, want nope", got)
+	}
+}
+
+// TestJDKBinDirs checks the keytool search order: JAVA_HOME first, then Android
+// Studio's bundled JDK, newest vendor JDK before older ones.
+func TestJDKBinDirs(t *testing.T) {
+	dirs := jdkBinDirs("windows", `C:\jdk`, `C:\PF`, "")
+	if len(dirs) < 2 || dirs[0] != filepath.Join(`C:\jdk`, "bin") {
+		t.Errorf("JAVA_HOME must be first, got %v", dirs)
+	}
+	if dirs[1] != filepath.Join(`C:\PF`, "Android", "Android Studio", "jbr", "bin") {
+		t.Errorf("Android Studio jbr must follow JAVA_HOME, got %v", dirs)
+	}
+	if dirs := jdkBinDirs("linux", "", "", "/home/u"); len(dirs) < 2 || dirs[0] != "/opt/android-studio/jbr/bin" {
+		t.Errorf("linux candidates wrong: %v", dirs)
+	}
+}
+
+// TestFindSDKWindowsDefault: %LOCALAPPDATA%\Android\Sdk is where Android Studio
+// puts the SDK on Windows — it must resolve without -sdk or ANDROID_HOME.
+func TestFindSDKWindowsDefault(t *testing.T) {
+	t.Setenv("HOME", t.TempDir()) // keep any real ~/android-sdk out of the way
+	t.Setenv("ANDROID_HOME", "")
+	t.Setenv("ANDROID_SDK_ROOT", "")
+	lad := t.TempDir()
+	sdk := filepath.Join(lad, "Android", "Sdk")
+	if err := os.MkdirAll(filepath.Join(sdk, "build-tools", "35.0.1"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("LOCALAPPDATA", lad)
+	if got := findSDK(""); got != sdk {
+		t.Errorf("findSDK() = %q, want the LOCALAPPDATA default %q", got, sdk)
+	}
+}

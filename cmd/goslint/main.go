@@ -947,6 +947,13 @@ func cmdDoctor(args []string) error {
 		} else {
 			fmt.Printf("               → %s\n", err)
 		}
+		// Signing an APK needs a JDK (keytool); a missing one used to surface only
+		// as a cryptic exec failure at the end of the first `android build`.
+		if kt := findKeytool(); kt != "" {
+			fmt.Printf("               → JDK keytool: %s\n", kt)
+		} else {
+			fmt.Println("               → no JDK found (needed to sign APKs) — install Temurin 17+ or set JAVA_HOME")
+		}
 	} else {
 		fmt.Println("  – Android SDK (optional; only for `goslint android build`): not found")
 		fmt.Println("               → set ANDROID_HOME, pass -sdk <dir>, or install via Homebrew/apt")
