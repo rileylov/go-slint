@@ -85,6 +85,8 @@ func main() {
 		err = cmdIOS(os.Args[2:])
 	case "uninstall":
 		err = cmdUninstall(os.Args[2:])
+	case "update", "upgrade":
+		err = cmdUpdate(os.Args[2:])
 	case "version", "--version", "-v":
 		err = cmdVersion(os.Args[2:])
 	case "help", "-h", "--help":
@@ -121,6 +123,7 @@ Usage:
   goslint ios build [flags] <package>                build a signed .app for iOS (simulator or -device)
   goslint ios dev [flags] [package]                  run in the iOS simulator, rebuild+reload on edits
   goslint uninstall [-keep-binary]                    remove downloaded libs + the binary
+  goslint update [-binary-only]                       update goslint (and this project's go-slint) to the latest release
   goslint version                                     print the goslint (and resolved lib) version
 
 Environment:
