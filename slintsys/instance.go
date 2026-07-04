@@ -8,6 +8,8 @@ import "C"
 
 import (
 	"errors"
+	"fmt"
+	"math"
 	"unsafe"
 )
 
@@ -85,9 +87,23 @@ func (i *Instance) TakeSnapshot() (pix []byte, w, h int, err error) {
 	if p == nil {
 		return nil, 0, 0, errors.New(lastErrorOr("take snapshot"))
 	}
-	n := C.size_t(uint(cw) * uint(ch) * 4)
-	defer C.goslint_pixels_free(p, n)
+	n, ok := snapshotLen(uint32(cw), uint32(ch))
+	defer C.goslint_pixels_free(p, C.size_t(n))
+	if !ok {
+		// C.GoBytes takes the length as a C.int: a buffer past 2^31-1 bytes would
+		// wrap negative (panic) or truncate (silent corruption). Refuse it instead.
+		return nil, 0, 0, fmt.Errorf("snapshot too large: %d×%d is %d bytes, over the 2 GiB copy limit", uint32(cw), uint32(ch), n)
+	}
 	return C.GoBytes(unsafe.Pointer(p), C.int(n)), int(cw), int(ch), nil
+}
+
+// snapshotLen returns the RGBA8 byte size of a w×h snapshot and whether that size
+// can be copied with C.GoBytes (whose length parameter is a 32-bit C int). The
+// limit check compares pixel count against MaxInt32/4 so the check itself cannot
+// overflow — w*h always fits uint64 ((2^32-1)^2 < 2^64), unlike w*h*4.
+func snapshotLen(w, h uint32) (n uint64, ok bool) {
+	px := uint64(w) * uint64(h)
+	return px * 4, px <= math.MaxInt32/4
 }
 
 // GetGlobalProperty reads a property of an exported global singleton.
