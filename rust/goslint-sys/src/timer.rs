@@ -72,7 +72,10 @@ pub unsafe extern "C" fn goslint_timer_start(
     guard((), || {
         let t = match t.as_ref() {
             Some(t) => t,
-            None => return,
+            None => {
+                crate::set_last_error("timer_start: timer is NULL");
+                return;
+            }
         };
         let data = TimerCallback { handle, cb, drop };
         t.start(

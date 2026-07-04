@@ -51,7 +51,10 @@ pub unsafe extern "C" fn goslint_compiler_set_include_paths(
     guard((), || {
         let c = match c.as_mut() {
             Some(c) => c,
-            None => return,
+            None => {
+                crate::set_last_error("set_include_paths: compiler is NULL");
+                return;
+            }
         };
         let mut v = Vec::with_capacity(n);
         if !paths.is_null() {
@@ -81,7 +84,10 @@ pub unsafe extern "C" fn goslint_compiler_set_library_paths(
     guard((), || {
         let c = match c.as_mut() {
             Some(c) => c,
-            None => return,
+            None => {
+                crate::set_last_error("set_library_paths: compiler is NULL");
+                return;
+            }
         };
         let mut m = std::collections::HashMap::with_capacity(n);
         if !names.is_null() && !paths.is_null() {
@@ -154,7 +160,10 @@ pub unsafe extern "C" fn goslint_compiler_set_file_loader(
     guard((), || {
         let c = match c.as_mut() {
             Some(c) => c,
-            None => return,
+            None => {
+                crate::set_last_error("set_file_loader: compiler is NULL");
+                return;
+            }
         };
         let loader = GoFileLoader { handle, load, drop };
         c.set_file_loader(
@@ -179,7 +188,10 @@ pub unsafe extern "C" fn goslint_compiler_build_from_source(
     guard(std::ptr::null_mut(), || {
         let c = match c.as_ref() {
             Some(c) => c,
-            None => return std::ptr::null_mut(),
+            None => {
+                crate::set_last_error("build_from_source: compiler is NULL");
+                return std::ptr::null_mut();
+            }
         };
         let src = match opt_str(src) {
             Some(s) => s.to_string(),
@@ -206,7 +218,10 @@ pub unsafe extern "C" fn goslint_compiler_build_from_path(
     guard(std::ptr::null_mut(), || {
         let c = match c.as_ref() {
             Some(c) => c,
-            None => return std::ptr::null_mut(),
+            None => {
+                crate::set_last_error("build_from_path: compiler is NULL");
+                return std::ptr::null_mut();
+            }
         };
         let path = match opt_str(path) {
             Some(p) => PathBuf::from(p),
@@ -260,7 +275,10 @@ pub unsafe extern "C" fn goslint_result_diagnostic(
     guard((), || {
         let r = match r.as_ref() {
             Some(r) => r,
-            None => return,
+            None => {
+                crate::set_last_error("diagnostic: result is NULL");
+                return;
+            }
         };
         let Some(d) = r.diagnostics().nth(i) else {
             return;

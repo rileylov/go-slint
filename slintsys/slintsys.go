@@ -58,7 +58,10 @@ func rc(code C.int, what string) error {
 // Version returns the Slint version the shim was built against.
 func Version() string { return takeString(C.goslint_version()) }
 
-// LastError returns the last error recorded on the current OS thread, or "".
+// LastError returns the message the most recent shim call recorded on the current
+// OS thread, or "" if it succeeded (every entry point clears the slot on entry).
+// Read it immediately after the failing call, and read it once: freeing the
+// returned string is itself a shim call, so a second read reports "".
 func LastError() string { return takeString(C.goslint_last_error()) }
 
 // SmokeCompile compiles a trivial component and returns its component name(s).

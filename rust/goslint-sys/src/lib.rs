@@ -54,7 +54,15 @@ pub(crate) unsafe fn opt_str<'a>(p: *const c_char) -> Option<&'a str> {
 }
 
 /// Run `f`, converting any panic into `default` plus a recorded last-error.
+///
+/// Clears the last-error slot on entry, so `goslint_last_error` only ever reports
+/// what the MOST RECENT call recorded. Without the clear the slot was write-only:
+/// after the first error on a thread, any later failure that didn't set a message
+/// surfaced that stale, unrelated one — a confidently wrong diagnostic. Now an
+/// unset failure yields NULL and the Go side's generic "<op> failed" fallback.
+/// (`goslint_last_error` itself must NOT run through this — see its body.)
 pub(crate) fn guard<T>(default: T, f: impl FnOnce() -> T) -> T {
+    LAST_ERROR.with(|e| e.borrow_mut().take());
     match catch_unwind(AssertUnwindSafe(f)) {
         Ok(v) => v,
         Err(_) => {
@@ -70,15 +78,21 @@ pub extern "C" fn goslint_version() -> *mut c_char {
     guard(std::ptr::null_mut(), || to_c_string(env!("SLINT_VERSION")))
 }
 
-/// The last error recorded on the calling thread, or NULL if none.
+/// The last error recorded on the calling thread by the most recent call, or NULL
+/// if it succeeded / recorded nothing. Read it immediately after the failing call:
+/// every other entry point clears the slot on entry (see `guard`).
 #[no_mangle]
 pub extern "C" fn goslint_last_error() -> *mut c_char {
-    guard(std::ptr::null_mut(), || {
+    // Deliberately NOT `guard`: guard clears the slot on entry, and this accessor's
+    // whole job is to read what the previous call recorded. Still catch_unwind —
+    // a panic must never cross into C.
+    catch_unwind(|| {
         LAST_ERROR.with(|e| match &*e.borrow() {
             Some(s) => to_c_string(s),
             None => std::ptr::null_mut(),
         })
     })
+    .unwrap_or(std::ptr::null_mut())
 }
 
 /// Free a string returned by this library.

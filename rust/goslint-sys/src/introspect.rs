@@ -201,7 +201,10 @@ pub unsafe extern "C" fn goslint_definition_type_info(
     guard(std::ptr::null_mut(), || {
         let def = match d.as_ref() {
             Some(d) => d,
-            None => return std::ptr::null_mut(),
+            None => {
+                crate::set_last_error("type_info: definition is NULL");
+                return std::ptr::null_mut();
+            }
         };
         let mut reg = Registry::default();
 

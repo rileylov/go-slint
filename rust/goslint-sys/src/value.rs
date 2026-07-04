@@ -53,7 +53,10 @@ pub unsafe extern "C" fn goslint_value_new_string(s: *const c_char) -> *mut Valu
     guard(std::ptr::null_mut(), || {
         let text = match crate::opt_str(s) {
             Some(t) => t,
-            None => return std::ptr::null_mut(),
+            None => {
+                crate::set_last_error("new_string: text is NULL or not valid UTF-8");
+                return std::ptr::null_mut();
+            }
         };
         Box::into_raw(Box::new(Value::String(SharedString::from(text))))
     })

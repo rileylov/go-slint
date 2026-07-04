@@ -28,7 +28,10 @@ pub unsafe extern "C" fn goslint_definition_create(
     guard(std::ptr::null_mut(), || {
         let d = match d.as_ref() {
             Some(d) => d,
-            None => return std::ptr::null_mut(),
+            None => {
+                crate::set_last_error("create: definition is NULL");
+                return std::ptr::null_mut();
+            }
         };
         match d.create() {
             Ok(inst) => Box::into_raw(Box::new(inst)),
@@ -54,11 +57,17 @@ pub unsafe extern "C" fn goslint_definition_create_with_window(
     guard(std::ptr::null_mut(), || {
         let d = match d.as_ref() {
             Some(d) => d,
-            None => return std::ptr::null_mut(),
+            None => {
+                crate::set_last_error("create_with_window: definition is NULL");
+                return std::ptr::null_mut();
+            }
         };
         let owner = match win_owner.as_ref() {
             Some(o) => o,
-            None => return std::ptr::null_mut(),
+            None => {
+                crate::set_last_error("create_with_window: window owner is NULL");
+                return std::ptr::null_mut();
+            }
         };
         match d.create_with_existing_window(owner.window()) {
             Ok(inst) => Box::into_raw(Box::new(inst)),
@@ -96,11 +105,17 @@ pub unsafe extern "C" fn goslint_instance_get_property(
     guard(std::ptr::null_mut(), || {
         let i = match i.as_ref() {
             Some(i) => i,
-            None => return std::ptr::null_mut(),
+            None => {
+                crate::set_last_error("get_property: instance is NULL");
+                return std::ptr::null_mut();
+            }
         };
         let name = match opt_str(name) {
             Some(n) => n,
-            None => return std::ptr::null_mut(),
+            None => {
+                crate::set_last_error("get_property: name is NULL or not valid UTF-8");
+                return std::ptr::null_mut();
+            }
         };
         match i.get_property(name) {
             Ok(v) => Box::into_raw(Box::new(v)),
@@ -126,15 +141,24 @@ pub unsafe extern "C" fn goslint_instance_set_property(
     guard(1, || {
         let i = match i.as_ref() {
             Some(i) => i,
-            None => return 1,
+            None => {
+                crate::set_last_error("set_property: instance is NULL");
+                return 1;
+            }
         };
         let name = match opt_str(name) {
             Some(n) => n,
-            None => return 1,
+            None => {
+                crate::set_last_error("set_property: name is NULL or not valid UTF-8");
+                return 1;
+            }
         };
         let v = match v.as_ref() {
             Some(v) => v.clone(),
-            None => return 1,
+            None => {
+                crate::set_last_error("set_property: value is NULL");
+                return 1;
+            }
         };
         match i.set_property(name, v) {
             Ok(()) => 0,
@@ -309,7 +333,10 @@ pub unsafe extern "C" fn goslint_instance_take_snapshot(
     guard(std::ptr::null_mut(), || {
         let i = match i.as_ref() {
             Some(i) => i,
-            None => return std::ptr::null_mut(),
+            None => {
+                crate::set_last_error("take_snapshot: instance is NULL");
+                return std::ptr::null_mut();
+            }
         };
         match i.window().take_snapshot() {
             Ok(buf) => {
@@ -371,7 +398,10 @@ pub unsafe extern "C" fn goslint_instance_register_font_from_path(
     guard(1, || {
         let i = match i.as_ref() {
             Some(i) => i,
-            None => return 1,
+            None => {
+                crate::set_last_error("register_font_from_path: instance is NULL");
+                return 1;
+            }
         };
         let p = match opt_str(path) {
             Some(p) => p,
@@ -410,7 +440,10 @@ pub unsafe extern "C" fn goslint_instance_register_font_from_memory(
     guard(1, || {
         let i = match i.as_ref() {
             Some(i) => i,
-            None => return 1,
+            None => {
+                crate::set_last_error("register_font_from_memory: instance is NULL");
+                return 1;
+            }
         };
         if data.is_null() || n == 0 {
             set_last_error("register font: NULL or empty data");
@@ -635,11 +668,17 @@ pub unsafe extern "C" fn goslint_instance_set_callback(
     guard(1, || {
         let inst = match i.as_ref() {
             Some(i) => i,
-            None => return 1,
+            None => {
+                crate::set_last_error("set_callback: instance is NULL");
+                return 1;
+            }
         };
         let name = match opt_str(name) {
             Some(n) => n,
-            None => return 1,
+            None => {
+                crate::set_last_error("set_callback: name is NULL or not valid UTF-8");
+                return 1;
+            }
         };
         let data = GoCallbackData {
             user_data,
@@ -670,11 +709,17 @@ pub unsafe extern "C" fn goslint_instance_invoke(
     guard(std::ptr::null_mut(), || {
         let inst = match i.as_ref() {
             Some(i) => i,
-            None => return std::ptr::null_mut(),
+            None => {
+                crate::set_last_error("invoke: instance is NULL");
+                return std::ptr::null_mut();
+            }
         };
         let name = match opt_str(name) {
             Some(n) => n,
-            None => return std::ptr::null_mut(),
+            None => {
+                crate::set_last_error("invoke: name is NULL or not valid UTF-8");
+                return std::ptr::null_mut();
+            }
         };
         let a = unsafe { collect_args(args, n) };
         match inst.invoke(name, &a) {
@@ -698,7 +743,10 @@ pub unsafe extern "C" fn goslint_instance_get_global_property(
     guard(std::ptr::null_mut(), || {
         let inst = match i.as_ref() {
             Some(i) => i,
-            None => return std::ptr::null_mut(),
+            None => {
+                crate::set_last_error("get_global_property: instance is NULL");
+                return std::ptr::null_mut();
+            }
         };
         let (g, nm) = match (opt_str(global), opt_str(name)) {
             (Some(g), Some(n)) => (g, n),
@@ -726,7 +774,10 @@ pub unsafe extern "C" fn goslint_instance_set_global_property(
     guard(1, || {
         let inst = match i.as_ref() {
             Some(i) => i,
-            None => return 1,
+            None => {
+                crate::set_last_error("set_global_property: instance is NULL");
+                return 1;
+            }
         };
         let (g, nm) = match (opt_str(global), opt_str(name)) {
             (Some(g), Some(n)) => (g, n),
@@ -734,7 +785,10 @@ pub unsafe extern "C" fn goslint_instance_set_global_property(
         };
         let val = match v.as_ref() {
             Some(v) => v.clone(),
-            None => return 1,
+            None => {
+                crate::set_last_error("set_global_property: value is NULL");
+                return 1;
+            }
         };
         match inst.set_global_property(g, nm, val) {
             Ok(()) => 0,
@@ -760,7 +814,10 @@ pub unsafe extern "C" fn goslint_instance_set_global_callback(
     guard(1, || {
         let inst = match i.as_ref() {
             Some(i) => i,
-            None => return 1,
+            None => {
+                crate::set_last_error("set_global_callback: instance is NULL");
+                return 1;
+            }
         };
         let (g, nm) = match (opt_str(global), opt_str(name)) {
             (Some(g), Some(n)) => (g, n),
@@ -794,7 +851,10 @@ pub unsafe extern "C" fn goslint_instance_invoke_global(
     guard(std::ptr::null_mut(), || {
         let inst = match i.as_ref() {
             Some(i) => i,
-            None => return std::ptr::null_mut(),
+            None => {
+                crate::set_last_error("invoke_global: instance is NULL");
+                return std::ptr::null_mut();
+            }
         };
         let (g, nm) = match (opt_str(global), opt_str(name)) {
             (Some(g), Some(n)) => (g, n),

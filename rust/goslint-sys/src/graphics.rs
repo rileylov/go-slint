@@ -63,7 +63,10 @@ pub unsafe extern "C" fn goslint_image_load_from_path(path: *const c_char) -> *m
     guard(std::ptr::null_mut(), || {
         let p = match opt_str(path) {
             Some(p) => p,
-            None => return std::ptr::null_mut(),
+            None => {
+                crate::set_last_error("image_load_from_path: path is NULL or not valid UTF-8");
+                return std::ptr::null_mut();
+            }
         };
         match Image::load_from_path(std::path::Path::new(p)) {
             Ok(img) => Box::into_raw(Box::new(img)),
