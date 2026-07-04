@@ -1,0 +1,29 @@
+import { Button, VerticalBox } from "std-widgets.slint";
+
+export component App inherits Window {
+    title: "goslint notify";
+    min-width: 360px;
+    min-height: 260px;
+
+    in-out property <string> status: "tap to send a notification";
+    callback send();
+
+    VerticalBox {
+        alignment: center;
+        spacing: 12px;
+        Text {
+            text: "Go → JNI → NotificationManager";
+            font-size: 18px;
+            horizontal-alignment: center;
+        }
+        Button {
+            text: "Send notification";
+            clicked => { root.send(); }
+        }
+        Text {
+            text: root.status;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+    }
+}

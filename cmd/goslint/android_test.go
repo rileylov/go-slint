@@ -97,21 +97,21 @@ func TestEnsureAndroidEntry(t *testing.T) {
 func TestResolveAndroidCfg(t *testing.T) {
 	// Defaults derive from the package base name (absolute path -> deterministic base).
 	def := resolveAndroidCfg("/tmp/cool", "", "", "", "1.0", 1, 24, 34,
-		"arm64-v8a", "", "", "", "", "android", "androiddebugkey", "android")
+		"arm64-v8a", "", "", "", "", "android", "androiddebugkey", "android", "")
 	if def.pkg != "/tmp/cool" || def.label != "cool" || def.appID != "dev.goslint.cool" || def.out != "cool.apk" {
 		t.Errorf("defaults: %+v", def)
 	}
 
 	// Explicit flags win over the derived defaults.
 	ov := resolveAndroidCfg("/tmp/cool", "Out.apk", "com.x.y", "My Label", "2.0", 5, 21, 33,
-		"x86_64", "Manifest.xml", "/sdk", "/ndk", "/ks", "pw", "alias", "kp")
+		"x86_64", "Manifest.xml", "/sdk", "/ndk", "/ks", "pw", "alias", "kp", "POST_NOTIFICATIONS")
 	if ov.out != "Out.apk" || ov.appID != "com.x.y" || ov.label != "My Label" ||
 		ov.abiList != "x86_64" || ov.manifestArg != "Manifest.xml" || ov.keystore != "/ks" {
 		t.Errorf("overrides: %+v", ov)
 	}
 
 	// Empty package resolves to "." (current directory).
-	if cur := resolveAndroidCfg("", "", "", "", "1.0", 1, 24, 34, "arm64-v8a", "", "", "", "", "android", "androiddebugkey", "android"); cur.pkg != "." {
+	if cur := resolveAndroidCfg("", "", "", "", "1.0", 1, 24, 34, "arm64-v8a", "", "", "", "", "android", "androiddebugkey", "android", ""); cur.pkg != "." {
 		t.Errorf("empty pkg -> %q, want %q", cur.pkg, ".")
 	}
 }
@@ -143,13 +143,14 @@ func TestSanitizeID(t *testing.T) {
 }
 
 func TestGenManifest(t *testing.T) {
-	m := genManifest("dev.goslint.demo", "Demo", 1, "1.0", 24, 34)
+	m := genManifest("dev.goslint.demo", "Demo", 1, "1.0", 24, 34, []string{"android.permission.POST_NOTIFICATIONS"})
 	for _, want := range []string{
 		`package="dev.goslint.demo"`,
 		`android:label="Demo"`,
 		`android:minSdkVersion="24"`,
 		`android.app.lib_name`, `goslint`,
 		"android.app.NativeActivity",
+		`<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />`,
 	} {
 		if !strings.Contains(m, want) {
 			t.Errorf("manifest missing %q", want)
@@ -292,5 +293,27 @@ func TestJavaEnv(t *testing.T) {
 	got := javaEnv()
 	if len(got) != 1 || got[0] != "JAVA_HOME="+jdk {
 		t.Errorf("javaEnv() = %v, want [JAVA_HOME=%s]", got, jdk)
+	}
+}
+
+// TestNormalizePermissions: short names get the android.permission. prefix,
+// qualified names pass through, whitespace and empties are dropped.
+func TestNormalizePermissions(t *testing.T) {
+	got := normalizePermissions(" POST_NOTIFICATIONS, BLUETOOTH_SCAN ,com.example.CUSTOM,, ")
+	want := []string{
+		"android.permission.POST_NOTIFICATIONS",
+		"android.permission.BLUETOOTH_SCAN",
+		"com.example.CUSTOM",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			t.Fatalf("got %v, want %v", got, want)
+		}
+	}
+	if p := normalizePermissions(""); p != nil {
+		t.Errorf("empty input -> %v, want nil", p)
 	}
 }

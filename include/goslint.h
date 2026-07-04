@@ -39,6 +39,13 @@ char *goslint_last_error(void);
 void  goslint_string_free(char *s);
 char *goslint_smoke_compile(void);
 
+/* ---- android JNI interop (android builds only; absent from desktop libs) ----
+   The JavaVM* and NativeActivity jobject of the hosting app process, captured on
+   android_main entry, or NULL before it runs. For calling platform APIs over JNI
+   from Go. The activity reference is owned by the framework — never delete it. */
+void *goslint_android_java_vm(void);
+void *goslint_android_activity(void);
+
 /* ---- event loop & platform ---- */
 int  goslint_testing_init_headless(void);          /* 0 = ok */
 int  goslint_testing_init_integration(void);       /* simple loop, system time */

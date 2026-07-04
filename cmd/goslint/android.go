@@ -46,12 +46,13 @@ type androidBuildCfg struct {
 	versionCode, minSDK, targetSDK       int
 	abiList, manifestArg, sdkArg, ndkArg string
 	keystore, ksPass, keyAlias, keyPass  string
+	permissions                          string // comma list; short names get android.permission.
 }
 
 // resolveAndroidCfg fills the defaults (name / application-id / label / output) from
 // the package.
 func resolveAndroidCfg(pkg, out, appID, label, versionName string, versionCode, minSDK, targetSDK int,
-	abiList, manifestArg, sdkArg, ndkArg, keystore, ksPass, keyAlias, keyPass string) androidBuildCfg {
+	abiList, manifestArg, sdkArg, ndkArg, keystore, ksPass, keyAlias, keyPass, permissions string) androidBuildCfg {
 	if pkg == "" {
 		pkg = "."
 	}
@@ -66,7 +67,7 @@ func resolveAndroidCfg(pkg, out, appID, label, versionName string, versionCode, 
 		out = name + ".apk"
 	}
 	return androidBuildCfg{pkg, out, appID, label, versionName, versionCode, minSDK, targetSDK,
-		abiList, manifestArg, sdkArg, ndkArg, keystore, ksPass, keyAlias, keyPass}
+		abiList, manifestArg, sdkArg, ndkArg, keystore, ksPass, keyAlias, keyPass, permissions}
 }
 
 // buildAPK packages cfg.pkg (which must export goslint_android_main, e.g. via a
@@ -152,7 +153,7 @@ func buildAPK(cfg androidBuildCfg) error {
 	manifestPath := cfg.manifestArg
 	if manifestPath == "" {
 		manifestPath = filepath.Join(stage, "AndroidManifest.xml")
-		m := genManifest(cfg.appID, cfg.label, cfg.versionCode, cfg.versionName, cfg.minSDK, cfg.targetSDK)
+		m := genManifest(cfg.appID, cfg.label, cfg.versionCode, cfg.versionName, cfg.minSDK, cfg.targetSDK, normalizePermissions(cfg.permissions))
 		if err := os.WriteFile(manifestPath, []byte(m), 0o644); err != nil {
 			return err
 		}
@@ -232,10 +233,11 @@ func cmdAndroidBuild(args []string) error {
 	ksPass := fs.String("ks-pass", "android", "keystore password")
 	keyAlias := fs.String("key-alias", "androiddebugkey", "signing key alias")
 	keyPass := fs.String("key-pass", "android", "key password")
+	permissions := fs.String("permissions", "", "comma-separated Android permissions to declare (e.g. POST_NOTIFICATIONS,BLUETOOTH_SCAN; short names get the android.permission. prefix)")
 	_ = fs.Parse(args)
 
 	cfg := resolveAndroidCfg(fs.Arg(0), *out, *appID, *label, *versionName, *versionCode, *minSDK, *targetSDK,
-		*abiList, *manifestArg, *sdkArg, *ndkArg, *keystore, *ksPass, *keyAlias, *keyPass)
+		*abiList, *manifestArg, *sdkArg, *ndkArg, *keystore, *ksPass, *keyAlias, *keyPass, *permissions)
 	if err := buildAPK(cfg); err != nil {
 		return err
 	}
@@ -264,6 +266,7 @@ func cmdAndroidDev(args []string) error {
 	sdkArg := fs.String("sdk", "", "Android SDK dir (default $ANDROID_HOME)")
 	ndkArg := fs.String("ndk", "", "Android NDK dir (default $ANDROID_NDK_HOME or <sdk>/ndk/<latest>)")
 	abiArg := fs.String("abi", "", "ABI to build (default: the running device's ABI — faster than building all)")
+	permissions := fs.String("permissions", "", "comma-separated Android permissions to declare (short names get the android.permission. prefix)")
 	_ = fs.Parse(args)
 
 	tc, err := resolveAndroidTools(*sdkArg, *ndkArg)
@@ -283,7 +286,7 @@ func cmdAndroidDev(args []string) error {
 	}
 
 	cfg := resolveAndroidCfg(fs.Arg(0), filepath.Join(os.TempDir(), "goslint-android-dev.apk"),
-		*appID, *label, "1.0", 1, *minSDK, 34, abiList, "", *sdkArg, *ndkArg, "", "android", "androiddebugkey", "android")
+		*appID, *label, "1.0", 1, *minSDK, 34, abiList, "", *sdkArg, *ndkArg, "", "android", "androiddebugkey", "android", *permissions)
 
 	// Host env for codegen: typed projects regenerate their wrapper from .slint via
 	// goslint-gen, which runs on the host and needs the host native lib. Best-effort —
@@ -733,14 +736,18 @@ func abiNames(s []struct{ abi, goarch, triple, target string }) []string {
 
 // ---- manifest ----
 
-func genManifest(appID, label string, versionCode int, versionName string, minSDK, targetSDK int) string {
+func genManifest(appID, label string, versionCode int, versionName string, minSDK, targetSDK int, permissions []string) string {
+	var perms strings.Builder
+	for _, p := range permissions {
+		fmt.Fprintf(&perms, "\n    <uses-permission android:name=%q />", p)
+	}
 	return fmt.Sprintf(`<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="%s"
     android:versionCode="%d"
     android:versionName="%s">
 
-    <uses-sdk android:minSdkVersion="%d" android:targetSdkVersion="%d" />
+    <uses-sdk android:minSdkVersion="%d" android:targetSdkVersion="%d" />%s
 
     <application
         android:label="%s"
@@ -758,7 +765,26 @@ func genManifest(appID, label string, versionCode int, versionName string, minSD
         </activity>
     </application>
 </manifest>
-`, appID, versionCode, versionName, minSDK, targetSDK, label)
+`, appID, versionCode, versionName, minSDK, targetSDK, perms.String(), label)
+
+}
+
+// normalizePermissions turns a comma list into manifest permission names: entries
+// without a dot get the android.permission. prefix, so both POST_NOTIFICATIONS and
+// fully-qualified names (com.example.CUSTOM) work.
+func normalizePermissions(csv string) []string {
+	var out []string
+	for _, p := range strings.Split(csv, ",") {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		if !strings.Contains(p, ".") {
+			p = "android.permission." + p
+		}
+		out = append(out, p)
+	}
+	return out
 }
 
 // ---- helpers ----

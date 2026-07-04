@@ -15,6 +15,7 @@
 
 use std::ffi::CString;
 use std::os::raw::{c_char, c_int, c_void};
+use std::sync::atomic::{AtomicPtr, Ordering};
 
 use crate::guard;
 
@@ -24,6 +25,28 @@ extern "C" {
 }
 
 const RTLD_NOW: c_int = 2;
+
+// The process JavaVM and the NativeActivity jobject, captured on every
+// android_main entry (activity recreation runs android_main again with a fresh
+// AndroidApp, so these are re-stored, not set-once). Exposed to Go so apps can
+// reach platform APIs over JNI (Bluetooth, notifications, ...) — the JVM already
+// lives in every Android app process; this just hands Go the two pointers JNI
+// needs. The activity reference is owned by the framework: never delete it.
+static JAVA_VM: AtomicPtr<c_void> = AtomicPtr::new(std::ptr::null_mut());
+static ACTIVITY: AtomicPtr<c_void> = AtomicPtr::new(std::ptr::null_mut());
+
+/// The process `JavaVM*` for JNI interop, or NULL before android_main has run.
+#[no_mangle]
+pub extern "C" fn goslint_android_java_vm() -> *mut c_void {
+    JAVA_VM.load(Ordering::Acquire)
+}
+
+/// The NativeActivity `jobject` (a JNI reference owned by the framework — do NOT
+/// delete it), or NULL before android_main has run.
+#[no_mangle]
+pub extern "C" fn goslint_android_activity() -> *mut c_void {
+    ACTIVITY.load(Ordering::Acquire)
+}
 
 #[no_mangle]
 pub extern "C" fn android_main(app: i_slint_backend_android_activity::AndroidApp) {
@@ -37,6 +60,11 @@ pub extern "C" fn android_main(app: i_slint_backend_android_activity::AndroidApp
             .internal_data_path()
             .map(|p| p.to_string_lossy().into_owned())
             .unwrap_or_default();
+
+        // Capture the JNI pointers before `app` moves into the platform. Stored
+        // (not once-set): android_main reruns on activity recreation.
+        JAVA_VM.store(app.vm_as_ptr(), Ordering::Release);
+        ACTIVITY.store(app.activity_as_ptr(), Ordering::Release);
 
         if i_slint_core::platform::set_platform(Box::new(
             i_slint_backend_android_activity::AndroidPlatform::new(app),
