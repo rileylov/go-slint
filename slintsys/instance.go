@@ -161,7 +161,10 @@ func (i *Instance) InvokeGlobal(global, name string, args []any) (any, error) {
 // Run(); multi-window apps Show() each window then slint.Run() (also marks).
 func (i *Instance) Show() error { MarkUIThread(); return rc(C.goslint_instance_show(i.ptr), "show") }
 func (i *Instance) Hide() error { return rc(C.goslint_instance_hide(i.ptr), "hide") }
-func (i *Instance) Run() error  { MarkUIThread(); return rc(C.goslint_instance_run(i.ptr), "run") }
+func (i *Instance) Run() error {
+	MarkUIThread()
+	return withLoopRunning(func() error { return rc(C.goslint_instance_run(i.ptr), "run") })
+}
 
 // ---- window control (physical pixels) ----
 

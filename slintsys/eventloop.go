@@ -5,6 +5,30 @@ package slintsys
 */
 import "C"
 
+import "sync/atomic"
+
+// loopState tracks whether a Slint event loop has run and quit, purely for
+// better diagnostics: posting work before the FIRST run is legitimate (Slint
+// executes pre-queued callbacks at loop start), but posting after a loop quit
+// only runs if a loop is started again — so dev mode flags it (see
+// InvokeFromEventLoop). Never used to reject work: queue-then-rerun is valid.
+const (
+	loopNeverRan int32 = iota
+	loopRunning
+	loopQuit
+)
+
+var loopState atomic.Int32
+
+// withLoopRunning brackets a blocking event-loop entry point with state
+// tracking. Every loop runner (RunEventLoop, RunEventLoopUntilQuit,
+// Instance.Run) must go through it.
+func withLoopRunning(run func() error) error {
+	loopState.Store(loopRunning)
+	defer loopState.Store(loopQuit)
+	return run()
+}
+
 // InitHeadless installs the headless testing backend (mock time, no windows).
 // Call once per process, before creating any component, on the UI thread.
 func InitHeadless() error {
@@ -27,14 +51,14 @@ func SetTestingOSWindows() { C.goslint_testing_set_os_windows() }
 // Blocks; must be called on the UI thread.
 func RunEventLoop() error {
 	MarkUIThread() // the calling thread is the UI thread
-	return rc(C.goslint_run_event_loop(), "run event loop")
+	return withLoopRunning(func() error { return rc(C.goslint_run_event_loop(), "run event loop") })
 }
 
 // RunEventLoopUntilQuit runs the event loop until QuitEventLoop, without quitting
 // when the last window closes. Blocks; UI thread only.
 func RunEventLoopUntilQuit() error {
 	MarkUIThread() // the calling thread is the UI thread
-	return rc(C.goslint_run_event_loop_until_quit(), "run event loop until quit")
+	return withLoopRunning(func() error { return rc(C.goslint_run_event_loop_until_quit(), "run event loop until quit") })
 }
 
 // QuitEventLoop requests the running event loop to quit.
