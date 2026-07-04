@@ -28,5 +28,5 @@ func goslintCloseRequested(h C.uintptr_t) (ret C._Bool) {
 
 //export goslintCloseDrop
 func goslintCloseDrop(h C.uintptr_t) {
-	cgo.Handle(h).Delete()
+	dropHandle(uintptr(h))
 }

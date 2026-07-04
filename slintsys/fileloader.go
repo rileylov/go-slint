@@ -57,6 +57,14 @@ func goslintFileLoaderLoad(h C.uintptr_t, path *C.char) (ret *C.char) {
 
 //export goslintFileLoaderDrop
 func goslintFileLoaderDrop(h C.uintptr_t) {
+	dropFileLoaderState(uintptr(h))
+}
+
+// dropFileLoaderState frees the last returned buffer and releases the handle. The
+// recover covers Value() and Delete(), which both panic on a stale/double-dropped
+// handle — this runs inside a Rust Drop, so a panic must never unwind into C.
+func dropFileLoaderState(h uintptr) {
+	defer func() { _ = recover() }()
 	if st, ok := cgo.Handle(h).Value().(*fileLoaderState); ok && st.last != nil {
 		C.free(unsafe.Pointer(st.last))
 	}

@@ -25,5 +25,5 @@ func goslintTimerTrampoline(h C.uintptr_t) {
 
 //export goslintTimerDrop
 func goslintTimerDrop(h C.uintptr_t) {
-	cgo.Handle(h).Delete()
+	dropHandle(uintptr(h))
 }

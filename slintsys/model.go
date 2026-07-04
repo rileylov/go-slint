@@ -65,5 +65,5 @@ func goslintModelSetRowData(h C.uintptr_t, row C.size_t, value *C.GoValue) {
 
 //export goslintModelDrop
 func goslintModelDrop(h C.uintptr_t) {
-	cgo.Handle(h).Delete()
+	dropHandle(uintptr(h))
 }

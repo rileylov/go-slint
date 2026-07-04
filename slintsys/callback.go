@@ -52,5 +52,5 @@ func goslintCallbackTrampoline(ud C.uintptr_t, args **C.GoValue, n C.size_t) (re
 //
 //export goslintDropHandle
 func goslintDropHandle(ud C.uintptr_t) {
-	cgo.Handle(ud).Delete()
+	dropHandle(uintptr(ud))
 }
