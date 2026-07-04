@@ -78,3 +78,37 @@ func BenchmarkImageCreateProd(b *testing.B) { benchImageCreate(b, false) }
 
 // BenchmarkImageCreateDev is the dev path (GOSLINT_DEV — finalizer armed each create).
 func BenchmarkImageCreateDev(b *testing.B) { benchImageCreate(b, true) }
+
+// leakTestModel is a minimal Model that deliberately does NOT reference its
+// ModelHandle — the detectable-leak shape (a self-referencing model like
+// SliceModel is pinned by its own cgo.Handle and can never be finalized).
+type leakTestModel struct{}
+
+func (leakTestModel) RowCount() int       { return 0 }
+func (leakTestModel) RowData(int) any     { return nil }
+func (leakTestModel) SetRowData(int, any) {}
+
+// TestLeakWatchModelHandle verifies §3.8 coverage: a ModelHandle GC'd without
+// Close warns; a Closed one doesn't.
+func TestLeakWatchModelHandle(t *testing.T) {
+	prevEnabled, prevReport := leakWatchEnabled, leakReportf
+	msgs := make(chan string, 8)
+	leakWatchEnabled = true
+	leakReportf = func(format string, a ...any) { msgs <- fmt.Sprintf(format, a...) }
+	defer func() { leakWatchEnabled, leakReportf = prevEnabled, prevReport }()
+
+	func() {
+		_ = NewModelHandle(leakTestModel{}) // dropped without Close
+	}()
+	if got := waitLeak(msgs); !strings.Contains(got, "ModelHandle") {
+		t.Errorf("expected a leak warning naming ModelHandle, got %q", got)
+	}
+
+	func() {
+		mh := NewModelHandle(leakTestModel{})
+		mh.Close()
+	}()
+	if got := waitLeak(msgs); got != "" {
+		t.Errorf("a Closed ModelHandle should not warn, got %q", got)
+	}
+}

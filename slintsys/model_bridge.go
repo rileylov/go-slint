@@ -30,7 +30,18 @@ type ModelHandle struct {
 // NewModelHandle wraps a Go Model so it can be used as a model property value.
 func NewModelHandle(m Model) *ModelHandle {
 	h := cgo.NewHandle(m)
-	return &ModelHandle{ptr: C.goslintModelNewBridge(C.uintptr_t(h)), handle: h}
+	return (&ModelHandle{ptr: C.goslintModelNewBridge(C.uintptr_t(h)), handle: h}).watch()
+}
+
+// watch arms the dev-mode (GOSLINT_DEV) leak warning for a handle GC'd without
+// Close. Limitation: it can only fire for models that don't reference their own
+// handle — a SliceModel is pinned by its own cgo.Handle (handle map -> SliceModel
+// -> its *ModelHandle), so it stays reachable until Close and a leaked one is
+// invisible to a finalizer. The NewModel(Model) path, where the user's model
+// doesn't hold the handle, is the detectable (and easiest to forget) case.
+func (mh *ModelHandle) watch() *ModelHandle {
+	leakWatch(mh, func(m *ModelHandle) bool { return m.ptr != nil }, "slint model (ModelHandle)", "Close")
+	return mh
 }
 
 func (mh *ModelHandle) NotifyRowChanged(row int) {
