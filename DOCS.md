@@ -336,6 +336,13 @@ win.Run()
 - editing a **`.go`** rebuilds and restarts (regenerating the wrapper first if the
   `.slint`'s interface changed).
 
+Dynamic-API projects (markup embedded next to `package main` and compiled with
+`slint.Compile` — no generated wrapper) can't swap markup in-process: the `.slint`
+is baked into the binary by `go:embed`. For those, `goslint dev` rebuilds and
+restarts on `.slint` edits too, so a save still shows without leaving the loop.
+(An app that drives `slint.LiveReload` itself is left alone — it already re-reads
+its markup from disk.)
+
 How it works: under `GOSLINT_DEV`, the generated wrapper *records* your `New`-to-`Run`
 setup calls (`Set*`, `On*`) and `Run()` replays them onto the freshly-compiled
 instance on each reload - so your same inline code drives the live reload. Property

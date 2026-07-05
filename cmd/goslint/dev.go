@@ -14,8 +14,10 @@ import (
 )
 
 // cmdDev builds and runs a go-slint package with GOSLINT_DEV set, then watches it:
-//   - .slint edits are hot-reloaded in-process by the running binary (the generated
-//     Run replays your setup onto the recompiled markup), so they show with no rebuild;
+//   - .slint edits: TYPED projects hot-reload in-process (the generated Run replays
+//     your setup onto the recompiled markup — no rebuild, same window). DYNAMIC
+//     projects embed the markup with go:embed, so nothing in the process can re-read
+//     it — the harness rebuilds + restarts instead (see devWatchesSlint);
 //   - a .go edit triggers a regenerate-if-needed + rebuild + restart.
 func cmdDev(args []string) error {
 	fs := flag.NewFlagSet("dev", flag.ExitOnError)
@@ -95,7 +97,7 @@ func cmdDev(args []string) error {
 		proc, procDone = nil, nil
 	}
 
-	if needsGenerate(pkg) {
+	if needsGenerate(pkg) && generationPlanned(genDir) {
 		if err := gen(); err != nil {
 			fmt.Fprintln(os.Stderr, "generate failed (using existing generated code):", err)
 		}
@@ -106,11 +108,21 @@ func cmdDev(args []string) error {
 	start()
 	defer stop()
 
+	// Dynamic-API projects need the harness to react to .slint edits (the markup is
+	// embedded — only a rebuild re-reads it); typed projects hot-swap in-process and
+	// must NOT be restarted (that would destroy the reload's state).
+	watchSlint := devWatchesSlint(genDir)
+
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt)
 
-	fmt.Println(">> running — edit .slint to live-reload, edit .go to rebuild; Ctrl-C to stop")
+	if watchSlint {
+		fmt.Println(">> running — edit .slint or .go to rebuild + reload (embedded markup); Ctrl-C to stop")
+	} else {
+		fmt.Println(">> running — edit .slint to live-reload, edit .go to rebuild; Ctrl-C to stop")
+	}
 	lastGo := newestExt(pkg, ".go")
+	lastSlint := newestExt(pkg, ".slint")
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 	for {
@@ -124,24 +136,35 @@ func cmdDev(args []string) error {
 			fmt.Println("\n>> app exited — stopping")
 			return nil
 		case <-ticker.C:
-			// .slint edits are hot-reloaded by the running binary; the harness only
-			// rebuilds on .go edits (regenerating first if the .slint interface changed).
+			// Typed projects hot-reload .slint in-process, so the harness only rebuilds
+			// on .go edits there; dynamic projects (watchSlint) also rebuild on .slint
+			// edits, since the embedded markup only updates through a fresh build.
+			reason := ""
 			if g := newestExt(pkg, ".go"); g.After(lastGo) {
-				fmt.Println(">> .go change — rebuilding")
-				stop()
-				if needsGenerate(pkg) {
-					if err := gen(); err != nil {
-						fmt.Fprintln(os.Stderr, "generate failed:", err)
-					}
+				reason = ">> .go change — rebuilding"
+			} else if watchSlint {
+				if sl := newestExt(pkg, ".slint"); sl.After(lastSlint) {
+					reason = ">> .slint change — rebuilding (markup is embedded)"
 				}
-				if err := build(); err != nil {
-					fmt.Fprintln(os.Stderr, "build failed:", err)
-					lastGo = newestExt(pkg, ".go")
-					continue
-				}
-				start()
-				lastGo = newestExt(pkg, ".go") // re-sample (generate may have rewritten a .go)
 			}
+			if reason == "" {
+				continue
+			}
+			fmt.Println(reason)
+			stop()
+			if needsGenerate(pkg) && generationPlanned(genDir) {
+				if err := gen(); err != nil {
+					fmt.Fprintln(os.Stderr, "generate failed:", err)
+				}
+			}
+			if err := build(); err != nil {
+				fmt.Fprintln(os.Stderr, "build failed:", err)
+				lastGo, lastSlint = newestExt(pkg, ".go"), newestExt(pkg, ".slint")
+				continue
+			}
+			start()
+			// re-sample both (generate may have rewritten a .go)
+			lastGo, lastSlint = newestExt(pkg, ".go"), newestExt(pkg, ".slint")
 		}
 	}
 }
@@ -196,6 +219,35 @@ func needsGenerate(pkg string) bool {
 		return true // nothing generated (or non-default output name) — regenerate
 	}
 	return newestExt(pkg, ".slint").After(gen)
+}
+
+// devWatchesSlint reports whether the dev harness itself must react to .slint edits
+// (rebuild + restart). True only for dynamic-API projects: no generation planned (the
+// markup sits next to package main, embedded via go:embed — a rebuild is the only way
+// an edit can show) AND the app doesn't drive slint.LiveReload itself (such an app
+// already re-reads markup from disk; a harness restart would destroy that reload's
+// window state). Typed projects hot-swap in-process via the generated Run.
+func devWatchesSlint(dir string) bool {
+	return !generationPlanned(dir) && !usesLiveReload(dir)
+}
+
+// usesLiveReload reports whether the package's own (non-test) sources call
+// slint.LiveReload — the self-reloading dynamic pattern from the docs.
+func usesLiveReload(dir string) bool {
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	for _, e := range ents {
+		n := e.Name()
+		if e.IsDir() || !strings.HasSuffix(n, ".go") || strings.HasSuffix(n, "_test.go") {
+			continue
+		}
+		if b, err := os.ReadFile(filepath.Join(dir, n)); err == nil && strings.Contains(string(b), "slint.LiveReload(") {
+			return true
+		}
+	}
+	return false
 }
 
 func absOr(p string) string {
