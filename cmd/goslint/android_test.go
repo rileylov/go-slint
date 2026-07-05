@@ -97,21 +97,24 @@ func TestEnsureAndroidEntry(t *testing.T) {
 func TestResolveAndroidCfg(t *testing.T) {
 	// Defaults derive from the package base name (absolute path -> deterministic base).
 	def := resolveAndroidCfg("/tmp/cool", "", "", "", "1.0", 1, 24, 34,
-		"arm64-v8a", "", "", "", "", "android", "androiddebugkey", "android", "")
+		"arm64-v8a", "", "", "", "", "android", "androiddebugkey", "android", "", "")
 	if def.pkg != "/tmp/cool" || def.label != "cool" || def.appID != "dev.goslint.cool" || def.out != "cool.apk" {
 		t.Errorf("defaults: %+v", def)
 	}
 
 	// Explicit flags win over the derived defaults.
 	ov := resolveAndroidCfg("/tmp/cool", "Out.apk", "com.x.y", "My Label", "2.0", 5, 21, 33,
-		"x86_64", "Manifest.xml", "/sdk", "/ndk", "/ks", "pw", "alias", "kp", "POST_NOTIFICATIONS")
+		"x86_64", "Manifest.xml", "/sdk", "/ndk", "/ks", "pw", "alias", "kp", "POST_NOTIFICATIONS", "icon.png")
+	if ov.icon != "icon.png" {
+		t.Errorf("icon: %+v", ov)
+	}
 	if ov.out != "Out.apk" || ov.appID != "com.x.y" || ov.label != "My Label" ||
 		ov.abiList != "x86_64" || ov.manifestArg != "Manifest.xml" || ov.keystore != "/ks" {
 		t.Errorf("overrides: %+v", ov)
 	}
 
 	// Empty package resolves to "." (current directory).
-	if cur := resolveAndroidCfg("", "", "", "", "1.0", 1, 24, 34, "arm64-v8a", "", "", "", "", "android", "androiddebugkey", "android", ""); cur.pkg != "." {
+	if cur := resolveAndroidCfg("", "", "", "", "1.0", 1, 24, 34, "arm64-v8a", "", "", "", "", "android", "androiddebugkey", "android", "", ""); cur.pkg != "." {
 		t.Errorf("empty pkg -> %q, want %q", cur.pkg, ".")
 	}
 }
@@ -143,7 +146,7 @@ func TestSanitizeID(t *testing.T) {
 }
 
 func TestGenManifest(t *testing.T) {
-	m := genManifest("dev.goslint.demo", "Demo", 1, "1.0", 24, 34, []string{"android.permission.POST_NOTIFICATIONS"})
+	m := genManifest("dev.goslint.demo", "Demo", 1, "1.0", 24, 34, []string{"android.permission.POST_NOTIFICATIONS"}, false)
 	for _, want := range []string{
 		`package="dev.goslint.demo"`,
 		`android:label="Demo"`,
@@ -155,6 +158,15 @@ func TestGenManifest(t *testing.T) {
 		if !strings.Contains(m, want) {
 			t.Errorf("manifest missing %q", want)
 		}
+	}
+	if strings.Contains(m, "android:icon") {
+		t.Error("manifest without -icon must not declare android:icon")
+	}
+
+	// With an icon, the application element references the compiled resource.
+	mi := genManifest("dev.goslint.demo", "Demo", 1, "1.0", 24, 34, nil, true)
+	if !strings.Contains(mi, `android:icon="@mipmap/ic_launcher"`) {
+		t.Error("manifest with -icon missing android:icon reference")
 	}
 }
 

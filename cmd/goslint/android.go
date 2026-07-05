@@ -47,12 +47,13 @@ type androidBuildCfg struct {
 	abiList, manifestArg, sdkArg, ndkArg string
 	keystore, ksPass, keyAlias, keyPass  string
 	permissions                          string // comma list; short names get android.permission.
+	icon                                 string // PNG/WebP path; becomes mipmap/ic_launcher
 }
 
 // resolveAndroidCfg fills the defaults (name / application-id / label / output) from
 // the package.
 func resolveAndroidCfg(pkg, out, appID, label, versionName string, versionCode, minSDK, targetSDK int,
-	abiList, manifestArg, sdkArg, ndkArg, keystore, ksPass, keyAlias, keyPass, permissions string) androidBuildCfg {
+	abiList, manifestArg, sdkArg, ndkArg, keystore, ksPass, keyAlias, keyPass, permissions, icon string) androidBuildCfg {
 	if pkg == "" {
 		pkg = "."
 	}
@@ -67,7 +68,7 @@ func resolveAndroidCfg(pkg, out, appID, label, versionName string, versionCode, 
 		out = name + ".apk"
 	}
 	return androidBuildCfg{pkg, out, appID, label, versionName, versionCode, minSDK, targetSDK,
-		abiList, manifestArg, sdkArg, ndkArg, keystore, ksPass, keyAlias, keyPass, permissions}
+		abiList, manifestArg, sdkArg, ndkArg, keystore, ksPass, keyAlias, keyPass, permissions, icon}
 }
 
 // buildAPK packages cfg.pkg (which must export goslint_android_main, e.g. via a
@@ -149,22 +150,31 @@ func buildAPK(cfg androidBuildCfg) error {
 		libEntries["lib/"+a.abi+"/libgoslintapp.so"] = appSO
 	}
 
-	// 2. manifest
+	// 2. manifest (a custom -manifest must reference @mipmap/ic_launcher itself
+	// when an icon is given; the generated one references it automatically)
 	manifestPath := cfg.manifestArg
 	if manifestPath == "" {
 		manifestPath = filepath.Join(stage, "AndroidManifest.xml")
-		m := genManifest(cfg.appID, cfg.label, cfg.versionCode, cfg.versionName, cfg.minSDK, cfg.targetSDK, normalizePermissions(cfg.permissions))
+		m := genManifest(cfg.appID, cfg.label, cfg.versionCode, cfg.versionName, cfg.minSDK, cfg.targetSDK, normalizePermissions(cfg.permissions), cfg.icon != "")
 		if err := os.WriteFile(manifestPath, []byte(m), 0o644); err != nil {
 			return err
 		}
 	}
 
-	// 3. aapt2 link -> base.apk
+	// 3. aapt2 link -> base.apk (with the launcher icon compiled in, if given)
 	baseAPK := filepath.Join(stage, "base.apk")
-	if err := run(tc.aapt2, "link", "-o", baseAPK, "-I", tc.platformJar,
+	linkArgs := []string{"link", "-o", baseAPK, "-I", tc.platformJar,
 		"--manifest", manifestPath,
 		"--min-sdk-version", strconv.Itoa(cfg.minSDK),
-		"--target-sdk-version", strconv.Itoa(cfg.targetSDK)); err != nil {
+		"--target-sdk-version", strconv.Itoa(cfg.targetSDK)}
+	if cfg.icon != "" {
+		resZip, err := compileIconResource(tc, stage, cfg.icon)
+		if err != nil {
+			return err
+		}
+		linkArgs = append(linkArgs, resZip)
+	}
+	if err := run(tc.aapt2, linkArgs...); err != nil {
 		return fmt.Errorf("aapt2 link: %w", err)
 	}
 
@@ -234,10 +244,11 @@ func cmdAndroidBuild(args []string) error {
 	keyAlias := fs.String("key-alias", "androiddebugkey", "signing key alias")
 	keyPass := fs.String("key-pass", "android", "key password")
 	permissions := fs.String("permissions", "", "comma-separated Android permissions to declare (e.g. POST_NOTIFICATIONS,BLUETOOTH_SCAN; short names get the android.permission. prefix)")
+	icon := fs.String("icon", "", "launcher icon image (PNG or WebP, square, ideally 192px+); with -manifest, reference it yourself via android:icon=\"@mipmap/ic_launcher\"")
 	_ = fs.Parse(args)
 
 	cfg := resolveAndroidCfg(fs.Arg(0), *out, *appID, *label, *versionName, *versionCode, *minSDK, *targetSDK,
-		*abiList, *manifestArg, *sdkArg, *ndkArg, *keystore, *ksPass, *keyAlias, *keyPass, *permissions)
+		*abiList, *manifestArg, *sdkArg, *ndkArg, *keystore, *ksPass, *keyAlias, *keyPass, *permissions, *icon)
 	if err := buildAPK(cfg); err != nil {
 		return err
 	}
@@ -267,6 +278,7 @@ func cmdAndroidDev(args []string) error {
 	ndkArg := fs.String("ndk", "", "Android NDK dir (default $ANDROID_NDK_HOME or <sdk>/ndk/<latest>)")
 	abiArg := fs.String("abi", "", "ABI to build (default: the running device's ABI — faster than building all)")
 	permissions := fs.String("permissions", "", "comma-separated Android permissions to declare (short names get the android.permission. prefix)")
+	icon := fs.String("icon", "", "launcher icon image (PNG or WebP, square, ideally 192px+)")
 	_ = fs.Parse(args)
 
 	tc, err := resolveAndroidTools(*sdkArg, *ndkArg)
@@ -286,7 +298,7 @@ func cmdAndroidDev(args []string) error {
 	}
 
 	cfg := resolveAndroidCfg(fs.Arg(0), filepath.Join(os.TempDir(), "goslint-android-dev.apk"),
-		*appID, *label, "1.0", 1, *minSDK, 34, abiList, "", *sdkArg, *ndkArg, "", "android", "androiddebugkey", "android", *permissions)
+		*appID, *label, "1.0", 1, *minSDK, 34, abiList, "", *sdkArg, *ndkArg, "", "android", "androiddebugkey", "android", *permissions, *icon)
 
 	// Host env for codegen: typed projects regenerate their wrapper from .slint via
 	// goslint-gen, which runs on the host and needs the host native lib. Best-effort —
@@ -736,10 +748,14 @@ func abiNames(s []struct{ abi, goarch, triple, target string }) []string {
 
 // ---- manifest ----
 
-func genManifest(appID, label string, versionCode int, versionName string, minSDK, targetSDK int, permissions []string) string {
+func genManifest(appID, label string, versionCode int, versionName string, minSDK, targetSDK int, permissions []string, icon bool) string {
 	var perms strings.Builder
 	for _, p := range permissions {
 		fmt.Fprintf(&perms, "\n    <uses-permission android:name=%q />", p)
+	}
+	iconAttr := ""
+	if icon {
+		iconAttr = "\n        android:icon=\"@mipmap/ic_launcher\""
 	}
 	return fmt.Sprintf(`<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
@@ -750,7 +766,7 @@ func genManifest(appID, label string, versionCode int, versionName string, minSD
     <uses-sdk android:minSdkVersion="%d" android:targetSdkVersion="%d" />%s
 
     <application
-        android:label="%s"
+        android:label="%s"%s
         android:hasCode="false"
         android:extractNativeLibs="true">
         <activity
@@ -765,8 +781,31 @@ func genManifest(appID, label string, versionCode int, versionName string, minSD
         </activity>
     </application>
 </manifest>
-`, appID, versionCode, versionName, minSDK, targetSDK, perms.String(), label)
+`, appID, versionCode, versionName, minSDK, targetSDK, perms.String(), label, iconAttr)
 
+}
+
+// compileIconResource compiles the given image into an aapt2 resource archive
+// as mipmap/ic_launcher, which the manifest's android:icon references. A single
+// high density is enough — Android scales the launcher icon per device. This is
+// the only resource a goslint APK carries; everything else stays resource-free.
+func compileIconResource(tc androidTools, stage, iconPath string) (string, error) {
+	ext := strings.ToLower(filepath.Ext(iconPath))
+	if ext != ".png" && ext != ".webp" {
+		return "", fmt.Errorf("-icon must be a .png or .webp image, got %q", filepath.Base(iconPath))
+	}
+	resDir := filepath.Join(stage, "res", "mipmap-xxxhdpi")
+	if err := os.MkdirAll(resDir, 0o755); err != nil {
+		return "", err
+	}
+	if err := copyFile(iconPath, filepath.Join(resDir, "ic_launcher"+ext)); err != nil {
+		return "", fmt.Errorf("read icon: %w", err)
+	}
+	resZip := filepath.Join(stage, "res.zip")
+	if err := run(tc.aapt2, "compile", "--dir", filepath.Join(stage, "res"), "-o", resZip); err != nil {
+		return "", fmt.Errorf("aapt2 compile icon: %w", err)
+	}
+	return resZip, nil
 }
 
 // normalizePermissions turns a comma list into manifest permission names: entries
