@@ -130,6 +130,19 @@ func TestGenerateNameCollision(t *testing.T) {
 		{"two names normalize to one", &Interface{Component: "App", Properties: []Prop{{Name: "my-prop", Ty: TypeInfo{Kind: "bool"}}, {Name: "my_prop", Ty: TypeInfo{Kind: "bool"}}}}, "MyProp"},
 		{"global accessor vs built-in Close", &Interface{Component: "App", Globals: []GlobalInfo{{Name: "close"}}}, "Close"},
 		{"leading-digit identifier", &Interface{Component: "App", Functions: []Callable{{Name: "2nd"}}}, "valid Go identifier"},
+		{"struct field collision", &Interface{Component: "App", Structs: map[string]StructInfo{
+			"point": {Fields: []Prop{{Name: "my-x", Ty: TypeInfo{Kind: "int"}}, {Name: "my_x", Ty: TypeInfo{Kind: "int"}}}},
+		}}, "MyX"},
+		{"struct field invalid identifier", &Interface{Component: "App", Structs: map[string]StructInfo{
+			"point": {Fields: []Prop{{Name: "2nd", Ty: TypeInfo{Kind: "int"}}}},
+		}}, "valid Go identifier"},
+		{"enum value collision", &Interface{Component: "App", Enums: map[string]EnumInfo{
+			"mode": {Values: []string{"foo-bar", "foo_bar"}},
+		}}, "FooBar"},
+		{"enum constant vs struct type", &Interface{Component: "App",
+			Structs: map[string]StructInfo{"mode-x": {}},
+			Enums:   map[string]EnumInfo{"mode": {Values: []string{"x"}}},
+		}, "ModeX"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -147,6 +160,32 @@ func TestGenerateNameCollision(t *testing.T) {
 	clean := &Interface{Component: "App", Properties: []Prop{{Name: "name", Ty: TypeInfo{Kind: "string"}}}}
 	if _, err := generate(clean, "ui", "fluent", "app.slint", nil); err != nil {
 		t.Fatalf("clean interface should generate: %v", err)
+	}
+}
+
+// TestExportedUnicode pins the first-RUNE uppercasing: slicing the first byte of a
+// multi-byte letter produced invalid UTF-8 and an unexported (lowercase) method name.
+func TestExportedUnicode(t *testing.T) {
+	for in, want := range map[string]string{
+		"ñame":      "Ñame",
+		"über-cool": "ÜberCool",
+		"hello":     "Hello",  // ASCII regression
+		"my-prop":   "MyProp", // multi-part regression
+	} {
+		if got := exported(in); got != want {
+			t.Errorf("exported(%q) = %q, want %q", in, got, want)
+		}
+	}
+
+	// End to end: a unicode property name must survive validation and produce
+	// parseable Go (pre-fix it corrupted the method name into invalid UTF-8).
+	iface := &Interface{Component: "App", Properties: []Prop{{Name: "ñame", Ty: TypeInfo{Kind: "string"}}}}
+	src, err := generate(iface, "ui", "fluent", "app.slint", nil)
+	if err != nil {
+		t.Fatalf("unicode property should generate: %v", err)
+	}
+	if !strings.Contains(string(src), "func (c *App) Ñame()") {
+		t.Error("generated code should contain the exported Ñame getter")
 	}
 }
 

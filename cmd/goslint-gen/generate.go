@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 // generate produces the typed Go source for a component interface. relPath is the
@@ -492,8 +493,11 @@ func exported(name string) string {
 		if part == "" {
 			continue
 		}
-		b.WriteString(strings.ToUpper(part[:1]))
-		b.WriteString(part[1:])
+		// Uppercase the first RUNE: slicing the first BYTE corrupts a multi-byte
+		// letter ("ñame" became "\xc3\xb1ame" — invalid UTF-8 and unexported).
+		r, size := utf8.DecodeRuneInString(part)
+		b.WriteRune(unicode.ToUpper(r))
+		b.WriteString(part[size:])
 	}
 	if b.Len() == 0 {
 		return "X"
@@ -560,10 +564,10 @@ func validateNames(iface *Interface) error {
 	types := map[string]string{}
 	addType := func(name, origin string) error {
 		if !validGoIdent(name) {
-			return fmt.Errorf("%s maps to type %q, which is not a valid Go identifier — rename it in the .slint", origin, name)
+			return fmt.Errorf("%s maps to %q, which is not a valid Go identifier — rename it in the .slint", origin, name)
 		}
 		if prev, ok := types[name]; ok {
-			return fmt.Errorf("name collision: %s and %s both generate Go type %q — rename one in the .slint", prev, origin, name)
+			return fmt.Errorf("name collision: %s and %s both generate the package-level name %q — rename one in the .slint", prev, origin, name)
 		}
 		types[name] = origin
 		return nil
@@ -614,10 +618,33 @@ func validateNames(iface *Interface) error {
 		if err := addType(exported(name), fmt.Sprintf("struct %q", name)); err != nil {
 			return err
 		}
+		// Fields form their own namespace inside the generated Go struct. Unvalidated,
+		// a bad or colliding field only surfaced at the user's `go build` (duplicate
+		// field / parse error), far from the .slint that caused it.
+		fields := map[string]string{}
+		for _, f := range iface.Structs[name].Fields {
+			ident := exported(f.Name)
+			origin := fmt.Sprintf("struct %q field %q", name, f.Name)
+			if !validGoIdent(ident) {
+				return fmt.Errorf("%s maps to %q, which is not a valid Go identifier — rename it in the .slint", origin, ident)
+			}
+			if prev, dup := fields[ident]; dup {
+				return fmt.Errorf("name collision: %s and %s both generate the field %q — rename one in the .slint", prev, origin, ident)
+			}
+			fields[ident] = origin
+		}
 	}
 	for _, name := range sortedKeys(iface.Enums) {
-		if err := addType(exported(name), fmt.Sprintf("enum %q", name)); err != nil {
+		t := exported(name)
+		if err := addType(t, fmt.Sprintf("enum %q", name)); err != nil {
 			return err
+		}
+		// Each value becomes the package-level constant <Type><Value>, sharing the
+		// namespace with every generated type and every other enum's constants.
+		for _, v := range iface.Enums[name].Values {
+			if err := addType(t+exported(v), fmt.Sprintf("enum %q value %q", name, v)); err != nil {
+				return err
+			}
 		}
 	}
 
