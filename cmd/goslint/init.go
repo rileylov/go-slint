@@ -179,14 +179,31 @@ const androidTemplate = `//go:build goslint_android
 
 package main
 
+/*
+#cgo LDFLAGS: -llog
+#include <android/log.h>
+#include <stdlib.h>
+static void goslint_report(const char *msg) {
+	__android_log_write(ANDROID_LOG_ERROR, "goslintapp", msg);
+}
+*/
 import "C"
 
-import "runtime"
+import (
+	"runtime"
+	"unsafe"
+)
 
 //export goslint_android_main
 func goslint_android_main(_ *C.char) {
 	runtime.LockOSThread()
-	_ = run()
+	if err := run(); err != nil {
+		// Logcat is the only place an Android app can report failure:
+		//   adb logcat -s goslintapp goslint
+		msg := C.CString("run: " + err.Error())
+		C.goslint_report(msg)
+		C.free(unsafe.Pointer(msg))
+	}
 }
 
 func main() {} // required for c-shared; unused (entry is goslint_android_main)
