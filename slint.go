@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	pathpkg "path"
 	"strings"
+	"unsafe"
 
 	"github.com/rileylov/go-slint/slintsys"
 )
@@ -465,6 +466,53 @@ func NewImageFromSVG(data []byte) (*Image, error) { return slintsys.ImageFromSVG
 // NewImage instead.
 func NewImageFromData(data []byte, format string) (*Image, error) {
 	return slintsys.ImageFromData(data, format)
+}
+
+// RenderingState identifies the phase a rendering notifier is called at.
+type RenderingState int
+
+const (
+	// RenderingSetup: the window's graphics context was created — initialize your
+	// GL state here (e.g. go-gl's gl.InitWithProcAddrFunc(slint.GLProcAddress)).
+	RenderingSetup RenderingState = slintsys.RenderingSetup
+	// BeforeRendering: about to render the scene — draw underlays and upload
+	// textures here (they appear beneath the UI; give the Window a transparent
+	// background so they show through).
+	BeforeRendering RenderingState = slintsys.BeforeRendering
+	// AfterRendering: scene rendered, not yet presented — draw overlays here.
+	AfterRendering RenderingState = slintsys.AfterRendering
+	// RenderingTeardown: the context is going away — release GL resources.
+	RenderingTeardown RenderingState = slintsys.RenderingTeardown
+)
+
+// SetRenderingNotifier registers fn to run at each rendering phase, on the UI
+// thread with the window's OpenGL context current — the hook for custom GPU
+// drawing under/over the UI and for zero-copy texture updates (see
+// NewImageFromGLTexture). GL renderer only (femtovg, the desktop default): with
+// SLINT_BACKEND=software this returns an error. OpenGL calls are valid only
+// inside fn; resolve them through GLProcAddress. See examples/glunderlay and
+// examples/glvideo.
+func (i *Instance) SetRenderingNotifier(fn func(RenderingState)) error {
+	return i.inner.SetRenderingNotifier(func(state int) { fn(RenderingState(state)) })
+}
+
+// GLProcAddress resolves an OpenGL function by name — Slint's own context loader.
+// Only valid inside a rendering-notifier callback (nil elsewhere). Designed to
+// plug straight into a GL binding, e.g. gl.InitWithProcAddrFunc(slint.GLProcAddress).
+func GLProcAddress(name string) unsafe.Pointer { return slintsys.GLProcAddress(name) }
+
+// NewImageFromGLTexture wraps an OpenGL 2D RGBA texture you own as an Image —
+// zero-copy: Slint samples the live texture every frame, so updating the texture
+// (in a rendering-notifier callback) updates what's displayed without re-sending
+// pixels. This is the high-throughput path for video/game/visualization frames;
+// compare NewImageRGBA, which copies the pixels on every call.
+//
+// Rules: create/update the texture inside the notifier callback (same GL
+// context), keep it alive as long as any property shows the Image, and Close the
+// Image before deleting the texture. bottomLeftOrigin flips sampling for
+// FBO-rendered (bottom-up) textures.
+func NewImageFromGLTexture(textureID uint32, width, height int, bottomLeftOrigin bool) (*Image, error) {
+	return slintsys.ImageFromGLTexture(textureID, width, height, bottomLeftOrigin)
 }
 
 // Timer fires a Go callback after an interval. Timers fire only while the event

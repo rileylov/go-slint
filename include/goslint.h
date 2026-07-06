@@ -68,6 +68,16 @@ void goslint_clear_translator(void);
 char *goslint_clipboard_get_text(void);             /* owned (goslint_string_free) or NULL if empty */
 int   goslint_clipboard_set_text(const char *text); /* 0 ok, 1 on failure */
 
+/* ---- OpenGL interop (GL renderer only; software renderer -> error) ----
+   The notifier fires cb(handle, state) on the UI thread with the GL context
+   current: 0=setup, 1=before-rendering, 2=after-rendering, 3=teardown. During the
+   callback goslint_gl_proc_address resolves GL functions (NULL outside it).
+   goslint_image_from_gl_texture wraps an app-owned RGBA texture as an Image
+   (borrowed: Slint samples it live; keep the texture alive + same GL context). */
+int   goslint_instance_set_rendering_notifier(const GoComponentInstance *i, uintptr_t handle, void (*cb)(uintptr_t, int32_t), void (*drop)(uintptr_t));
+void *goslint_gl_proc_address(const char *name);
+GoImage *goslint_image_from_gl_texture(uint32_t texture, uint32_t width, uint32_t height, bool origin_bottom_left);
+
 /* ---- compiler ---- */
 GoCompiler *goslint_compiler_new(void);
 void        goslint_compiler_free(GoCompiler *c);

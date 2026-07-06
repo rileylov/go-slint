@@ -584,6 +584,44 @@ Only `build` takes `-target` (you can't run a cross-built binary on the host, so
 
 ---
 
+## Custom OpenGL (underlays, overlays, zero-copy textures)
+
+For GPU workloads — video frames, game views, custom visualizations — goslint
+exposes Slint's stable OpenGL interop (GL renderer only, i.e. the femtovg
+default; under `SLINT_BACKEND=software` these return an error):
+
+```go
+win.SetRenderingNotifier(func(state slint.RenderingState) {
+    switch state {
+    case slint.RenderingSetup:      // GL context created:
+        gl.InitWithProcAddrFunc(slint.GLProcAddress)   // go-gl via Slint's loader
+    case slint.BeforeRendering:     // draw UNDER the UI, upload textures
+    case slint.AfterRendering:      // draw OVER the UI
+    case slint.RenderingTeardown:   // release GL resources
+    }
+})
+```
+
+The callback runs on the UI thread with the window's GL context current — GL
+calls (and `slint.GLProcAddress`) are only valid inside it. Give the `Window` a
+`background: transparent;` so a `BeforeRendering` underlay shows through
+(see [`examples/glunderlay`](examples/glunderlay)).
+
+For streaming pixels, wrap a texture you own as an image — zero-copy, Slint
+samples the live texture every frame:
+
+```go
+img, _ := slint.NewImageFromGLTexture(textureID, w, h, false)
+win.Set("frame", img)   // set once; glTexSubImage2D updates show live
+```
+
+Create/update the texture inside the notifier (same GL context), keep it alive
+while any property shows the image, and Close the image before deleting the
+texture. [`examples/glvideo`](examples/glvideo) streams 720p frames and shows a
+live cost comparison against the per-frame `NewImageRGBA` copy path.
+
+---
+
 ## Renderers
 
 go-slint ships Slint's **GPU renderer** (femtovg/OpenGL - the default, best on most

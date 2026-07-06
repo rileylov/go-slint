@@ -1,0 +1,38 @@
+import { VerticalBox } from "std-widgets.slint";
+
+export component App inherits Window {
+    title: "goslint GL underlay";
+    preferred-width: 640px;
+    preferred-height: 420px;
+    // Transparent window background: whatever the rendering notifier draws in
+    // BeforeRendering shows through, with the UI composited on top.
+    background: transparent;
+
+    in-out property <string> info: "waiting for GL…";
+
+    VerticalBox {
+        alignment: center;
+        Rectangle {
+            background: #000000aa;
+            border-radius: 12px;
+            width: 75%;
+            height: 45%;
+            VerticalLayout {
+                alignment: center;
+                spacing: 8px;
+                Text {
+                    text: "Slint UI over Go OpenGL";
+                    color: white;
+                    font-size: 20px;
+                    horizontal-alignment: center;
+                }
+                Text {
+                    text: root.info;
+                    color: #dddddd;
+                    horizontal-alignment: center;
+                    wrap: word-wrap;
+                }
+            }
+        }
+    }
+}

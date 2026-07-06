@@ -15,6 +15,7 @@ mod graphics;
 mod instance;
 mod introspect;
 mod model;
+mod rendering;
 mod structs;
 mod timer;
 mod translations;

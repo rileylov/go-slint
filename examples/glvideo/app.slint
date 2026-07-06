@@ -1,0 +1,39 @@
+import { Button, HorizontalBox, VerticalBox } from "std-widgets.slint";
+
+export component App inherits Window {
+    title: "goslint GL texture streaming — CPU vs GPU delivery";
+    preferred-width: 1000px;
+    preferred-height: 680px;
+
+    in-out property <image> frame;
+    in-out property <string> mode: "gpu";
+    in-out property <string> stats: "starting…";
+    callback set-mode(string);
+
+    VerticalBox {
+        HorizontalBox {
+            alignment: center;
+            height: 56px;
+            Button {
+                text: "GPU texture (zero-copy)";
+                primary: root.mode == "gpu";
+                clicked => { root.set-mode("gpu"); }
+            }
+            Button {
+                text: "CPU images (copy per frame)";
+                primary: root.mode == "cpu";
+                clicked => { root.set-mode("cpu"); }
+            }
+        }
+        Image {
+            source: root.frame;
+            image-fit: contain;
+            vertical-stretch: 1;
+        }
+        Text {
+            text: root.stats;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+    }
+}
