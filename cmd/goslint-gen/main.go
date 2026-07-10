@@ -61,6 +61,9 @@ func main() {
 				msgs = append(msgs, d.Message)
 			}
 		}
+		if hint := libraryHint(msgs); hint != "" {
+			msgs = append(msgs, hint)
+		}
 		fatal(fmt.Errorf("compile %s:\n  %s", in, strings.Join(msgs, "\n  ")))
 	}
 	name := *component
@@ -94,9 +97,12 @@ func main() {
 
 	// Embed every transitively-imported local .slint so the generated code can
 	// compile a multi-file component from memory (a self-contained binary).
-	files, err := collectImports(in)
+	files, importWarns, err := collectImports(in)
 	if err != nil {
 		fatal(fmt.Errorf("collect imports: %w", err))
+	}
+	for _, w := range importWarns {
+		fmt.Fprintln(os.Stderr, "goslint: warning:", w)
 	}
 
 	// Surface globals that are reachable but not exported by the entry — they get no
@@ -116,6 +122,19 @@ func main() {
 }
 
 func fatal(err error) { fmt.Fprintln(os.Stderr, "goslint-gen:", err); os.Exit(1) }
+
+// libraryHint returns a goslint-specific note when the compile failed on an
+// unresolved `@library` import. Slint's own diagnostic ("Cannot find requested
+// import "@lib/x.slint" in the library search path") explains the mechanism but
+// not the way out: goslint generate has no flag to provide library paths yet.
+func libraryHint(msgs []string) string {
+	for _, m := range msgs {
+		if strings.Contains(m, "library search path") && strings.Contains(m, "@") {
+			return "note: goslint generate can't resolve @library imports yet; import the file by relative path instead, or compile at runtime with slint.Compile/CompileFS and slint.WithLibraryPaths"
+		}
+	}
+	return ""
+}
 
 func sanitizePkg(s string) string {
 	var b strings.Builder

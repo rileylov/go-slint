@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	pathpkg "path"
 	"path/filepath"
@@ -10,7 +11,8 @@ import (
 // importRe matches the import targets in a .slint file: `... from "PATH"` (for
 // `import {…} from "…"` / `export {…} from "…"`) and bare `import "PATH"`. False
 // positives (e.g. a path in a comment) are harmless: non-existent files are
-// skipped. Builtins like "std-widgets.slint" and "@library/…" imports don't exist
+// skipped, and the absolute-import warning only fires when the file actually
+// exists. Builtins like "std-widgets.slint" and "@library/…" imports don't exist
 // on disk relative to the project, so they're naturally skipped too.
 var importRe = regexp.MustCompile(`\b(?:from|import)\s+"([^"]+)"`)
 
@@ -20,14 +22,30 @@ var importRe = regexp.MustCompile(`\b(?:from|import)\s+"([^"]+)"`)
 // separately). Keys match the paths the interpreter's file-loader requests at
 // runtime. Imports that don't resolve to a file on disk (builtins, @library) are
 // skipped; for those, the consumer still needs the usual resolution at runtime.
-func collectImports(entryPath string) (map[string]string, error) {
+//
+// The second return value carries warnings for imports the walk had to drop even
+// though they exist. When the embedded FS can't serve an import at runtime, the
+// interpreter falls back to reading it from disk — the app works on this machine
+// and silently breaks on any machine without the file, so the drop must be loud
+// at generate time.
+func collectImports(entryPath string) (map[string]string, []string, error) {
 	entryAbs, err := filepath.Abs(entryPath)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	entryDir := filepath.Dir(entryAbs)
 	files := map[string]string{}
+	var warns []string
 	seen := map[string]bool{entryAbs: true}
+
+	// name renders a file for warnings: relative to the entry's directory when
+	// possible (matching the embed keys), the full path otherwise.
+	name := func(p string) string {
+		if rel, err := filepath.Rel(entryDir, p); err == nil {
+			return filepath.ToSlash(rel)
+		}
+		return p
+	}
 
 	queue := []string{entryAbs}
 	for len(queue) > 0 {
@@ -43,6 +61,19 @@ func collectImports(entryPath string) (map[string]string, error) {
 			if spec == "" || spec[0] == '@' { // @library imports use a separate mechanism
 				continue
 			}
+			if filepath.IsAbs(filepath.FromSlash(spec)) {
+				// The interpreter re-resolves an absolute import to that same
+				// absolute path at runtime, so an embedded copy could never be
+				// served — don't embed one, warn instead. This also covers
+				// cross-drive imports on Windows: a relative path can't reach
+				// another drive, so every cross-drive import is absolute.
+				if _, err := os.Stat(filepath.FromSlash(spec)); err == nil {
+					warns = append(warns, fmt.Sprintf(
+						"%s imports %q by absolute path, which can't be embedded in the generated binding; at runtime the app reads it from disk, so it only works on machines that have that exact file. Use a relative import to embed it.",
+						name(cur), spec))
+				}
+				continue
+			}
 			abs := filepath.Clean(filepath.Join(dir, filepath.FromSlash(spec)))
 			if _, err := os.Stat(abs); err != nil {
 				continue // builtin (std-widgets) or otherwise not on disk
@@ -54,14 +85,20 @@ func collectImports(entryPath string) (map[string]string, error) {
 			queue = append(queue, abs)
 			rel, err := filepath.Rel(entryDir, abs)
 			if err != nil {
+				warns = append(warns, fmt.Sprintf(
+					"%s imports %q, which has no path relative to the entry's directory (%v) and won't be embedded in the generated binding; the app will need the file on disk at runtime.",
+					name(cur), spec, err))
 				continue
 			}
 			body, err := os.ReadFile(abs)
 			if err != nil {
+				warns = append(warns, fmt.Sprintf(
+					"%s imports %q, which couldn't be read (%v) and won't be embedded in the generated binding.",
+					name(cur), spec, err))
 				continue
 			}
 			files[pathpkg.Clean(filepath.ToSlash(rel))] = string(body)
 		}
 	}
-	return files, nil
+	return files, warns, nil
 }
