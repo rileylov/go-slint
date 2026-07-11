@@ -61,3 +61,41 @@ jobs:
 
       - name: Test
         run: go test ./...
+
+  # The android shim has a different dependency graph than the desktop one
+  # (upstream target-gates its backends: winit is excluded, android-activity and
+  # skia come in), so a desktop-green build proves nothing about it — and the
+  # release workflow used to be the first thing that ever compiled it, after the
+  # tag already existed. cargo check compiles the full android graph (catching
+  # feature/cfg breakage like the v0.23.0 release failure) without LTO or
+  # linking, so it's cheap enough to run on every push. `make check-android`
+  # runs the same thing locally.
+  android-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch Slint source
+        run: |
+          ref="$(cat .slint-version)"
+          git init -q slint
+          git -C slint remote add origin https://github.com/slint-ui/slint
+          git -C slint fetch --depth 1 origin "$ref"
+          git -C slint checkout -q FETCH_HEAD
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup target add aarch64-linux-android
+
+      - name: Cache cargo + target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/goslint-sys/target
+          key: cargo-android-check-${{ hashFiles('.slint-version', 'rust/goslint-sys/Cargo.toml') }}
+
+      - name: cargo check (aarch64-linux-android)
+        run: make check-android

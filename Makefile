@@ -38,6 +38,33 @@ lib:
 test: lib
 	go test . ./slintsys/ ./internal/conformance/
 
+# Compile-check the shim for android. The android dependency graph is shaped
+# differently from the desktop one (winit excluded, android-activity + skia in),
+# so `make lib` proves nothing about it — this is what broke the v0.23.0 release
+# after the tag was already pushed. Run before tagging a release; CI runs it on
+# every push (ci.yml android-check). cargo check compiles the whole graph but
+# skips codegen/linking, so no full NDK toolchain wiring is needed beyond clang.
+# NDK discovery: $ANDROID_NDK_LATEST_HOME (GitHub runners), then the newest NDK
+# under $ANDROID_HOME/ndk or ~/android-sdk/ndk.
+ANDROID_HOME ?= $(HOME)/android-sdk
+ANDROID_CHECK_TARGET := aarch64-linux-android
+.PHONY: check-android
+check-android:
+	@test -d $(SLINT_DIR) || { echo "slint/ missing — run 'make slint' first"; exit 1; }
+	@ndk="$${ANDROID_NDK_LATEST_HOME:-$$(ls -d $(ANDROID_HOME)/ndk/* $(HOME)/android-sdk/ndk/* 2>/dev/null | sort -V | tail -1)}"; \
+	test -n "$$ndk" || { echo "no NDK found (set ANDROID_NDK_LATEST_HOME or install one under $(ANDROID_HOME)/ndk)"; exit 1; }; \
+	sdk="$$(dirname "$$(dirname "$$ndk")")"; \
+	bin="$$ndk/toolchains/llvm/prebuilt/linux-x86_64/bin"; \
+	echo "using NDK $$ndk"; \
+	cd $(RUST_DIR) && \
+	  ANDROID_HOME="$$sdk" ANDROID_SDK_ROOT="$$sdk" \
+	  ANDROID_NDK_ROOT="$$ndk" ANDROID_NDK_HOME="$$ndk" \
+	  CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$$bin/$(ANDROID_CHECK_TARGET)24-clang" \
+	  CC_aarch64_linux_android="$$bin/$(ANDROID_CHECK_TARGET)24-clang" \
+	  CXX_aarch64_linux_android="$$bin/$(ANDROID_CHECK_TARGET)24-clang++" \
+	  AR_aarch64_linux_android="$$bin/llvm-ar" \
+	  cargo check --target $(ANDROID_CHECK_TARGET)
+
 # Regenerate the scaffold's embedded ui wrapper that `goslint init` ships. It MUST be
 # generated CO-LOCATED with the markup (ui/app.slint + ui/app.slint.go in one dir) so
 # the emitted //go:embed app.slint directive resolves — the generator rejects a
