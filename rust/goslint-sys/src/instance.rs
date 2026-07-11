@@ -606,6 +606,7 @@ pub unsafe extern "C" fn goslint_instance_window_request_redraw(i: *const Compon
 /// never sends. Deferred through a zero timer because this runs inside the
 /// initiating press's input dispatch, and dispatching another pointer event
 /// re-entrantly would hit the input state's RefCell borrow.
+#[cfg(not(target_os = "android"))]
 fn reset_pointer_state_after_os_grab(i: &ComponentInstance) {
     use i_slint_core::window::WindowInner;
     let adapter = WindowInner::from_pub(i.window()).window_adapter();
@@ -616,33 +617,87 @@ fn reset_pointer_state_after_os_grab(i: &ComponentInstance) {
     });
 }
 
+/// The winit backend is not in the android dependency graph at all (mirroring
+/// upstream's selector), so the drag impls compile to a plain error there —
+/// the C symbols must still exist because the Go side links them on every
+/// target.
+#[cfg(target_os = "android")]
+fn drag_move_impl(_i: &ComponentInstance) -> i32 {
+    set_last_error("interactive window move/resize is not available on android");
+    1
+}
+
+#[cfg(not(target_os = "android"))]
+fn drag_move_impl(i: &ComponentInstance) -> i32 {
+    use i_slint_backend_winit::WinitWindowAccessor;
+    match i.window().with_winit_window(|w| w.drag_window()) {
+        Some(Ok(())) => {
+            reset_pointer_state_after_os_grab(i);
+            0
+        }
+        Some(Err(e)) => {
+            set_last_error(format!("drag window: {e}"));
+            1
+        }
+        None => {
+            set_last_error("window is not backed by winit (headless backend?)");
+            1
+        }
+    }
+}
+
+#[cfg(target_os = "android")]
+fn drag_resize_impl(_i: &ComponentInstance, _direction: i32) -> i32 {
+    set_last_error("interactive window move/resize is not available on android");
+    1
+}
+
+#[cfg(not(target_os = "android"))]
+fn drag_resize_impl(i: &ComponentInstance, direction: i32) -> i32 {
+    use i_slint_backend_winit::{winit::window::ResizeDirection, WinitWindowAccessor};
+    let dir = match direction {
+        0 => ResizeDirection::East,
+        1 => ResizeDirection::North,
+        2 => ResizeDirection::NorthEast,
+        3 => ResizeDirection::NorthWest,
+        4 => ResizeDirection::South,
+        5 => ResizeDirection::SouthEast,
+        6 => ResizeDirection::SouthWest,
+        7 => ResizeDirection::West,
+        _ => {
+            set_last_error(format!("drag resize: invalid direction {direction}"));
+            return 1;
+        }
+    };
+    match i.window().with_winit_window(|w| w.drag_resize_window(dir)) {
+        Some(Ok(())) => {
+            reset_pointer_state_after_os_grab(i);
+            0
+        }
+        Some(Err(e)) => {
+            set_last_error(format!("drag resize: {e}"));
+            1
+        }
+        None => {
+            set_last_error("window is not backed by winit (headless backend?)");
+            1
+        }
+    }
+}
+
 /// Begin an interactive, OS-driven move of the window — the frameless-window
 /// pattern of dragging by a custom title bar. Call on the UI thread from a
 /// pointer-event callback while a button is pressed (the OS takes over the
 /// pointer until release). Winit desktop backends only: 0 on success, 1 with
 /// `goslint_last_error` detail when the window isn't backed by winit (headless
-/// tests, Android) or the platform refuses (winit's `drag_window`).
+/// tests, android) or the platform refuses (winit's `drag_window`).
 ///
 /// # Safety
 /// `i` must be NULL or an instance pointer.
 #[no_mangle]
 pub unsafe extern "C" fn goslint_instance_window_drag_move(i: *const ComponentInstance) -> i32 {
-    use i_slint_backend_winit::WinitWindowAccessor;
     guard(1, || match i.as_ref() {
-        Some(i) => match i.window().with_winit_window(|w| w.drag_window()) {
-            Some(Ok(())) => {
-                reset_pointer_state_after_os_grab(i);
-                0
-            }
-            Some(Err(e)) => {
-                set_last_error(format!("drag window: {e}"));
-                1
-            }
-            None => {
-                set_last_error("window is not backed by winit (headless or Android backend)");
-                1
-            }
-        },
+        Some(i) => drag_move_impl(i),
         None => 1,
     })
 }
@@ -660,39 +715,9 @@ pub unsafe extern "C" fn goslint_instance_window_drag_resize(
     i: *const ComponentInstance,
     direction: i32,
 ) -> i32 {
-    use i_slint_backend_winit::{winit::window::ResizeDirection, WinitWindowAccessor};
-    guard(1, || {
-        let dir = match direction {
-            0 => ResizeDirection::East,
-            1 => ResizeDirection::North,
-            2 => ResizeDirection::NorthEast,
-            3 => ResizeDirection::NorthWest,
-            4 => ResizeDirection::South,
-            5 => ResizeDirection::SouthEast,
-            6 => ResizeDirection::SouthWest,
-            7 => ResizeDirection::West,
-            _ => {
-                set_last_error(format!("drag resize: invalid direction {direction}"));
-                return 1;
-            }
-        };
-        match i.as_ref() {
-            Some(i) => match i.window().with_winit_window(|w| w.drag_resize_window(dir)) {
-                Some(Ok(())) => {
-                    reset_pointer_state_after_os_grab(i);
-                    0
-                }
-                Some(Err(e)) => {
-                    set_last_error(format!("drag resize: {e}"));
-                    1
-                }
-                None => {
-                    set_last_error("window is not backed by winit (headless or Android backend)");
-                    1
-                }
-            },
-            None => 1,
-        }
+    guard(1, || match i.as_ref() {
+        Some(i) => drag_resize_impl(i, direction),
+        None => 1,
     })
 }
 

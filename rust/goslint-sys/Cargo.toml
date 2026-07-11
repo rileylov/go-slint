@@ -44,14 +44,6 @@ i-slint-core = { path = "../../slint/internal/core", features = ["default", "tr"
 # amd64→arm64) while system-font discovery still works at runtime (fontconfig is
 # dlopen'd on the target). Feature is linux/BSD-gated, so it's a no-op on macOS/Windows.
 i-slint-common = { path = "../../slint/internal/common", features = ["fontconfig-dlopen"] }
-# Direct dep for the WinitWindowAccessor escape hatch (winit's drag_window /
-# drag_resize_window — interactive OS moves/resizes for frameless windows). The
-# interpreter's backend-winit feature already compiles this crate on every
-# target, so this adds nothing to the build; it only lets us name the trait.
-# Same path as the interpreter's dep, so Cargo unifies the crate. On non-winit
-# windows (headless tests, Android) the accessor returns None and we report a
-# clean error instead.
-i-slint-backend-winit = { path = "../../slint/internal/backends/winit", default-features = false }
 # The same translation crate i-slint-core uses, so we can implement tr::Translator.
 tr = { version = "0.1", default-features = false }
 spin_on = "0.1"
@@ -62,6 +54,19 @@ spin_on = "0.1"
 i-slint-compiler = { path = "../../slint/internal/compiler" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+# Direct dep for the WinitWindowAccessor escape hatch (winit's drag_window /
+# drag_resize_window — interactive OS moves/resizes for frameless windows).
+# Target-gated exactly like the selector's own winit dep: upstream keeps the
+# winit backend OUT of the android graph entirely, so an unconditional dep here
+# would compile it for android with no renderer feature selected and hit its
+# "select a renderer" compile_error (broke the release matrix). On non-android
+# targets the interpreter's backend-winit feature already compiles this crate,
+# so this dep adds nothing to the build; it only lets us name the trait (same
+# path as the interpreter's dep, so Cargo unifies the crate). The drag C ABI
+# still exists on android — it just reports an error (see instance.rs).
+[target.'cfg(not(target_os = "android"))'.dependencies]
+i-slint-backend-winit = { path = "../../slint/internal/backends/winit", default-features = false }
 
 # Android: Slint's NativeActivity backend (pulls skia). Only compiled for android,
 # so desktop builds are unaffected. android_main lives in src/android.rs.
