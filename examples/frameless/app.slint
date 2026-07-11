@@ -1,0 +1,98 @@
+// A frameless window with a custom title bar: the OS decorations are off
+// (no-frame), so moving and resizing are wired up by hand — the title bar
+// starts a system move, thin edge/corner strips start a system resize. The
+// actual OS calls happen in Go (StartSystemMove / StartSystemResize); markup
+// only decides *where* a drag means what.
+
+// One resize grab strip. Forwards the edge name on left-button press; the
+// cursor shape tells the user a resize lives here.
+component ResizeHandle inherits TouchArea {
+    in property <string> edge;
+    pointer-event(ev) => {
+        if (ev.kind == PointerEventKind.down && ev.button == PointerEventButton.left) {
+            root.resize(root.edge);
+        }
+    }
+    callback resize(string);
+}
+
+export component App inherits Window {
+    title: "goslint frameless";
+    no-frame: true;
+    preferred-width: 560px;
+    preferred-height: 360px;
+    background: transparent;
+
+    callback start-move();
+    callback start-resize(string);
+    callback quit();
+
+    in-out property <string> status: "drag the title bar; pull any edge or corner";
+
+    // The visible "window": rounded, inset by the resize border so the grab
+    // strips sit on the very edge without painting anything.
+    Rectangle {
+        x: 6px; y: 6px;
+        width: parent.width - 12px;
+        height: parent.height - 12px;
+        border-radius: 10px;
+        background: @linear-gradient(160deg, #2c3e50 0%, #1a252f 100%);
+
+        VerticalLayout {
+            // Custom title bar: any left-button press on it hands the window
+            // to the OS to move. No move-by-pixels math — one call per gesture.
+            titlebar := Rectangle {
+                height: 40px;
+                background: #22303d;
+                border-radius: 10px;
+                TouchArea {
+                    pointer-event(ev) => {
+                        if (ev.kind == PointerEventKind.down && ev.button == PointerEventButton.left) {
+                            root.start-move();
+                        }
+                    }
+                }
+                HorizontalLayout {
+                    padding-left: 14px;
+                    padding-right: 8px;
+                    Text {
+                        text: "goslint - frameless";
+                        color: #dfe8ef;
+                        font-size: 14px;
+                        vertical-alignment: center;
+                    }
+                    Rectangle { } // spacer
+                    close := TouchArea {
+                        width: 32px;
+                        clicked => { root.quit(); }
+                        Rectangle {
+                            border-radius: 6px;
+                            background: close.has-hover ? #c0392b : transparent;
+                            Text { text: "✕"; color: #dfe8ef; }
+                        }
+                    }
+                }
+            }
+            Rectangle {
+                Text {
+                    text: root.status;
+                    color: #8fa3b3;
+                    font-size: 13px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+
+    // Resize grabs: 4 edges + 4 corners, laid over the window border. Corners
+    // come last so they win the hit test over the edge strips they overlap.
+    ResizeHandle { edge: "west";  x: 0; y: 12px; width: 8px; height: parent.height - 24px; mouse-cursor: ew-resize; resize(e) => { root.start-resize(e); } }
+    ResizeHandle { edge: "east";  x: parent.width - 8px; y: 12px; width: 8px; height: parent.height - 24px; mouse-cursor: ew-resize; resize(e) => { root.start-resize(e); } }
+    ResizeHandle { edge: "north"; x: 12px; y: 0; width: parent.width - 24px; height: 8px; mouse-cursor: ns-resize; resize(e) => { root.start-resize(e); } }
+    ResizeHandle { edge: "south"; x: 12px; y: parent.height - 8px; width: parent.width - 24px; height: 8px; mouse-cursor: ns-resize; resize(e) => { root.start-resize(e); } }
+    ResizeHandle { edge: "north-west"; x: 0; y: 0; width: 14px; height: 14px; mouse-cursor: nwse-resize; resize(e) => { root.start-resize(e); } }
+    ResizeHandle { edge: "south-east"; x: parent.width - 14px; y: parent.height - 14px; width: 14px; height: 14px; mouse-cursor: nwse-resize; resize(e) => { root.start-resize(e); } }
+    ResizeHandle { edge: "north-east"; x: parent.width - 14px; y: 0; width: 14px; height: 14px; mouse-cursor: nesw-resize; resize(e) => { root.start-resize(e); } }
+    ResizeHandle { edge: "south-west"; x: 0; y: parent.height - 14px; width: 14px; height: 14px; mouse-cursor: nesw-resize; resize(e) => { root.start-resize(e); } }
+}

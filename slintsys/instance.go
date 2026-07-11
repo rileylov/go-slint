@@ -208,6 +208,21 @@ func (i *Instance) RequestRedraw() {
 	C.goslint_instance_window_request_redraw(i.ptr)
 }
 
+// WindowDragMove begins an interactive, OS-driven move of the window (winit's
+// drag_window — frameless title-bar dragging). Call from a pointer-event
+// callback while a button is pressed; winit desktop backends only.
+func (i *Instance) WindowDragMove() error {
+	return rc(C.goslint_instance_window_drag_move(i.ptr), "drag move")
+}
+
+// WindowDragResize begins an interactive, OS-driven resize from an edge or
+// corner (winit's drag_resize_window). direction follows winit's
+// ResizeDirection order: 0=east 1=north 2=north-east 3=north-west 4=south
+// 5=south-east 6=south-west 7=west.
+func (i *Instance) WindowDragResize(direction int) error {
+	return rc(C.goslint_instance_window_drag_resize(i.ptr, C.int32_t(direction)), "drag resize")
+}
+
 func (i *Instance) Free() {
 	if i.ptr != nil {
 		C.goslint_instance_free(i.ptr)

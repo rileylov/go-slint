@@ -602,6 +602,41 @@ func (i *Instance) SetMinimized(on bool) { i.inner.SetWindowMinimized(on) }
 // RequestRedraw asks the window to repaint on the next frame.
 func (i *Instance) RequestRedraw() { i.inner.RequestRedraw() }
 
+// ResizeEdge identifies the window edge or corner an interactive resize grabs
+// (see [Instance.StartSystemResize]).
+type ResizeEdge int
+
+// Resize edges/corners, matching winit's ResizeDirection.
+const (
+	ResizeEast ResizeEdge = iota
+	ResizeNorth
+	ResizeNorthEast
+	ResizeNorthWest
+	ResizeSouth
+	ResizeSouthEast
+	ResizeSouthWest
+	ResizeWest
+)
+
+// StartSystemMove hands the window to the OS for an interactive move — the
+// building block for dragging a frameless window (`Window { no-frame: true; }`)
+// by a custom title bar. Call it from a callback fired by a TouchArea
+// pointer-event while the button is down; the OS then tracks the pointer until
+// release, so one call moves the window for the whole gesture. Desktop winit
+// backends only (Windows, macOS, X11, Wayland); elsewhere — headless tests,
+// Android — it returns an error. This is winit's drag_window escape hatch; see
+// examples/frameless for the wiring.
+func (i *Instance) StartSystemMove() error { return i.inner.WindowDragMove() }
+
+// StartSystemResize is [Instance.StartSystemMove] for resizing: the OS grabs
+// the pointer and resizes the window from the given edge or corner until the
+// button is released (winit's drag_resize_window). Pair the grab areas with
+// the matching `mouse-cursor` (ew-resize, ns-resize, nwse-resize, …) so the
+// pointer advertises the resize.
+func (i *Instance) StartSystemResize(edge ResizeEdge) error {
+	return i.inner.WindowDragResize(int(edge))
+}
+
 // Close releases the instance.
 func (i *Instance) Close() { i.inner.Free() }
 

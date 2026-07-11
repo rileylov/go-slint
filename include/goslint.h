@@ -133,6 +133,14 @@ void     goslint_instance_window_set_fullscreen(const GoComponentInstance *i, bo
 void     goslint_instance_window_set_maximized(const GoComponentInstance *i, bool on);
 void     goslint_instance_window_set_minimized(const GoComponentInstance *i, bool on);
 void     goslint_instance_window_request_redraw(const GoComponentInstance *i);
+/* Interactive OS-driven move/resize for frameless windows (winit's drag_window /
+   drag_resize_window). Call on the UI thread from a pointer-event callback while a
+   button is pressed; the OS grabs the pointer until release. 0 on success, 1 with
+   goslint_last_error detail (not a winit window — headless/Android — or platform
+   refusal). direction: 0=east 1=north 2=north-east 3=north-west 4=south
+   5=south-east 6=south-west 7=west (winit ResizeDirection order). */
+int      goslint_instance_window_drag_move(const GoComponentInstance *i);
+int      goslint_instance_window_drag_resize(const GoComponentInstance *i, int32_t direction);
 /* close handling: cb returns true to allow close (window hides), false to keep open */
 typedef bool (*GoCloseRequested)(uintptr_t handle);
 void     goslint_instance_on_close_requested(const GoComponentInstance *i, uintptr_t handle, GoCloseRequested cb, void (*drop)(uintptr_t));

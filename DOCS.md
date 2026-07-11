@@ -403,6 +403,28 @@ win.SetFullscreen(true)            // also SetMaximized / SetMinimized
 win.RequestRedraw()
 ```
 
+**Frameless windows.** With `Window { no-frame: true; }` the OS draws no title bar,
+so moving and resizing become your job — and the right way to do them is to hand the
+gesture back to the OS, not to move the window by hand from pointer deltas. From a
+`TouchArea` pointer-event callback (while the button is down), call:
+
+```go
+win.OnCallback("start-move", func([]any) any {
+	_ = win.StartSystemMove() // OS tracks the pointer until release
+	return nil
+})
+win.OnCallback("start-resize", func(a []any) any {
+	_ = win.StartSystemResize(slint.ResizeSouthEast) // or any edge/corner
+	return nil
+})
+```
+
+One call handles the whole gesture with native motion (it's winit's `drag_window`
+escape hatch). Desktop only — Windows, macOS, X11, Wayland; on other backends the
+calls return an error. Give the grab areas a matching `mouse-cursor` (`ew-resize`,
+`ns-resize`, …) so the pointer advertises the resize. Full wiring — custom title
+bar, all eight edges/corners — in [`examples/frameless`](examples/frameless).
+
 **Closing.** Intercept the window's close (the X button) to confirm or save first -
 return `true` to let it close, `false` to keep it open. `RequestClose()` triggers
 the same path (e.g. from a Quit button):

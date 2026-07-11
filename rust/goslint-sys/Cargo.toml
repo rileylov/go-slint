@@ -44,6 +44,14 @@ i-slint-core = { path = "../../slint/internal/core", features = ["default", "tr"
 # amd64→arm64) while system-font discovery still works at runtime (fontconfig is
 # dlopen'd on the target). Feature is linux/BSD-gated, so it's a no-op on macOS/Windows.
 i-slint-common = { path = "../../slint/internal/common", features = ["fontconfig-dlopen"] }
+# Direct dep for the WinitWindowAccessor escape hatch (winit's drag_window /
+# drag_resize_window — interactive OS moves/resizes for frameless windows). The
+# interpreter's backend-winit feature already compiles this crate on every
+# target, so this adds nothing to the build; it only lets us name the trait.
+# Same path as the interpreter's dep, so Cargo unifies the crate. On non-winit
+# windows (headless tests, Android) the accessor returns None and we report a
+# clean error instead.
+i-slint-backend-winit = { path = "../../slint/internal/backends/winit", default-features = false }
 # The same translation crate i-slint-core uses, so we can implement tr::Translator.
 tr = { version = "0.1", default-features = false }
 spin_on = "0.1"

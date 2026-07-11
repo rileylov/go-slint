@@ -597,6 +597,105 @@ pub unsafe extern "C" fn goslint_instance_window_request_redraw(i: *const Compon
     })
 }
 
+/// Once the compositor takes over a move/resize gesture it owns the pointer,
+/// and (on Wayland) the app never receives the button-release or leave event
+/// for the press that started it. Slint's pointer grab from that press would
+/// then stay stuck forever: every later click routes to the grabbing TouchArea
+/// (the window moves from anywhere) and nothing else ever hovers again — no
+/// resize cursors, dead resize handles. Synthesize the exit the compositor
+/// never sends. Deferred through a zero timer because this runs inside the
+/// initiating press's input dispatch, and dispatching another pointer event
+/// re-entrantly would hit the input state's RefCell borrow.
+fn reset_pointer_state_after_os_grab(i: &ComponentInstance) {
+    use i_slint_core::window::WindowInner;
+    let adapter = WindowInner::from_pub(i.window()).window_adapter();
+    i_slint_core::timers::Timer::single_shot(std::time::Duration::ZERO, move || {
+        let _ = adapter
+            .window()
+            .try_dispatch_event(i_slint_core::platform::WindowEvent::PointerExited);
+    });
+}
+
+/// Begin an interactive, OS-driven move of the window — the frameless-window
+/// pattern of dragging by a custom title bar. Call on the UI thread from a
+/// pointer-event callback while a button is pressed (the OS takes over the
+/// pointer until release). Winit desktop backends only: 0 on success, 1 with
+/// `goslint_last_error` detail when the window isn't backed by winit (headless
+/// tests, Android) or the platform refuses (winit's `drag_window`).
+///
+/// # Safety
+/// `i` must be NULL or an instance pointer.
+#[no_mangle]
+pub unsafe extern "C" fn goslint_instance_window_drag_move(i: *const ComponentInstance) -> i32 {
+    use i_slint_backend_winit::WinitWindowAccessor;
+    guard(1, || match i.as_ref() {
+        Some(i) => match i.window().with_winit_window(|w| w.drag_window()) {
+            Some(Ok(())) => {
+                reset_pointer_state_after_os_grab(i);
+                0
+            }
+            Some(Err(e)) => {
+                set_last_error(format!("drag window: {e}"));
+                1
+            }
+            None => {
+                set_last_error("window is not backed by winit (headless or Android backend)");
+                1
+            }
+        },
+        None => 1,
+    })
+}
+
+/// Begin an interactive, OS-driven resize of the window from an edge or corner
+/// (winit's `drag_resize_window`). `direction` follows winit's ResizeDirection
+/// order: 0=east 1=north 2=north-east 3=north-west 4=south 5=south-east
+/// 6=south-west 7=west. Same calling rules and errors as
+/// `goslint_instance_window_drag_move`.
+///
+/// # Safety
+/// `i` must be NULL or an instance pointer.
+#[no_mangle]
+pub unsafe extern "C" fn goslint_instance_window_drag_resize(
+    i: *const ComponentInstance,
+    direction: i32,
+) -> i32 {
+    use i_slint_backend_winit::{winit::window::ResizeDirection, WinitWindowAccessor};
+    guard(1, || {
+        let dir = match direction {
+            0 => ResizeDirection::East,
+            1 => ResizeDirection::North,
+            2 => ResizeDirection::NorthEast,
+            3 => ResizeDirection::NorthWest,
+            4 => ResizeDirection::South,
+            5 => ResizeDirection::SouthEast,
+            6 => ResizeDirection::SouthWest,
+            7 => ResizeDirection::West,
+            _ => {
+                set_last_error(format!("drag resize: invalid direction {direction}"));
+                return 1;
+            }
+        };
+        match i.as_ref() {
+            Some(i) => match i.window().with_winit_window(|w| w.drag_resize_window(dir)) {
+                Some(Ok(())) => {
+                    reset_pointer_state_after_os_grab(i);
+                    0
+                }
+                Some(Err(e)) => {
+                    set_last_error(format!("drag resize: {e}"));
+                    1
+                }
+                None => {
+                    set_last_error("window is not backed by winit (headless or Android backend)");
+                    1
+                }
+            },
+            None => 1,
+        }
+    })
+}
+
 /// # Safety
 /// `i` must be NULL or an instance pointer.
 #[no_mangle]
