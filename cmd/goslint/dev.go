@@ -21,6 +21,7 @@ import (
 //   - a .go edit triggers a regenerate-if-needed + rebuild + restart.
 func cmdDev(args []string) error {
 	fs := flag.NewFlagSet("dev", flag.ExitOnError)
+	tags := fs.String("tags", "", "extra build tags, comma-separated (merged with goslint's link tag)")
 	_ = fs.Parse(args)
 	pkg := fs.Arg(0)
 	if pkg == "" {
@@ -56,7 +57,7 @@ func cmdDev(args []string) error {
 	build := func() error {
 		fmt.Println(">> building")
 		s := time.Now()
-		c := exec.Command("go", "build", "-tags", buildTag, "-o", bin, pkg)
+		c := exec.Command("go", "build", "-tags", mergeTags(*tags), "-o", bin, pkg)
 		c.Env = env
 		c.Stdout, c.Stderr = os.Stdout, os.Stderr
 		if err := c.Run(); err != nil {

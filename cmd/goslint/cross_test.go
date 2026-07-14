@@ -138,3 +138,70 @@ func TestDefaultLdflags(t *testing.T) {
 		})
 	}
 }
+
+// TestExtractTagsFlag mirrors TestExtractTargetFlag for -tags: the flag is pulled
+// out (go keeps only the last -tags, so forwarding it verbatim would clobber the
+// native-lib link tag) and everything else is preserved.
+func TestExtractTagsFlag(t *testing.T) {
+	cases := []struct {
+		name     string
+		in       []string
+		wantTags string
+		wantRest []string
+	}{
+		{"none", []string{"-o", "app", "./x"}, "", []string{"-o", "app", "./x"}},
+		{"space form", []string{"-tags", "nocgo", "./x"}, "nocgo", []string{"./x"}},
+		{"equals form", []string{"-tags=nocgo,debug", "./x"}, "nocgo,debug", []string{"./x"}},
+		{"double dash", []string{"--tags", "nocgo", "-o", "a", "./x"}, "nocgo", []string{"-o", "a", "./x"}},
+		{"double dash equals", []string{"--tags=nocgo"}, "nocgo", nil},
+		{"lone flag, no value", []string{"-tags"}, "", nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			gt, gr := extractTagsFlag(tc.in)
+			if gt != tc.wantTags || !reflect.DeepEqual(gr, tc.wantRest) {
+				t.Errorf("extractTagsFlag(%v) = (%q, %v), want (%q, %v)", tc.in, gt, gr, tc.wantTags, tc.wantRest)
+			}
+		})
+	}
+}
+
+// TestMergeTags checks the link tag always survives and user tags are appended,
+// with go's deprecated space-separated syntax normalized to commas.
+func TestMergeTags(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"", "goslint_extlib"},
+		{"nocgo", "goslint_extlib,nocgo"},
+		{"a,b", "goslint_extlib,a,b"},
+		{"a b", "goslint_extlib,a,b"},
+	}
+	for _, tc := range cases {
+		if got := mergeTags(tc.in); got != tc.want {
+			t.Errorf("mergeTags(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+// TestWrapperEnvKeepsUserCGOLDFLAGS: goslint sets CGO_LDFLAGS for the native lib,
+// and exec keeps only the last duplicate env key — so the user's own CGO_LDFLAGS
+// (extra -L/-l for their other cgo deps) must be folded into ours, not dropped.
+func TestWrapperEnvKeepsUserCGOLDFLAGS(t *testing.T) {
+	t.Setenv("GOSLINT_LIB_DIR", "../../lib/"+hostTarget()) // local lib: no provisioning
+	t.Setenv("CGO_LDFLAGS", "-L/opt/mpv -lmpv")
+	env, err := wrapperEnv(hostTarget())
+	if err != nil {
+		t.Skipf("wrapperEnv: %v (local lib not staged)", err)
+	}
+	last := ""
+	for _, kv := range env {
+		if strings.HasPrefix(kv, "CGO_LDFLAGS=") {
+			last = kv // exec semantics: the last occurrence wins
+		}
+	}
+	if !strings.Contains(last, "-lmpv") {
+		t.Errorf("user CGO_LDFLAGS dropped; effective value %q", last)
+	}
+	if !strings.Contains(last, "goslint") {
+		t.Errorf("native lib link line missing; effective value %q", last)
+	}
+}

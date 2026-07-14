@@ -109,11 +109,13 @@ Usage:
   goslint init [-module path] [dir]                   scaffold a new go-slint project
   goslint setup [-target <goos>_<goarch>] [-force]   pre-fetch the native lib (optional; build/run/dev auto-fetch)
   goslint generate [-o out.go] [-package p] [<in.slint>|<dir>]  typed Go from .slint (no file/a dir: whole project)
-  goslint dev   [package]                             run with live reload (edit .slint, save)
+  goslint dev   [-tags t1,t2] [package]               run with live reload (edit .slint, save)
   goslint build [-target <goos>_<goarch>] [go args]   go build with the lib wired up
                                                       (-target cross-compiles via zig: windows_amd64,
                                                        linux_amd64, linux_arm64, darwin_amd64, darwin_arm64;
-                                                       darwin needs GOSLINT_MACOS_SDK)
+                                                       darwin needs GOSLINT_MACOS_SDK. A -tags flag is
+                                                       merged with goslint's link tag; your CGO_CFLAGS /
+                                                       CGO_LDFLAGS are kept for extra cgo deps)
   goslint run   [go run args...]                      go run   with the lib wired up
   goslint test  [go test args...]                     go test  with the lib wired up (plain go test fails at link)
   goslint env                                         print the PKG_CONFIG_PATH export line
@@ -419,6 +421,9 @@ func cmdGo(sub string, args []string) error {
 	if target != "" && sub != "build" {
 		return fmt.Errorf("-target applies to `goslint build` only (a cross-compiled binary can't be run on this host)")
 	}
+	// User build tags (e.g. selecting a dependency's cgo-free backend) are merged
+	// with the link tag rather than forwarded — go keeps only the last -tags flag.
+	userTags, args := extractTagsFlag(args)
 
 	// Refresh generated typed wrappers from their .slint first, so the build reflects the
 	// current markup. Codegen ALWAYS runs on the host (goslint-gen links the host lib),
@@ -442,7 +447,7 @@ func cmdGo(sub string, args []string) error {
 		return err
 	}
 
-	goArgs := []string{sub, "-tags", buildTag}
+	goArgs := []string{sub, "-tags", mergeTags(userTags)}
 	// Inject default -ldflags only for `build` and only when the user didn't pass their
 	// own (Go keeps just the last -ldflags, so we'd clobber it). runtime.GOOS is threaded
 	// into defaultLdflags so the host-specific darwin fixups stay unit-testable.
@@ -581,6 +586,41 @@ func extractTargetFlag(args []string) (target string, rest []string) {
 	return target, rest
 }
 
+// extractTagsFlag pulls a `-tags <v>` / `-tags=<v>` (or the `--tags` spellings) out
+// of the go args, returning it plus the remaining args. goslint must own this flag:
+// it always passes `-tags goslint_extlib` to select the native-lib link path, and go
+// keeps only the LAST -tags flag — so a user's -tags forwarded verbatim would
+// silently replace the link tag and the build would fail to find the native lib.
+// The extracted value is merged instead (see mergeTags).
+func extractTagsFlag(args []string) (tags string, rest []string) {
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "-tags" || a == "--tags":
+			if i+1 < len(args) {
+				tags = args[i+1]
+				i++
+			}
+		case strings.HasPrefix(a, "-tags="):
+			tags = strings.TrimPrefix(a, "-tags=")
+		case strings.HasPrefix(a, "--tags="):
+			tags = strings.TrimPrefix(a, "--tags=")
+		default:
+			rest = append(rest, a)
+		}
+	}
+	return tags, rest
+}
+
+// mergeTags joins the always-required native-lib link tag with the user's -tags
+// value (e.g. "nocgo" → "goslint_extlib,nocgo"), normalizing go's deprecated
+// space-separated tag syntax to commas so the two forms compose.
+func mergeTags(user string) string {
+	tags := []string{buildTag}
+	tags = append(tags, strings.FieldsFunc(user, func(r rune) bool { return r == ',' || r == ' ' })...)
+	return strings.Join(tags, ",")
+}
+
 // goPkgDir extracts the directory of the local package in a `go build`/`go run`
 // argument list, so we regenerate the right project before building (mirroring how
 // `dev` uses its package argument). go's convention is `go [flags] [packages]` with
@@ -685,6 +725,13 @@ func wrapperEnv(tgt string) ([]string, error) {
 	ld, err := cgoLDFLAGS(tgt)
 	if err != nil {
 		return nil, err
+	}
+	// Preserve the user's own CGO_LDFLAGS (extra -L/-l for their other cgo deps,
+	// e.g. a libmpv install dir). exec keeps only the LAST duplicate env key, so
+	// setting ours without folding theirs in would silently drop it — leaving
+	// their dependency to fail linking with no hint why.
+	if user := os.Getenv("CGO_LDFLAGS"); user != "" {
+		ld += " " + user
 	}
 	return append(os.Environ(), "CGO_ENABLED=1", "CGO_LDFLAGS="+ld), nil
 }
