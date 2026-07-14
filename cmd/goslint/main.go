@@ -836,11 +836,14 @@ func withCC(env []string) ([]string, error) {
 // runGoGenerate runs `go generate ./...` in dir (CWD if empty) so //go:generate
 // directives — i.e. `goslint generate ...` — refresh the typed wrappers from their
 // .slint before a build/run/dev. It puts this goslint binary's directory on PATH so
-// the directive resolves to the same executable the user invoked.
+// the directive resolves to the same executable the user invoked. The marker env
+// tells that inner goslint it was spawned by a directive, so it never re-enters
+// the directive path itself (see honorDirectives — a bare `//go:generate goslint
+// generate` used to fork-bomb).
 func runGoGenerate(dir string) error {
 	cmd := exec.Command("go", "generate", "./...")
 	cmd.Dir = dir
-	cmd.Env = append(withGoslintOnPath(os.Environ()), "CGO_ENABLED=1")
+	cmd.Env = append(withGoslintOnPath(os.Environ()), "CGO_ENABLED=1", viaDirectiveEnv+"=1")
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	return cmd.Run()
 }

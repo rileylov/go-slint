@@ -68,8 +68,9 @@ func cmdGenerate(args []string) error {
 		// The project says how to generate its wrappers — defer to those directives so
 		// a customised output path/package/component still wins. Each directive invokes
 		// `goslint generate <file>`, which prints its own timing, so we return here
-		// without adding a duplicate.
-		if hasGoslintDirective(scanRoot) {
+		// without adding a duplicate. (honorDirectives, not hasGoslintDirective:
+		// when THIS process was spawned by a directive, re-entering would recurse.)
+		if honorDirectives(scanRoot) {
 			return runGoGenerate(scanRoot)
 		}
 		// Otherwise discover entry .slint files by convention.
@@ -138,7 +139,7 @@ func regenerate(dir string, env []string) error {
 	if root == "" {
 		root = "."
 	}
-	if hasGoslintDirective(root) {
+	if honorDirectives(root) {
 		return runGoGenerate(dir)
 	}
 	entries, _, err := discoverEntries(root)
@@ -296,6 +297,22 @@ func slintImports(path string) []string {
 		out = append(out, abs)
 	}
 	return out
+}
+
+// viaDirectiveEnv marks a goslint process spawned from a `go generate` run that
+// goslint itself started (set in runGoGenerate).
+const viaDirectiveEnv = "GOSLINT_GENERATE_VIA_DIRECTIVE"
+
+// honorDirectives reports whether this invocation should defer to the project's
+// //go:generate goslint directives. Never true when this process was itself
+// spawned by such a directive: a bare `//go:generate goslint generate` would
+// otherwise re-enter the directive path from inside it — goslint runs the
+// directive, the directive scans and runs goslint, forever (a fork bomb that
+// spawned thousands of processes on a real project). With the guard, the inner
+// invocation falls through to convention discovery, so a bare directive simply
+// means "generate this project".
+func honorDirectives(root string) bool {
+	return os.Getenv(viaDirectiveEnv) == "" && hasGoslintDirective(root)
 }
 
 // hasGoslintDirective reports whether any Go file under root carries a

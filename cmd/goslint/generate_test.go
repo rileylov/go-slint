@@ -136,6 +136,25 @@ func TestHasGoslintDirective(t *testing.T) {
 	}
 }
 
+// TestHonorDirectivesRecursionGuard pins the fork-bomb fix: a goslint process
+// spawned by goslint's own `go generate` run (marker env set) must never take
+// the directive path again — a bare `//go:generate goslint generate` directive
+// would otherwise re-invoke itself forever, spawning processes until killed.
+func TestHonorDirectivesRecursionGuard(t *testing.T) {
+	root := t.TempDir()
+	// The dangerous shape: a bare directive, exactly what re-triggers the scan.
+	mkfile(t, root, "main.go", "package main\n\n//go:generate goslint generate\n")
+	mkfile(t, root, "ui/app.slint", `export component App inherits Window {}`)
+
+	if !honorDirectives(root) {
+		t.Fatal("a user-invoked goslint generate should honor project directives")
+	}
+	t.Setenv(viaDirectiveEnv, "1")
+	if honorDirectives(root) {
+		t.Fatal("a directive-spawned goslint must not re-enter the directive path (fork bomb)")
+	}
+}
+
 // TestDiscoverEntriesSkipsPackageMain guards the regression where auto-discovery
 // generated a wrapper for a dynamic-API .slint (one embedded next to package main),
 // producing a package conflict. Such a .slint must NOT be a generatable entry; a
