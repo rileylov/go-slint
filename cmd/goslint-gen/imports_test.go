@@ -4,6 +4,7 @@ import (
 	"os"
 	pathpkg "path"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -52,7 +53,7 @@ func TestEmbedAllIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	files, warns, err := collectImports(entry)
+	files, _, warns, err := collectImports(entry)
 	if err != nil {
 		t.Fatalf("collectImports: %v", err)
 	}
@@ -126,7 +127,7 @@ func TestAbsoluteImportWarning(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	files, warns, err := collectImports(entry)
+	files, _, warns, err := collectImports(entry)
 	if err != nil {
 		t.Fatalf("collectImports: %v", err)
 	}
@@ -154,12 +155,59 @@ func TestAbsoluteImportMissingFileNoWarning(t *testing.T) {
 	if err := os.WriteFile(entry, []byte(src), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	files, warns, err := collectImports(entry)
+	files, _, warns, err := collectImports(entry)
 	if err != nil {
 		t.Fatalf("collectImports: %v", err)
 	}
 	if len(files) != 0 || len(warns) != 0 {
 		t.Fatalf("dead absolute import should be skipped silently; files=%v warns=%v", keysOf(files), warns)
+	}
+}
+
+// TestCollectImageAssets: @image-url references must ship in the binary (the
+// interpreter loads images from disk at render time, so a shipped binary shows
+// blanks otherwise). In-tree relative references become embed keys; absolute and
+// out-of-tree ones can't be embedded and must warn; missing files and data: URLs
+// stay silent (a real missing image already gets the interpreter's runtime log,
+// and data: URLs travel inside the markup).
+func TestCollectImageAssets(t *testing.T) {
+	root := t.TempDir()
+	write := func(rel, body string) {
+		p := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// outside.png sits next to the entry's directory — reachable on disk,
+	// unreachable for //go:embed.
+	write("outside.png", "not-a-real-png")
+	write("ui/icons/dot.png", "not-a-real-png")
+	write("ui/icons/dup.png", "not-a-real-png")
+	write("ui/app.slint", `import { Card } from "components/card.slint";
+		export component App inherits Window {
+			a: @image-url("icons/dot.png");
+			b: @image-url("icons/dup.png", nine-slice(1 2 1 2));
+			c: @image-url("missing.png");
+			d: @image-url("data:image/png;base64,AAAA");
+			e: @image-url("../outside.png");
+		}`)
+	write("ui/components/card.slint", `export component Card {
+			f: @image-url("../icons/dup.png");
+		}`)
+
+	_, assets, warns, err := collectImports(filepath.Join(root, "ui/app.slint"))
+	if err != nil {
+		t.Fatalf("collectImports: %v", err)
+	}
+	want := []string{"icons/dot.png", "icons/dup.png"}
+	if !reflect.DeepEqual(assets, want) {
+		t.Errorf("assets = %v, want %v (deduped, entry-dir-relative, sorted)", assets, want)
+	}
+	if len(warns) != 1 || !strings.Contains(warns[0], "outside.png") {
+		t.Errorf("want one warning for the out-of-tree image, got %v", warns)
 	}
 }
 

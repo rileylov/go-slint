@@ -2,11 +2,13 @@
 package slint
 
 import (
+	"encoding/base64"
 	"fmt"
 	"image"
 	"image/draw"
 	"io/fs"
 	pathpkg "path"
+	"regexp"
 	"strings"
 	"unsafe"
 
@@ -158,7 +160,13 @@ func CompileSource(path, source string, opts ...Option) (*Compilation, error) {
 // matches `//go:embed` when the embedding .go sits alongside the markup. This is the
 // self-contained compile path for generated code and for hand-rolled stateful reload.
 //
-//	//go:embed app.slint components/card.slint
+// Relative `@image-url` references resolve through fsys too: embed the image files
+// alongside the markup and they ship inside the binary (the interpreter otherwise
+// loads images from disk at render time, which breaks once the binary leaves the
+// source tree). References that don't resolve in fsys — absolute paths, data: URLs,
+// files that aren't embedded — keep the interpreter's normal disk resolution.
+//
+//	//go:embed app.slint components/card.slint icons/logo.png
 //	var ui embed.FS
 //	comp, err := slint.CompileFS(ui, "app.slint")
 func CompileFS(fsys fs.FS, entry string, opts ...Option) (*Compilation, error) {
@@ -167,15 +175,68 @@ func CompileFS(fsys fs.FS, entry string, opts ...Option) (*Compilation, error) {
 		return nil, fmt.Errorf("slint: read entry %q: %w", entry, err)
 	}
 	loader := func(path string) (string, bool) {
-		b, err := fs.ReadFile(fsys, pathpkg.Clean(path))
+		p := pathpkg.Clean(path)
+		b, err := fs.ReadFile(fsys, p)
 		if err != nil {
 			return "", false
 		}
-		return string(b), true
+		return embedImages(fsys, p, string(b)), true
 	}
 	// Our FS loader resolves embedded imports; user-supplied opts still apply (and a
 	// user WithFileLoader, coming later, would override ours).
-	return CompileSource(entry, string(src), append([]Option{WithFileLoader(loader)}, opts...)...)
+	return CompileSource(entry, embedImages(fsys, pathpkg.Clean(entry), string(src)),
+		append([]Option{WithFileLoader(loader)}, opts...)...)
+}
+
+// imageURLRe matches the path argument of `@image-url("…")`. Only the quoted
+// string is captured; extra arguments (e.g. nine-slice) sit outside the match
+// and survive a rewrite untouched.
+var imageURLRe = regexp.MustCompile(`@image-url\s*\(\s*"([^"]+)"`)
+
+// embedImages rewrites the relative @image-url references in one .slint source to
+// data: URLs backed by fsys, so images render from embedded bytes exactly like the
+// markup compiles from them. file is the source's path within fsys — its directory
+// anchors relative references, matching the interpreter's own resolution rule.
+// References that can't be served from fsys (data: URLs, absolute paths, ../
+// escapes, files that aren't embedded) are left as written, keeping the
+// interpreter's normal disk resolution for them.
+func embedImages(fsys fs.FS, file, src string) string {
+	if !strings.Contains(src, "@image-url") {
+		return src
+	}
+	return imageURLRe.ReplaceAllStringFunc(src, func(m string) string {
+		path := imageURLRe.FindStringSubmatch(m)[1]
+		// A scheme or drive prefix (data:, http:, C:/…) or a rooted path can never
+		// be an fsys key; leave those to the interpreter.
+		if strings.HasPrefix(path, "/") || strings.Contains(strings.SplitN(path, "/", 2)[0], ":") {
+			return m
+		}
+		key := pathpkg.Clean(pathpkg.Join(pathpkg.Dir(file), path))
+		b, err := fs.ReadFile(fsys, key) // rejects ../ escapes by construction
+		if err != nil {
+			return m
+		}
+		return `@image-url("data:` + imageMIME(path) + `;base64,` + base64.StdEncoding.EncodeToString(b) + `"`
+	})
+}
+
+// imageMIME maps an image reference's extension to the MIME type used in the
+// data: URL (the decoder selects by it).
+func imageMIME(path string) string {
+	switch strings.ToLower(pathpkg.Ext(path)) {
+	case ".png":
+		return "image/png"
+	case ".jpg", ".jpeg":
+		return "image/jpeg"
+	case ".gif":
+		return "image/gif"
+	case ".webp":
+		return "image/webp"
+	case ".svg", ".svgz":
+		return "image/svg+xml"
+	default:
+		return "application/octet-stream"
+	}
 }
 
 func build(opts []Option, f func(*slintsys.Compiler) *slintsys.Result) *slintsys.Result {

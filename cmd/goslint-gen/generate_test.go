@@ -27,7 +27,7 @@ func TestGenerate(t *testing.T) {
 		Enums:   map[string]EnumInfo{"Mode": {Values: []string{"idle", "active"}}},
 	}
 	// generate runs go/format internally, so a nil error means the output is valid Go.
-	code, err := generate(iface, "ui", "fluent", "app.slint", nil)
+	code, err := generate(iface, "ui", "fluent", "app.slint", nil, nil)
 	if err != nil {
 		t.Fatalf("generate produced invalid Go: %v\n%s", err, code)
 	}
@@ -79,7 +79,7 @@ func TestGenerateMultiFile(t *testing.T) {
 		"components/widget.slint": `export component Widget {}`,
 		"shared/base.slint":       `export component Base {}`,
 	}
-	code, err := generate(iface, "ui", "fluent", "app.slint", files)
+	code, err := generate(iface, "ui", "fluent", "app.slint", files, nil)
 	if err != nil {
 		t.Fatalf("generate produced invalid Go: %v\n%s", err, code)
 	}
@@ -105,12 +105,12 @@ func TestGenerateMultiFile(t *testing.T) {
 func TestCoLocationGuard(t *testing.T) {
 	iface := &Interface{Component: "App"}
 	// entry not co-located with the binding (relPath has a directory component)
-	if _, err := generate(iface, "ui", "fluent", "../app.slint", nil); err == nil {
+	if _, err := generate(iface, "ui", "fluent", "../app.slint", nil, nil); err == nil {
 		t.Error("expected an error when the entry .slint is not co-located with the .go")
 	}
 	// an import outside the binding's directory
 	files := map[string]string{"../theme.slint": `export global Theme {}`}
-	if _, err := generate(iface, "ui", "fluent", "app.slint", files); err == nil {
+	if _, err := generate(iface, "ui", "fluent", "app.slint", files, nil); err == nil {
 		t.Error("expected an error when an imported .slint is outside the package directory")
 	}
 }
@@ -146,7 +146,7 @@ func TestGenerateNameCollision(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := generate(tc.iface, "ui", "fluent", "app.slint", nil)
+			_, err := generate(tc.iface, "ui", "fluent", "app.slint", nil, nil)
 			if err == nil {
 				t.Fatal("expected a collision error, got nil (would have produced uncompilable Go)")
 			}
@@ -158,7 +158,7 @@ func TestGenerateNameCollision(t *testing.T) {
 
 	// a clean interface must still generate without error.
 	clean := &Interface{Component: "App", Properties: []Prop{{Name: "name", Ty: TypeInfo{Kind: "string"}}}}
-	if _, err := generate(clean, "ui", "fluent", "app.slint", nil); err != nil {
+	if _, err := generate(clean, "ui", "fluent", "app.slint", nil, nil); err != nil {
 		t.Fatalf("clean interface should generate: %v", err)
 	}
 }
@@ -180,7 +180,7 @@ func TestExportedUnicode(t *testing.T) {
 	// End to end: a unicode property name must survive validation and produce
 	// parseable Go (pre-fix it corrupted the method name into invalid UTF-8).
 	iface := &Interface{Component: "App", Properties: []Prop{{Name: "ñame", Ty: TypeInfo{Kind: "string"}}}}
-	src, err := generate(iface, "ui", "fluent", "app.slint", nil)
+	src, err := generate(iface, "ui", "fluent", "app.slint", nil, nil)
 	if err != nil {
 		t.Fatalf("unicode property should generate: %v", err)
 	}
@@ -200,7 +200,7 @@ func TestGenerateOutPropertyNoSetter(t *testing.T) {
 			{Name: "label", Ty: TypeInfo{Kind: "string"}, Direction: "in"},
 		},
 	}
-	code, err := generate(iface, "ui", "fluent", "app.slint", nil)
+	code, err := generate(iface, "ui", "fluent", "app.slint", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

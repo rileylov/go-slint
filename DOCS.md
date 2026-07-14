@@ -212,10 +212,20 @@ defer img.Close()
 procedurally. (It handles Go's premultiplied-alpha `image.RGBA` correctly.) See
 [`examples/image`](examples/image).
 
+**`@image-url` assets ship inside the binary.** Slint's interpreter loads
+`@image-url` images from disk at render time, which would leave a shipped binary
+(or APK) with blank icons — so `goslint generate` embeds every relatively-referenced
+image next to the markup, and `slint.CompileFS` serves them from the embedded FS.
+Keep image paths relative and at or below the entry `.slint`'s directory and it
+just works; absolute or out-of-tree references can't be embedded (generate warns)
+and fall back to disk. With the dynamic API, put the images in the same `embed.FS`
+you pass to `CompileFS`.
+
 **Embedded SVGs.** `NewImageFromSVG` takes raw SVG bytes and lets Slint rasterize
 them at render size — so a `go:embed`'d vector asset stays crisp at any scale and
-needs no file on disk. Prefer it to `@image-url` when shipping a self-contained
-binary or an APK, where `@image-url` can't resolve a path (it would render blank).
+needs no file on disk. Reach for it (or `NewImageFromData`) when you compile with
+plain [`Compile`] — a bare string has no directory for `@image-url` to resolve
+against — or when Go decides which image to show.
 
 ### Custom fonts
 

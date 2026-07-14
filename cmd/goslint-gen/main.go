@@ -95,9 +95,10 @@ func main() {
 	}
 	rel = filepath.ToSlash(rel)
 
-	// Embed every transitively-imported local .slint so the generated code can
-	// compile a multi-file component from memory (a self-contained binary).
-	files, importWarns, err := collectImports(in)
+	// Embed every transitively-imported local .slint — plus the images the markup
+	// references via @image-url — so the generated code can compile AND render a
+	// multi-file component from memory (a self-contained binary).
+	files, assets, importWarns, err := collectImports(in)
 	if err != nil {
 		fatal(fmt.Errorf("collect imports: %w", err))
 	}
@@ -111,7 +112,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "goslint: warning:", w)
 	}
 
-	code, err := generate(&iface, *pkg, *style, rel, files)
+	code, err := generate(&iface, *pkg, *style, rel, files, assets)
 	if err != nil {
 		fatal(err)
 	}

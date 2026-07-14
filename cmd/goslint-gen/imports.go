@@ -6,6 +6,8 @@ import (
 	pathpkg "path"
 	"path/filepath"
 	"regexp"
+	"sort"
+	"strings"
 )
 
 // importRe matches the import targets in a .slint file: `... from "PATH"` (for
@@ -16,6 +18,13 @@ import (
 // on disk relative to the project, so they're naturally skipped too.
 var importRe = regexp.MustCompile(`\b(?:from|import)\s+"([^"]+)"`)
 
+// imageURLRe matches the path argument of `@image-url("…")` (extra arguments like
+// nine-slice sit outside the quoted string). Referenced images are embedded next
+// to the markup so slint.CompileFS can serve them from the binary — the
+// interpreter otherwise reads images from DISK at render time, so a shipped
+// binary shows blanks where its icons should be.
+var imageURLRe = regexp.MustCompile(`@image-url\s*\(\s*"([^"]+)"`)
+
 // collectImports walks the import graph from entryPath and returns the source of
 // every transitively-imported local .slint file, keyed by its path relative to the
 // entry's directory (slash-form). The entry itself is excluded (it's embedded
@@ -23,19 +32,25 @@ var importRe = regexp.MustCompile(`\b(?:from|import)\s+"([^"]+)"`)
 // runtime. Imports that don't resolve to a file on disk (builtins, @library) are
 // skipped; for those, the consumer still needs the usual resolution at runtime.
 //
-// The second return value carries warnings for imports the walk had to drop even
-// though they exist. When the embedded FS can't serve an import at runtime, the
-// interpreter falls back to reading it from disk — the app works on this machine
-// and silently breaks on any machine without the file, so the drop must be loud
-// at generate time.
-func collectImports(entryPath string) (map[string]string, []string, error) {
+// assets lists the `@image-url` image files the markup references, keyed like
+// files (entry-dir-relative, slash-form) — they go into the generated //go:embed
+// so slint.CompileFS serves them from the binary (the interpreter otherwise reads
+// images from disk at render time: blank icons the moment the binary leaves the
+// source tree).
+//
+// warns carries warnings for references the walk had to drop even though they
+// exist. When the embedded FS can't serve a file at runtime, the interpreter
+// falls back to reading it from disk — the app works on this machine and
+// silently breaks on any machine without the file, so the drop must be loud at
+// generate time.
+func collectImports(entryPath string) (files map[string]string, assets, warns []string, err error) {
 	entryAbs, err := filepath.Abs(entryPath)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	entryDir := filepath.Dir(entryAbs)
-	files := map[string]string{}
-	var warns []string
+	files = map[string]string{}
+	assetSeen := map[string]bool{}
 	seen := map[string]bool{entryAbs: true}
 
 	// name renders a file for warnings: relative to the entry's directory when
@@ -99,6 +114,44 @@ func collectImports(entryPath string) (map[string]string, []string, error) {
 			}
 			files[pathpkg.Clean(filepath.ToSlash(rel))] = string(body)
 		}
+		for _, m := range imageURLRe.FindAllStringSubmatch(string(src), -1) {
+			spec := m[1]
+			// A scheme prefix (data:, http:) can't be a file; skip silently —
+			// data: URLs already ship inside the markup.
+			if spec == "" || strings.Contains(strings.SplitN(spec, "/", 2)[0], ":") {
+				continue
+			}
+			if strings.HasPrefix(spec, "/") || filepath.IsAbs(filepath.FromSlash(spec)) {
+				// Same story as absolute imports: the interpreter loads the image
+				// from that exact path at render time on whatever machine runs the
+				// app — nothing to embed, so make the deploy hazard loud.
+				if _, err := os.Stat(filepath.FromSlash(spec)); err == nil {
+					warns = append(warns, fmt.Sprintf(
+						"%s references image %q by absolute path, which can't be embedded in the generated binding; the app only shows it on machines that have that exact file. Use a relative path to embed it.",
+						name(cur), spec))
+				}
+				continue
+			}
+			abs := filepath.Clean(filepath.Join(dir, filepath.FromSlash(spec)))
+			if _, err := os.Stat(abs); err != nil {
+				// Missing image: possibly a commented-out reference; a real one
+				// already gets the interpreter's "Error loading image" log.
+				continue
+			}
+			rel, err := filepath.Rel(entryDir, abs)
+			if err != nil || strings.HasPrefix(filepath.ToSlash(rel), "..") {
+				warns = append(warns, fmt.Sprintf(
+					"%s references image %q outside the entry's directory; //go:embed can't reach it, so it won't ship in the binary and the app will need it on disk at runtime. Move it beside the markup to embed it.",
+					name(cur), spec))
+				continue
+			}
+			key := pathpkg.Clean(filepath.ToSlash(rel))
+			if !assetSeen[key] {
+				assetSeen[key] = true
+				assets = append(assets, key)
+			}
+		}
 	}
-	return files, warns, nil
+	sort.Strings(assets)
+	return files, assets, warns, nil
 }
