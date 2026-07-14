@@ -8,6 +8,7 @@ import "C"
 
 import (
 	"errors"
+	"math"
 	"unsafe"
 )
 
@@ -79,10 +80,11 @@ func ImageFromData(data []byte, format string) (*Image, error) {
 }
 
 func imageFromPixels(pix []byte, w, h, bpp int, mk func(*C.uint8_t) *C.GoImage) (*Image, error) {
-	if w <= 0 || h <= 0 {
-		return nil, errors.New("image: width and height must be positive")
+	need, err := pixelBufferLen(w, h, bpp)
+	if err != nil {
+		return nil, err
 	}
-	if len(pix) < w*h*bpp {
+	if uint64(len(pix)) < need {
 		return nil, errors.New("image: pixel buffer too small for dimensions")
 	}
 	p := mk((*C.uint8_t)(unsafe.Pointer(&pix[0])))
@@ -90,6 +92,33 @@ func imageFromPixels(pix []byte, w, h, bpp int, mk func(*C.uint8_t) *C.GoImage) 
 		return nil, errors.New(lastErrorOr("image from pixels"))
 	}
 	return (&Image{ptr: p}).watch(), nil
+}
+
+// pixelBufferLen validates dimensions at the Go/C boundary and returns the
+// required byte length. Keeping the arithmetic separate from cgo makes every
+// overflow and ABI-truncation case safe to unit-test.
+func pixelBufferLen(w, h, bpp int) (uint64, error) {
+	if w <= 0 || h <= 0 {
+		return 0, errors.New("image: width and height must be positive")
+	}
+	if bpp <= 0 {
+		return 0, errors.New("image: bytes per pixel must be positive")
+	}
+	// Overflow-proof sizing — the inbound twin of the snapshotLen guard. Go's int
+	// multiplication wraps silently, so for huge dimensions a plain `w*h*bpp` can
+	// come out small and let an undersized buffer past the length check; the shim
+	// then trusts the C contract's length (from_raw_parts) and reads out of the
+	// caller's memory. Bound the dimensions to the uint32 the ABI takes (the cgo
+	// cast would truncate them silently), then size in uint64, where a product of
+	// two uint32s can't wrap.
+	if uint64(w) > math.MaxUint32 || uint64(h) > math.MaxUint32 {
+		return 0, errors.New("image: dimensions don't fit uint32")
+	}
+	px := uint64(w) * uint64(h)
+	if px > uint64(math.MaxInt)/uint64(bpp) {
+		return 0, errors.New("image: dimensions exceed the maximum Go buffer size")
+	}
+	return px * uint64(bpp), nil
 }
 
 // Size returns the image's pixel dimensions.

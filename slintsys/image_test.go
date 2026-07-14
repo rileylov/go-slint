@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"image"
 	"image/png"
+	"math"
+	"strconv"
 	"testing"
 )
 
@@ -47,4 +49,76 @@ func TestImageFromData(t *testing.T) {
 	if _, err := ImageFromData(nil, "png"); err == nil {
 		t.Error("expected an error for empty data")
 	}
+}
+
+func TestPixelBufferLen(t *testing.T) {
+	tests := []struct {
+		name      string
+		w, h, bpp int
+		want      uint64
+		wantErr   bool
+	}{
+		{name: "RGBA", w: 2, h: 3, bpp: 4, want: 24},
+		{name: "RGB", w: 2, h: 3, bpp: 3, want: 18},
+		{name: "zero width", w: 0, h: 1, bpp: 4, wantErr: true},
+		{name: "negative height", w: 1, h: -1, bpp: 4, wantErr: true},
+		{name: "zero bytes per pixel", w: 1, h: 1, bpp: 0, wantErr: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := pixelBufferLen(tc.w, tc.h, tc.bpp)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("pixelBufferLen(%d, %d, %d) error = %v, wantErr %v", tc.w, tc.h, tc.bpp, err, tc.wantErr)
+			}
+			if got != tc.want {
+				t.Errorf("pixelBufferLen(%d, %d, %d) = %d, want %d", tc.w, tc.h, tc.bpp, got, tc.want)
+			}
+		})
+	}
+
+	// Exercise the MaxInt/bpp guard with ABI-compatible positive dimensions on
+	// both 32- and 64-bit Go. The resulting buffer could never exist as a slice.
+	var w, h int
+	if strconv.IntSize == 64 {
+		w = int(uint64(math.MaxUint32))
+		h = int(uint64(math.MaxInt)/(uint64(w)*4) + 1)
+	} else {
+		w, h = math.MaxInt, 2
+	}
+	if _, err := pixelBufferLen(w, h, 4); err == nil {
+		t.Errorf("pixelBufferLen(%d, %d, 4) must reject a size above MaxInt", w, h)
+	}
+
+	if strconv.IntSize == 64 {
+		overUint32 := int(uint64(math.MaxUint32) + 1)
+		if _, err := pixelBufferLen(overUint32, 1, 4); err == nil {
+			t.Error("pixelBufferLen must reject dimensions beyond the uint32 ABI")
+		}
+	}
+}
+
+func TestImageDimensionValidation(t *testing.T) {
+	// On 64-bit Go, the old implementation accepted this: w*4 wrapped to 4,
+	// then the C cast truncated w to 1 and created a valid 1x1 image. This case
+	// therefore proves the new validation runs before the cgo call.
+	if strconv.IntSize == 64 {
+		truncatingWidth := int((uint64(1) << 62) + 1)
+		img, err := ImageFromRGBA(make([]byte, 4), truncatingWidth, 1)
+		if img != nil {
+			img.Close()
+		}
+		if err == nil {
+			t.Error("width whose byte count wraps and whose C cast truncates must be rejected")
+		}
+	}
+
+	// Plain undersized buffers stay rejected, and a valid image still works.
+	if _, err := ImageFromRGBA(make([]byte, 8), 2, 2); err == nil {
+		t.Error("undersized buffer must be rejected")
+	}
+	img, err := ImageFromRGBA(make([]byte, 16), 2, 2)
+	if err != nil {
+		t.Fatalf("valid 2x2 image: %v", err)
+	}
+	img.Close()
 }
