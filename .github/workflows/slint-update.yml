@@ -59,7 +59,9 @@ jobs:
           git -C slint remote add origin https://github.com/slint-ui/slint
           git -C slint fetch --depth 1 origin "$tag"
           git -C slint checkout -q FETCH_HEAD
-          sudo apt-get update && sudo apt-get install -y libfontconfig-dev
+          # libgl-dev: the GL examples import go-gl, whose cgo needs `pkg-config gl`
+          # and -lGL at link time (headers/stubs only — the tests never open GL).
+          sudo apt-get update && sudo apt-get install -y libfontconfig-dev libgl-dev
           rustup toolchain install stable --profile minimal --no-self-update
           set -o pipefail
           make lib 2>&1 | tee build.log
