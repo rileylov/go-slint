@@ -129,9 +129,9 @@ func cValue(v any) (*C.GoValue, error) {
 	case *Gradient:
 		return cGradient(*x), nil
 	case *Image:
-		return C.goslint_value_new_image(x.ptr), nil
+		return C.goslint_value_new_image(x.raw()), nil
 	case *ModelHandle:
-		return C.goslint_value_new_model(x.ptr), nil
+		return C.goslint_value_new_model(x.raw()), nil
 	case []any:
 		return cArray(x)
 	default:
@@ -256,7 +256,7 @@ func goValue(v *C.GoValue) any {
 		// Owned clone (Rc-backed, cheap); caller frees via Image.Free. Without this,
 		// image reads returned nil and the generated getter's type assertion panicked.
 		if p := C.goslint_value_as_image(v); p != nil {
-			return (&Image{ptr: p}).watch()
+			return newImage(p)
 		}
 		return nil
 	case TypeStruct:

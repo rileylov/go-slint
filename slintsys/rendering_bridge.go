@@ -55,5 +55,5 @@ func ImageFromGLTexture(textureID uint32, w, h int, bottomLeftOrigin bool) (*Ima
 	if p == nil {
 		return nil, errors.New(lastErrorOr("image from GL texture"))
 	}
-	return (&Image{ptr: p}).watch(), nil
+	return newImage(p), nil
 }

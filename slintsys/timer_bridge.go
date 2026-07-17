@@ -19,36 +19,52 @@ import "runtime/cgo"
 
 // Timer fires a Go callback after an interval (once or repeatedly). Timers fire
 // on the event-loop thread, so the loop (RunEventLoop / Instance.Run) must run.
-type Timer struct{ ptr *C.GoTimer }
+//
+// Copies of a Timer share one underlying native handle: Close through any copy
+// releases it once and is a no-op through the rest, so a value copy can never
+// double-free. The zero Timer is inert (methods are safe no-ops).
+type Timer struct{ inner *timerOwner }
 
-func NewTimer() *Timer { return (&Timer{ptr: C.goslint_timer_new()}).watch() }
+// timerOwner is the shared owning cell behind every copy of a Timer; the
+// leak-watch finalizer fires only when no copy remains reachable.
+type timerOwner struct{ ptr *C.GoTimer }
 
-// watch arms the dev-only leak warning (GOSLINT_DEV) and returns the timer.
-func (t *Timer) watch() *Timer {
-	leakWatch(t, func(t *Timer) bool { return t.ptr != nil }, "slint.Timer", "Close")
-	return t
+func NewTimer() *Timer {
+	inner := &timerOwner{ptr: C.goslint_timer_new()}
+	leakWatch(inner, func(o *timerOwner) bool { return o.ptr != nil }, "slint.Timer", "Close")
+	return &Timer{inner: inner}
+}
+
+// raw returns the native pointer, nil for zero/closed timers (the shim treats
+// NULL as a harmless no-op or false result).
+func (t *Timer) raw() *C.GoTimer {
+	if t == nil || t.inner == nil {
+		return nil
+	}
+	return t.inner.ptr
 }
 
 // Start runs fn every intervalMs (mode TimerRepeated) or once (TimerSingleShot).
 func (t *Timer) Start(mode int, intervalMs uint64, fn func()) {
 	h := cgo.NewHandle(fn)
-	C.goslintTimerStartBridge(t.ptr, C.int32_t(mode), C.uint64_t(intervalMs), C.uintptr_t(h))
+	C.goslintTimerStartBridge(t.raw(), C.int32_t(mode), C.uint64_t(intervalMs), C.uintptr_t(h))
 }
 
 // Stop halts the timer; it can be resumed with Restart.
-func (t *Timer) Stop() { C.goslint_timer_stop(t.ptr) }
+func (t *Timer) Stop() { C.goslint_timer_stop(t.raw()) }
 
 // Restart restarts the timer from now using its current interval and mode.
-func (t *Timer) Restart() { C.goslint_timer_restart(t.ptr) }
+func (t *Timer) Restart() { C.goslint_timer_restart(t.raw()) }
 
 // Running reports whether the timer is currently active.
-func (t *Timer) Running() bool { return bool(C.goslint_timer_running(t.ptr)) }
+func (t *Timer) Running() bool { return bool(C.goslint_timer_running(t.raw())) }
 
-// Close stops and releases the timer's native memory. Safe to call multiple times.
+// Close stops and releases the timer's native memory. Safe to call multiple
+// times and through any copy — the first call frees, the rest are no-ops.
 func (t *Timer) Close() {
-	if t.ptr != nil {
-		C.goslint_timer_free(t.ptr)
-		t.ptr = nil
+	if p := t.raw(); p != nil {
+		C.goslint_timer_free(p)
+		t.inner.ptr = nil
 	}
 }
 

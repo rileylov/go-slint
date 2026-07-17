@@ -12,9 +12,34 @@ import (
 	"unsafe"
 )
 
-// Image wraps a loaded Slint image. Assign it to an `image` property; free it
-// with Free when no longer needed.
-type Image struct{ ptr *C.GoImage }
+// Image wraps a loaded Slint image. Assign it to an `image` property; release it
+// with Close when no longer needed.
+//
+// Copies of an Image share one underlying native handle: Close through any copy
+// releases it once and is a no-op through the rest, so a value copy can never
+// double-free. The zero Image is inert (methods are safe no-ops).
+type Image struct{ inner *imageOwner }
+
+// imageOwner is the shared owning cell behind every copy of an Image. The
+// leak-watch finalizer hangs off it, so a leak is only reported when NO copy
+// remains reachable.
+type imageOwner struct{ ptr *C.GoImage }
+
+// newImage wraps a native image pointer and arms the dev-only leak warning.
+func newImage(p *C.GoImage) *Image {
+	inner := &imageOwner{ptr: p}
+	leakWatch(inner, func(o *imageOwner) bool { return o.ptr != nil }, "slint.Image", "Close")
+	return &Image{inner: inner}
+}
+
+// raw returns the native pointer, nil for zero/closed images (the shim treats
+// NULL as a harmless no-op or zero result).
+func (i *Image) raw() *C.GoImage {
+	if i == nil || i.inner == nil {
+		return nil
+	}
+	return i.inner.ptr
+}
 
 // LoadImage loads an image (PNG/JPEG) from a file path.
 func LoadImage(path string) (*Image, error) {
@@ -24,14 +49,7 @@ func LoadImage(path string) (*Image, error) {
 	if p == nil {
 		return nil, errors.New(lastErrorOr("load image " + path))
 	}
-	return (&Image{ptr: p}).watch(), nil
-}
-
-// watch arms the dev-only leak warning (GOSLINT_DEV) and returns the image, so callers
-// can `return img.watch(), nil`.
-func (img *Image) watch() *Image {
-	leakWatch(img, func(i *Image) bool { return i.ptr != nil }, "slint.Image", "Close")
-	return img
+	return newImage(p), nil
 }
 
 // ImageFromRGBA builds an image from a tightly-packed RGBA8 buffer (w*h*4 bytes,
@@ -60,7 +78,7 @@ func ImageFromSVG(data []byte) (*Image, error) {
 	if p == nil {
 		return nil, errors.New(lastErrorOr("load SVG image"))
 	}
-	return (&Image{ptr: p}).watch(), nil
+	return newImage(p), nil
 }
 
 // ImageFromData builds a raster image from in-memory encoded bytes (PNG/JPEG/…),
@@ -76,7 +94,7 @@ func ImageFromData(data []byte, format string) (*Image, error) {
 	if p == nil {
 		return nil, errors.New(lastErrorOr("load image data"))
 	}
-	return (&Image{ptr: p}).watch(), nil
+	return newImage(p), nil
 }
 
 func imageFromPixels(pix []byte, w, h, bpp int, mk func(*C.uint8_t) *C.GoImage) (*Image, error) {
@@ -91,7 +109,7 @@ func imageFromPixels(pix []byte, w, h, bpp int, mk func(*C.uint8_t) *C.GoImage) 
 	if p == nil {
 		return nil, errors.New(lastErrorOr("image from pixels"))
 	}
-	return (&Image{ptr: p}).watch(), nil
+	return newImage(p), nil
 }
 
 // pixelBufferLen validates dimensions at the Go/C boundary and returns the
@@ -122,18 +140,18 @@ func pixelBufferLen(w, h, bpp int) (uint64, error) {
 }
 
 // Size returns the image's pixel dimensions.
-// Size returns the image's width and height in pixels.
 func (i *Image) Size() (w, h int) {
 	var cw, ch C.uint32_t
-	C.goslint_image_size(i.ptr, &cw, &ch)
+	C.goslint_image_size(i.raw(), &cw, &ch)
 	return int(cw), int(ch)
 }
 
-// Close releases the image's native memory. Safe to call multiple times.
+// Close releases the image's native memory. Safe to call multiple times and
+// through any copy — the first call frees, the rest are no-ops.
 func (i *Image) Close() {
-	if i.ptr != nil {
-		C.goslint_image_free(i.ptr)
-		i.ptr = nil
+	if p := i.raw(); p != nil {
+		C.goslint_image_free(p)
+		i.inner.ptr = nil
 	}
 }
 

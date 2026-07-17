@@ -180,7 +180,10 @@ Tracked breaking changes to make when cutting **v1.0** (don't do them in 0.x):
   args, model rows, and values nested inside structs. Keep the finalizer leak-watch
   (the wrapper's `Close` must still drive the inner handle's release) and the
   image-read path (#2) working. See the `TODO(v1.0)` at the `Image`/`Timer` aliases in
-  `slint.go`.
+  `slint.go`. Note: the copy-safety restructuring already moved these types onto a
+  shared owner cell (`imageOwner`/`timerOwner`/`modelOwner`, leak-watch included), so
+  the v1 wrappers mostly need the boundary wrapping/unwrapping — ownership mechanics
+  are done.
 - **Remove the deprecated `Free()` methods.** `Image`/`Timer`/`ModelHandle` kept
   `Free()` as a `// Deprecated:` alias for `Close()` (added in 0.x for a consistent
   release verb without a break). Deleting `Free()` at v1.0 is the breaking change — tag
