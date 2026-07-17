@@ -21,8 +21,8 @@ command-line tools on macOS, **MinGW-w64 gcc on Windows** (the prebuilt lib uses
 GNU toolchain, so MSVC won't link). You do *not* need Rust or pkg-config. `goslint
 doctor` checks all of this.
 
-**1. Scaffold a project** (creates `go.mod`, `app.slint`, `main.go`, and the
-generated `ui/` package):
+**1. Scaffold a project** (creates `go.mod`, `main.go`, and a `ui/` package
+holding `app.slint` next to its generated binding):
 
 ```sh
 go install github.com/rileylov/go-slint/cmd/goslint@latest
@@ -33,7 +33,7 @@ goslint init myapp && cd myapp
 first use (cached, once per version) - no separate install step. (To pre-fetch it
 explicitly, e.g. in CI, run `goslint setup`.)
 
-**2. Write `app.slint`:**
+**2. Write `ui/app.slint`:**
 
 ```slint
 import { Button, VerticalBox } from "std-widgets.slint";
@@ -54,13 +54,16 @@ export component AppWindow inherits Window {
 ```sh
 goslint generate          # whole project: writes <name>.slint.go next to each entry .slint
 # …or target one file explicitly:
-goslint generate -o ui/app.slint.go -package ui app.slint
+goslint generate -o ui/app.slint.go -package ui ui/app.slint
 ```
 
 With no arguments, `goslint generate` finds every **entry** `.slint` (one not imported by
 another - imported components/widgets are skipped) and generates the typed `<name>.slint.go`
 beside it, packaged after its directory. If your project already has `//go:generate goslint
 generate …` directives, it runs those instead, so a custom output path/package still wins.
+One layout rule: the binding is always generated **next to its `.slint`** (the generated
+`//go:embed` can only reach files at or below its own directory), so `-o` must point into
+the markup's directory — keep each entry `.slint` inside the Go package that uses it.
 
 ```go
 package main
@@ -92,7 +95,7 @@ func main() {
 **4. Run it:** `goslint dev .` (or `goslint run .`).
 
 `goslint dev`/`run`/`build` regenerate the typed wrappers from your `.slint` first,
-so you can just edit `app.slint` and see your changes. The scaffold adds a
+so you can just edit `ui/app.slint` and see your changes. The scaffold adds a
 `//go:generate goslint generate …` directive (which they honour), but it's optional:
 without one they fall back to the same convention as bare `goslint generate` -
 generate `<name>.slint.go` beside each entry `.slint`.
