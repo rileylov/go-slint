@@ -98,6 +98,15 @@ pub unsafe extern "C" fn goslint_definition_free(d: *mut ComponentDefinition) {
 /// # Safety
 /// `i` valid; `name` a valid C string.
 #[no_mangle]
+// RE-ENTRANCY RULE: any instance function that can synchronously execute user Go
+// code (callback handlers, binding evaluation reaching a Go-implemented pure
+// callback, the rendering notifier, the close-requested handler, or the whole
+// event loop) must take `clone_strong()` at entry and work on that stack-owned
+// handle. The Go side may call goslint_instance_free from inside that user code,
+// dropping the Box behind `i` — a bare `&ComponentInstance` would then dangle
+// (e.g. run()'s trailing hide()). The strong clone keeps the component alive and
+// every derived borrow valid until this call returns; if the Go side did free
+// its handle, final teardown happens at our exit, where nothing borrows it.
 pub unsafe extern "C" fn goslint_instance_get_property(
     i: *const ComponentInstance,
     name: *const c_char,
@@ -110,6 +119,7 @@ pub unsafe extern "C" fn goslint_instance_get_property(
                 return std::ptr::null_mut();
             }
         };
+        let i = i.clone_strong(); // see RE-ENTRANCY RULE
         let name = match opt_str(name) {
             Some(n) => n,
             None => {
@@ -146,6 +156,7 @@ pub unsafe extern "C" fn goslint_instance_set_property(
                 return 1;
             }
         };
+        let i = i.clone_strong(); // see RE-ENTRANCY RULE
         let name = match opt_str(name) {
             Some(n) => n,
             None => {
@@ -213,7 +224,10 @@ pub unsafe extern "C" fn goslint_instance_hide(i: *const ComponentInstance) -> i
 #[no_mangle]
 pub unsafe extern "C" fn goslint_instance_run(i: *const ComponentInstance) -> i32 {
     guard(1, || match i.as_ref() {
-        Some(i) => match i.run() {
+        // clone_strong (see RE-ENTRANCY RULE): run() ends with self.hide(), which
+        // would run on a dangling reference if a callback freed the instance
+        // while the event loop was live.
+        Some(i) => match i.clone_strong().run() {
             Ok(()) => 0,
             Err(e) => {
                 set_last_error(e.to_string());
@@ -314,6 +328,9 @@ pub unsafe extern "C" fn goslint_instance_on_close_requested(
 pub unsafe extern "C" fn goslint_instance_request_close(i: *const ComponentInstance) {
     guard((), || {
         if let Some(i) = i.as_ref() {
+            // clone_strong (see RE-ENTRANCY RULE): the close-requested handler
+            // runs synchronously inside dispatch_event and may Close from Go.
+            let i = i.clone_strong();
             i.window()
                 .dispatch_event(i_slint_core::platform::WindowEvent::CloseRequested);
         }
@@ -341,6 +358,7 @@ pub unsafe extern "C" fn goslint_instance_take_snapshot(
                 return std::ptr::null_mut();
             }
         };
+        let i = i.clone_strong(); // see RE-ENTRANCY RULE
         match i.window().take_snapshot() {
             Ok(buf) => {
                 if let Some(w) = w.as_mut() {
@@ -845,6 +863,7 @@ pub unsafe extern "C" fn goslint_instance_invoke(
                 return std::ptr::null_mut();
             }
         };
+        let inst = inst.clone_strong(); // see RE-ENTRANCY RULE
         let name = match opt_str(name) {
             Some(n) => n,
             None => {
@@ -879,6 +898,7 @@ pub unsafe extern "C" fn goslint_instance_get_global_property(
                 return std::ptr::null_mut();
             }
         };
+        let inst = inst.clone_strong(); // see RE-ENTRANCY RULE
         let (g, nm) = match (opt_str(global), opt_str(name)) {
             (Some(g), Some(n)) => (g, n),
             _ => return std::ptr::null_mut(),
@@ -910,6 +930,7 @@ pub unsafe extern "C" fn goslint_instance_set_global_property(
                 return 1;
             }
         };
+        let inst = inst.clone_strong(); // see RE-ENTRANCY RULE
         let (g, nm) = match (opt_str(global), opt_str(name)) {
             (Some(g), Some(n)) => (g, n),
             _ => return 1,
@@ -992,6 +1013,7 @@ pub unsafe extern "C" fn goslint_instance_invoke_global(
                 return std::ptr::null_mut();
             }
         };
+        let inst = inst.clone_strong(); // see RE-ENTRANCY RULE
         let (g, nm) = match (opt_str(global), opt_str(name)) {
             (Some(g), Some(n)) => (g, n),
             _ => return std::ptr::null_mut(),

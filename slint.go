@@ -698,7 +698,11 @@ func (i *Instance) StartSystemResize(edge ResizeEdge) error {
 	return i.inner.WindowDragResize(int(edge))
 }
 
-// Close releases the instance.
+// Close releases the instance. It is safe to call from inside one of this
+// instance's own callbacks (or a binding-evaluated pure callback): the native
+// component stays alive until the call that dispatched the callback — including
+// a running [Instance.Run] loop — finishes, and is torn down there. After
+// Close, other methods return errors or zero values.
 func (i *Instance) Close() { i.inner.Free() }
 
 // OnCloseRequested registers a handler invoked when the window's close is requested
