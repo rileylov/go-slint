@@ -21,7 +21,11 @@ const (
 //
 //export goslintRenderingNotify
 func goslintRenderingNotify(h C.uintptr_t, state C.int32_t) {
-	defer func() { _ = recover() }()
+	defer func() {
+		if r := recover(); r != nil {
+			reportPanic("rendering notifier", "", r)
+		}
+	}()
 	if fn, ok := cgo.Handle(h).Value().(func(int)); ok {
 		fn(int(state))
 	}

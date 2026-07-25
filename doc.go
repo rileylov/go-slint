@@ -122,6 +122,21 @@
 //     only runs if another loop starts. Put shutdown work after Run returns rather
 //     than posting it during teardown.
 //
+// # Panics in callbacks
+//
+// Go code that Slint calls — callbacks, timers, models, close handlers, the
+// rendering notifier, [InvokeFromEventLoop] work, file loaders and translators —
+// runs behind a recover, because a panic must never unwind through C into Rust.
+// The offending call is abandoned (a callback yields void, a model row count
+// reads 0) and the application keeps running.
+//
+// Such a panic is reported, with its stack, to stderr:
+//
+//	goslint: panic in callback "save-clicked": assignment to entry in nil map
+//
+// Use [SetPanicHandler] to route these somewhere else — a logger, telemetry, an
+// error dialog. Treat them as bugs to fix: the callback did not finish its work.
+//
 // See the examples directory for runnable apps (hello, counter, todo, clock,
 // interop, chartstress) and CLAUDE.md for the architecture.
 //

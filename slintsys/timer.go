@@ -17,7 +17,11 @@ const (
 //
 //export goslintTimerTrampoline
 func goslintTimerTrampoline(h C.uintptr_t) {
-	defer func() { _ = recover() }()
+	defer func() {
+		if r := recover(); r != nil {
+			reportPanic("timer", "", r)
+		}
+	}()
 	if fn, ok := cgo.Handle(h).Value().(func()); ok {
 		fn()
 	}

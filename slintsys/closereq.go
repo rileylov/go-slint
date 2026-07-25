@@ -16,7 +16,8 @@ type CloseHandler func() (allowClose bool)
 //export goslintCloseRequested
 func goslintCloseRequested(h C.uintptr_t) (ret C._Bool) {
 	defer func() {
-		if recover() != nil {
+		if r := recover(); r != nil {
+			reportPanic("close handler", "", r)
 			ret = true // on panic, allow the close (don't trap the user)
 		}
 	}()

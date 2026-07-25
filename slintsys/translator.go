@@ -30,7 +30,8 @@ type translatorState struct {
 //export goslintTranslate
 func goslintTranslate(h C.uintptr_t, msgid *C.char) (ret *C.char) {
 	defer func() {
-		if recover() != nil {
+		if r := recover(); r != nil {
+			reportPanic("translator", "", r)
 			ret = nil // fall back to the original string on panic
 		}
 	}()

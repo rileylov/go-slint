@@ -25,7 +25,11 @@ type invokePending struct {
 //
 //export goslintInvokeRun
 func goslintInvokeRun(h C.uintptr_t) {
-	defer func() { _ = recover() }()
+	defer func() {
+		if r := recover(); r != nil {
+			reportPanic("InvokeFromEventLoop", "", r)
+		}
+	}()
 	if p, ok := cgo.Handle(h).Value().(*invokePending); ok {
 		p.ran = true
 		p.fn()

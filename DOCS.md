@@ -485,6 +485,31 @@ saveState()        // shutdown work goes here, not in a posted callback
 win.Close()        // release (defer does this in the examples)
 ```
 
+**Panics in your callbacks.** Go code that Slint calls — callbacks, timers, models,
+close handlers, the rendering notifier, `InvokeFromEventLoop` work, file loaders,
+translators — runs behind a `recover`, because a panic must never unwind through C
+into Rust. The call that panicked is abandoned (a callback yields void, a model row
+count reads 0) and your app keeps running, so the panic is reported with its stack
+to stderr rather than disappearing:
+
+```
+goslint: panic in callback "save-clicked": assignment to entry in nil map
+goroutine 1 [running, locked to thread]:
+...
+main.main.func1(...)
+```
+
+Route them somewhere else — a logger, telemetry, an in-app error dialog — with a
+handler (`nil` restores the stderr default):
+
+```go
+slint.SetPanicHandler(func(p slint.PanicInfo) {
+	log.Printf("UI bug in %s %q: %v\n%s", p.Site, p.Name, p.Value, p.Stack)
+})
+```
+
+Treat these as bugs to fix: the callback did not finish what it was doing.
+
 **Clipboard.** Read and write the system clipboard (package-level; needs a backend,
 so use it once a window exists):
 

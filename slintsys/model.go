@@ -22,7 +22,8 @@ type Model interface {
 //export goslintModelRowCount
 func goslintModelRowCount(h C.uintptr_t) (n C.size_t) {
 	defer func() {
-		if recover() != nil {
+		if r := recover(); r != nil {
+			reportPanic("model.RowCount", "", r)
 			n = 0
 		}
 	}()
@@ -35,7 +36,8 @@ func goslintModelRowCount(h C.uintptr_t) (n C.size_t) {
 //export goslintModelRowData
 func goslintModelRowData(h C.uintptr_t, row C.size_t) (ret *C.GoValue) {
 	defer func() {
-		if recover() != nil {
+		if r := recover(); r != nil {
+			reportPanic("model.RowData", "", r)
 			ret = nil
 		}
 	}()
@@ -56,7 +58,11 @@ func goslintModelRowData(h C.uintptr_t, row C.size_t) (ret *C.GoValue) {
 
 //export goslintModelSetRowData
 func goslintModelSetRowData(h C.uintptr_t, row C.size_t, value *C.GoValue) {
-	defer func() { _ = recover() }()
+	defer func() {
+		if r := recover(); r != nil {
+			reportPanic("model.SetRowData", "", r)
+		}
+	}()
 	defer C.goslint_value_free(value) // we own the incoming value
 	if m, ok := cgo.Handle(h).Value().(Model); ok {
 		m.SetRowData(int(row), goValue(value))

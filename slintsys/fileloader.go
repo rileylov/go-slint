@@ -33,7 +33,8 @@ type fileLoaderState struct {
 //export goslintFileLoaderLoad
 func goslintFileLoaderLoad(h C.uintptr_t, path *C.char) (ret *C.char) {
 	defer func() {
-		if recover() != nil {
+		if r := recover(); r != nil {
+			reportPanic("file loader", "", r)
 			ret = nil
 		}
 	}()

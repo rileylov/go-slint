@@ -60,6 +60,26 @@ func Quit() error { return slintsys.QuitEventLoop() }
 // models, callbacks) from a background goroutine.
 func InvokeFromEventLoop(fn func()) error { return slintsys.InvokeFromEventLoop(fn) }
 
+// PanicInfo describes a Go panic that Slint's callback boundary recovered — the
+// kind of code that panicked ([PanicInfo.Site]), which callback where one applies
+// ([PanicInfo.Name]), the panic value, and a stack trace including the panic site.
+type PanicInfo = slintsys.PanicInfo
+
+// SetPanicHandler installs fn to receive every panic recovered at the callback
+// boundary — handlers, timers, models, the rendering notifier, close handlers,
+// InvokeFromEventLoop work, file loaders and translators.
+//
+// A Go panic must never unwind through C into Rust, so these panics are always
+// recovered and the offending call is abandoned (a callback returns void, a model
+// row count reads 0, and so on). By default the panic and its stack are reported
+// to stderr; install a handler to route them somewhere else — a log, telemetry,
+// an in-app error dialog — or pass nil to restore the default. Do not treat the
+// callback as having run: it did not finish.
+//
+// fn runs on the thread that panicked (usually the UI thread), so keep it quick.
+// A panic inside fn is itself contained.
+func SetPanicHandler(fn func(PanicInfo)) { slintsys.SetPanicHandler(fn) }
+
 // ClipboardText returns the system clipboard's text ("" if empty or unavailable).
 // The clipboard is provided by the backend, so call it once a window exists.
 func ClipboardText() string { return slintsys.ClipboardText() }
