@@ -15,8 +15,22 @@ import (
 // now reports through reportPanic, so the panic is visible while still being
 // contained.
 
-// PanicInfo describes a Go panic recovered at the FFI boundary.
+// ProblemKind distinguishes the two things the boundary has to swallow.
+type ProblemKind int
+
+const (
+	// PanicRecovered: user code panicked and the call was abandoned.
+	PanicRecovered ProblemKind = iota
+	// InvalidArgument: a value could not cross the C ABI (e.g. a negative row
+	// count, which would become a huge unsigned number), so it was rejected.
+	InvalidArgument
+)
+
+// PanicInfo describes a problem the FFI boundary contained: a recovered panic,
+// or an argument it had to reject.
 type PanicInfo struct {
+	// Kind is what happened — a recovered panic or a rejected argument.
+	Kind ProblemKind
 	// Site is the kind of Go code that panicked, e.g. "callback", "timer",
 	// "model.RowData", "rendering notifier".
 	Site string
@@ -35,6 +49,9 @@ func (p PanicInfo) String() string {
 	where := p.Site
 	if p.Name != "" {
 		where = fmt.Sprintf("%s %q", p.Site, p.Name)
+	}
+	if p.Kind == InvalidArgument {
+		return fmt.Sprintf("invalid argument to %s: %v", where, p.Value)
 	}
 	return fmt.Sprintf("panic in %s: %v", where, p.Value)
 }
@@ -59,8 +76,21 @@ func SetPanicHandler(fn func(PanicInfo)) {
 // this runs inside a deferred recover at the C boundary, where a second panic
 // would escape into Rust.
 func reportPanic(site, name string, v any) {
+	report(PanicInfo{Kind: PanicRecovered, Site: site, Name: name, Value: v})
+}
+
+// reportInvalid surfaces an argument the boundary refused to pass to C, because
+// converting it would corrupt its meaning — a negative int becoming a huge
+// size_t/uint32. The call is skipped rather than performed with a nonsense
+// value (a negative model row count reaching Slint as ~1.8e19 rows freezes the
+// app), so the caller must be told.
+func reportInvalid(site, name string, err error) {
+	report(PanicInfo{Kind: InvalidArgument, Site: site, Name: name, Value: err})
+}
+
+func report(info PanicInfo) {
 	defer func() { _ = recover() }() // a broken handler must not unwind into C
-	info := PanicInfo{Site: site, Name: name, Value: v, Stack: debug.Stack()}
+	info.Stack = debug.Stack()
 	if h := panicHandler.Load(); h != nil {
 		(*h)(info)
 		return

@@ -137,6 +137,12 @@
 // Use [SetPanicHandler] to route these somewhere else — a logger, telemetry, an
 // error dialog. Treat them as bugs to fix: the callback did not finish its work.
 //
+// The same reporting covers arguments that cannot cross into C unchanged. Go's
+// ints are signed where parts of the Slint ABI are not, so a negative value would
+// arrive as an enormous unsigned one — a model RowCount of -1 would become ~1.8e19
+// rows and freeze the app. Those calls are skipped rather than performed with a
+// corrupted value, and reported the same way ([PanicInfo.Kind] tells them apart).
+//
 // See the examples directory for runnable apps (hello, counter, todo, clock,
 // interop, chartstress) and CLAUDE.md for the architecture.
 //

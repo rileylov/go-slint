@@ -174,8 +174,27 @@ func (i *Instance) WindowSize() (w, h int) {
 	return int(cw), int(ch)
 }
 
+// SetWindowSize resizes the window (physical pixels). The ABI takes uint32, so a
+// negative or oversized value would arrive as a nonsense dimension; such a call is
+// skipped and reported (see SetPanicHandler) rather than resizing to garbage.
 func (i *Instance) SetWindowSize(w, h int) {
+	if !validDim("window size", w, h) {
+		return
+	}
 	C.goslint_instance_window_set_size(i.ptr, C.uint32_t(w), C.uint32_t(h))
+}
+
+// validDim checks a width/height pair destined for the uint32 ABI.
+func validDim(site string, w, h int) bool {
+	if w <= 0 || h <= 0 {
+		reportInvalid(site, "", fmt.Errorf("dimensions must be positive, got %dx%d; ignoring", w, h))
+		return false
+	}
+	if uint64(w) > math.MaxUint32 || uint64(h) > math.MaxUint32 {
+		reportInvalid(site, "", fmt.Errorf("dimensions %dx%d don't fit uint32; ignoring", w, h))
+		return false
+	}
+	return true
 }
 
 func (i *Instance) WindowPosition() (x, y int) {
@@ -184,7 +203,14 @@ func (i *Instance) WindowPosition() (x, y int) {
 	return int(cx), int(cy)
 }
 
+// SetWindowPosition moves the window (physical pixels). Negative coordinates are
+// legal (secondary monitors), but the ABI is int32: a value outside that range
+// would be truncated into a different position, so it's skipped and reported.
 func (i *Instance) SetWindowPosition(x, y int) {
+	if x < math.MinInt32 || x > math.MaxInt32 || y < math.MinInt32 || y > math.MaxInt32 {
+		reportInvalid("window position", "", fmt.Errorf("position %d,%d doesn't fit int32; ignoring", x, y))
+		return
+	}
 	C.goslint_instance_window_set_position(i.ptr, C.int32_t(x), C.int32_t(y))
 }
 

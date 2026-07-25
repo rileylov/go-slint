@@ -17,7 +17,10 @@ static GoModel *goslintModelNewBridge(uintptr_t h) {
 */
 import "C"
 
-import "runtime/cgo"
+import (
+	"fmt"
+	"runtime/cgo"
+)
 
 // ModelHandle bridges a Go Model into Slint. Assign it to a model property and
 // report data changes through its Notify* methods. Keep it alive while in use;
@@ -61,16 +64,43 @@ func (mh *ModelHandle) watch() *ModelHandle {
 	return mh
 }
 
+// The Notify* methods take ints but the ABI takes size_t: a negative value would
+// arrive as a huge unsigned number and send Slint reading rows that don't exist.
+// Such a call is skipped and reported (see SetPanicHandler) rather than performed
+// with a corrupted argument.
+
 func (mh *ModelHandle) NotifyRowChanged(row int) {
+	if !validRow("model.NotifyRowChanged", row, 0) {
+		return
+	}
 	C.goslint_model_notify_row_changed(mh.raw(), C.size_t(row))
 }
 
 func (mh *ModelHandle) NotifyRowAdded(row, count int) {
+	if !validRow("model.NotifyRowAdded", row, count) {
+		return
+	}
 	C.goslint_model_notify_row_added(mh.raw(), C.size_t(row), C.size_t(count))
 }
 
 func (mh *ModelHandle) NotifyRowRemoved(row, count int) {
+	if !validRow("model.NotifyRowRemoved", row, count) {
+		return
+	}
 	C.goslint_model_notify_row_removed(mh.raw(), C.size_t(row), C.size_t(count))
+}
+
+// validRow reports whether a (row, count) pair can cross the size_t ABI intact.
+func validRow(site string, row, count int) bool {
+	if row < 0 {
+		reportInvalid(site, "", fmt.Errorf("negative row %d; ignoring the notification", row))
+		return false
+	}
+	if count < 0 {
+		reportInvalid(site, "", fmt.Errorf("negative count %d; ignoring the notification", count))
+		return false
+	}
+	return true
 }
 
 func (mh *ModelHandle) NotifyReset() {

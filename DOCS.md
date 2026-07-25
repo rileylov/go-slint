@@ -510,6 +510,19 @@ slint.SetPanicHandler(func(p slint.PanicInfo) {
 
 Treat these as bugs to fix: the callback did not finish what it was doing.
 
+The same handler also reports **arguments that couldn't cross into C intact**.
+Go's ints are signed but several Slint ABI slots aren't, so a negative value would
+arrive as an enormous unsigned one — a model `RowCount()` of `-1` (say
+`len(items)-1` on an empty slice) becomes ~1.8×10¹⁹ rows and freezes the app
+trying to render them. Such calls are skipped and reported instead:
+
+```
+goslint: invalid argument to model.RowCount: RowCount returned -1; treating the model as empty
+```
+
+Check `p.Kind` to tell the two apart (`slint.PanicRecovered` vs
+`slint.InvalidArgument`).
+
 **Clipboard.** Read and write the system clipboard (package-level; needs a backend,
 so use it once a window exists):
 

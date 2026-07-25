@@ -5,7 +5,10 @@ package slintsys
 */
 import "C"
 
-import "runtime/cgo"
+import (
+	"fmt"
+	"runtime/cgo"
+)
 
 // Model is a data source backing a Slint model (e.g. a `for` loop). Implement it
 // and bind it with NewModelHandle. Mutations must be reported through the
@@ -28,9 +31,25 @@ func goslintModelRowCount(h C.uintptr_t) (n C.size_t) {
 		}
 	}()
 	if m, ok := cgo.Handle(h).Value().(Model); ok {
-		return C.size_t(m.RowCount())
+		count, err := rowCountForABI(m.RowCount())
+		if err != nil {
+			reportInvalid("model.RowCount", "", err)
+			return 0
+		}
+		return C.size_t(count)
 	}
 	return 0
+}
+
+// rowCountForABI converts a Model's RowCount to the unsigned count the ABI takes.
+// A negative count must never cross: -1 arrives as ~1.8e19 rows and Slint hangs
+// trying to render them (verified). The usual cause is arithmetic like
+// len(items)-1 on an empty slice. Kept separate from cgo so it is unit-testable.
+func rowCountForABI(c int) (uint64, error) {
+	if c < 0 {
+		return 0, fmt.Errorf("RowCount returned %d; treating the model as empty", c)
+	}
+	return uint64(c), nil
 }
 
 //export goslintModelRowData

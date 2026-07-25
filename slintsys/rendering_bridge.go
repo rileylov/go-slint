@@ -17,6 +17,8 @@ import "C"
 
 import (
 	"errors"
+	"fmt"
+	"math"
 	"runtime/cgo"
 	"unsafe"
 )
@@ -51,6 +53,14 @@ func GLProcAddress(name string) unsafe.Pointer {
 // texture must outlive the Image and belong to Slint's GL context.
 // bottomLeftOrigin flips sampling for FBO-style bottom-up textures.
 func ImageFromGLTexture(textureID uint32, w, h int, bottomLeftOrigin bool) (*Image, error) {
+	// uint32 ABI: a negative size would arrive as a huge dimension and Slint would
+	// sample far outside the texture. Reject it here, where we can return an error.
+	if w <= 0 || h <= 0 {
+		return nil, fmt.Errorf("image from GL texture: dimensions must be positive, got %dx%d", w, h)
+	}
+	if uint64(w) > math.MaxUint32 || uint64(h) > math.MaxUint32 {
+		return nil, fmt.Errorf("image from GL texture: dimensions %dx%d don't fit uint32", w, h)
+	}
 	p := C.goslint_image_from_gl_texture(C.uint32_t(textureID), C.uint32_t(w), C.uint32_t(h), C._Bool(bottomLeftOrigin))
 	if p == nil {
 		return nil, errors.New(lastErrorOr("image from GL texture"))
