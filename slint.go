@@ -46,7 +46,13 @@ func Run() error { return slintsys.RunEventLoop() }
 // dynamically. Show at least one window before calling it.
 func RunUntilQuit() error { return slintsys.RunEventLoopUntilQuit() }
 
-// Quit asks the running event loop to exit.
+// Quit asks the running event loop to exit, so the blocking Run call returns. It
+// releases nothing on its own: windows stay alive until [Instance.Close], and
+// timers stay registered — they are not cancelled, and resume firing if a loop
+// runs again (Stop/Close the ones that shouldn't). Work already posted with
+// [InvokeFromEventLoop] is normally drained before the loop exits, but anything
+// still queued when it stops is discarded without running (GOSLINT_DEV warns), so
+// do shutdown work after Run returns rather than posting it during teardown.
 func Quit() error { return slintsys.QuitEventLoop() }
 
 // InvokeFromEventLoop posts fn to run once on the event-loop (UI) thread. Safe to
@@ -624,13 +630,17 @@ func (i *Instance) SetGlobal(global, name string, v any) error {
 	return i.inner.SetGlobalProperty(global, name, toSys(v))
 }
 
-// Show makes the window visible without blocking.
+// Show makes the window visible without blocking. A hidden window (closed by the
+// user, or hidden with Hide) can be shown again — closing never destroys it.
 func (i *Instance) Show() error { return i.inner.Show() }
 
-// Hide hides the window.
+// Hide hides the window without running the OnCloseRequested handler. The
+// instance stays alive; release it with [Instance.Close].
 func (i *Instance) Hide() error { return i.inner.Hide() }
 
-// Run shows the window and runs the event loop, blocking until the window closes.
+// Run shows the window and runs the event loop, blocking until the window closes
+// or [Quit] is called; it then hides the window. The instance is still alive when
+// Run returns — do cleanup here, and release it with [Instance.Close].
 func (i *Instance) Run() error { return i.inner.Run() }
 
 // WindowSize returns the window's size in physical pixels (divide by [Instance.ScaleFactor]
@@ -709,6 +719,9 @@ func (i *Instance) Close() { i.inner.Free() }
 // (the user clicking the close button, or RequestClose). Return true to allow the
 // window to close, false to keep it open — e.g. to show a confirm dialog or save
 // first. Runs on the event loop.
+//
+// Allowing the close HIDES the window; it does not release the instance (Show
+// brings it back). Call [Instance.Close] when you're done with it.
 func (i *Instance) OnCloseRequested(handler func() (allowClose bool)) {
 	i.inner.OnCloseRequested(handler)
 }

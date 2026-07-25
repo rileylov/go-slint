@@ -452,6 +452,39 @@ win.OnCloseRequested(func() bool {
 })
 ```
 
+**Lifecycle: closing a window is not releasing it.** Four separate things, easy to
+conflate:
+
+| Action | What happens | Native memory |
+| --- | --- | --- |
+| User closes the window / `RequestClose()` | Runs `OnCloseRequested`; unless it returns `false`, the window **hides** | still held |
+| `Hide()` / `Show()` | Hides or re-shows directly, no close handler | still held |
+| `Quit()`, or `Run()` returning | The event loop stops; every instance is untouched | still held |
+| `Close()` | Releases the component | **freed** |
+
+So a window the user "closed" is only hidden — it can be `Show()`n again, and it
+keeps holding native memory until you `Close()` it (that's what the deferred
+`defer win.Close()` in every example is for). `Close()` is safe to call from inside
+that window's own callbacks: the component is torn down once the call that
+dispatched the callback returns.
+
+**What `Quit` does *not* do.** It stops the loop, and nothing else:
+
+- **Timers keep running.** They aren't cancelled — they stay registered and resume
+  firing if a loop runs again. `Stop()` the ones that shouldn't, and `Close()` them
+  when finished.
+- **Windows stay alive** (see the table above).
+- **Queued work may be lost.** Callbacks posted with `InvokeFromEventLoop` are
+  normally drained before the loop exits, but anything still queued when it stops is
+  discarded without running (`GOSLINT_DEV` warns), and posting after the loop quit
+  only runs if another loop starts. Put shutdown work *after* `Run()` returns:
+
+```go
+win.Run()          // blocks; returns after Quit or the last window closes
+saveState()        // shutdown work goes here, not in a posted callback
+win.Close()        // release (defer does this in the examples)
+```
+
 **Clipboard.** Read and write the system clipboard (package-level; needs a backend,
 so use it once a window exists):
 
