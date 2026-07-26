@@ -23,7 +23,7 @@ func BenchmarkCheckEnabledOnThread(b *testing.B) {
 	prev := threadCheck
 	threadCheck = true
 	runtime.LockOSThread()
-	MarkUIThread()
+	MarkUIThread("test")
 	b.Cleanup(func() { threadCheck = prev; uiThreadID.Store(0) })
 	b.ReportAllocs()
 	name := "status"

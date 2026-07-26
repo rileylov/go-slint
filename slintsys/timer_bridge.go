@@ -46,15 +46,22 @@ func (t *Timer) raw() *C.GoTimer {
 
 // Start runs fn every intervalMs (mode TimerRepeated) or once (TimerSingleShot).
 func (t *Timer) Start(mode int, intervalMs uint64, fn func()) {
+	CheckUIThread("Timer.Start", "")
 	h := cgo.NewHandle(fn)
 	C.goslintTimerStartBridge(t.raw(), C.int32_t(mode), C.uint64_t(intervalMs), C.uintptr_t(h))
 }
 
 // Stop halts the timer; it can be resumed with Restart.
-func (t *Timer) Stop() { C.goslint_timer_stop(t.raw()) }
+func (t *Timer) Stop() {
+	CheckUIThread("Timer.Stop", "")
+	C.goslint_timer_stop(t.raw())
+}
 
 // Restart restarts the timer from now using its current interval and mode.
-func (t *Timer) Restart() { C.goslint_timer_restart(t.raw()) }
+func (t *Timer) Restart() {
+	CheckUIThread("Timer.Restart", "")
+	C.goslint_timer_restart(t.raw())
+}
 
 // Running reports whether the timer is currently active.
 func (t *Timer) Running() bool { return bool(C.goslint_timer_running(t.raw())) }
@@ -80,6 +87,6 @@ func SingleShot(intervalMs uint64, fn func()) {
 // InitIntegration installs the integration-test backend (simple event loop,
 // system time) so timers fire. Call once per process on the UI thread.
 func InitIntegration() error {
-	MarkUIThread() // this thread owns Slint's context for tests
+	MarkUIThread("InitIntegration") // this thread owns Slint's context for tests
 	return rc(C.goslint_testing_init_integration(), "init integration")
 }

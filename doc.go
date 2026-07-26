@@ -14,6 +14,16 @@
 //
 // To touch the UI from another goroutine, post work with [InvokeFromEventLoop].
 //
+// Off-thread UI access is undefined behaviour — it corrupts silently rather than
+// failing — so goslint ships a guard that turns it into an immediate panic naming
+// your calling line. It runs under `goslint dev` (GOSLINT_DEV), and GOSLINT_GUARD=1
+// switches it on for a normal build when a released app misbehaves in a way that
+// smells like threading. Disabled, it costs a single bool check.
+//
+// The thread that first starts the event loop (or installs a backend) owns Slint's
+// context; every later UI operation is checked against it. [Quit] and
+// [InvokeFromEventLoop] are the exceptions — those are safe from any goroutine.
+//
 // # A minimal program
 //
 //	package main

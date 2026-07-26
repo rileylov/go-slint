@@ -32,7 +32,7 @@ func withLoopRunning(run func() error) error {
 // InitHeadless installs the headless testing backend (mock time, no windows).
 // Call once per process, before creating any component, on the UI thread.
 func InitHeadless() error {
-	MarkUIThread() // this thread owns Slint's context for tests
+	MarkUIThread("InitHeadless") // this thread owns Slint's context for tests
 	return rc(C.goslint_testing_init_headless(), "init headless")
 }
 
@@ -50,14 +50,14 @@ func SetTestingOSWindows() { C.goslint_testing_set_os_windows() }
 // RunEventLoop runs the Slint event loop until quit / last window closed.
 // Blocks; must be called on the UI thread.
 func RunEventLoop() error {
-	MarkUIThread() // the calling thread is the UI thread
+	MarkUIThread("Run") // the calling thread is the UI thread
 	return withLoopRunning(func() error { return rc(C.goslint_run_event_loop(), "run event loop") })
 }
 
 // RunEventLoopUntilQuit runs the event loop until QuitEventLoop, without quitting
 // when the last window closes. Blocks; UI thread only.
 func RunEventLoopUntilQuit() error {
-	MarkUIThread() // the calling thread is the UI thread
+	MarkUIThread("Run") // the calling thread is the UI thread
 	return withLoopRunning(func() error { return rc(C.goslint_run_event_loop_until_quit(), "run event loop until quit") })
 }
 

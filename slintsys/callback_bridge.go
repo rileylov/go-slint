@@ -28,6 +28,7 @@ import (
 // a cgo.Handle that Slint releases (through goslintDropHandle) when the instance
 // is dropped or the handler replaced.
 func (i *Instance) SetCallback(name string, fn CallbackFunc) error {
+	CheckUIThread("OnCallback", name)
 	h := cgo.NewHandle(&callbackEntry{name: name, fn: fn})
 	cs := C.CString(name)
 	defer C.free(unsafe.Pointer(cs))
@@ -42,6 +43,7 @@ func (i *Instance) SetCallback(name string, fn CallbackFunc) error {
 
 // SetGlobalCallback installs a handler for a callback on an exported global.
 func (i *Instance) SetGlobalCallback(global, name string, fn CallbackFunc) error {
+	CheckUIThread("OnGlobalCallback", name)
 	h := cgo.NewHandle(&callbackEntry{name: global + "." + name, fn: fn})
 	cg := C.CString(global)
 	defer C.free(unsafe.Pointer(cg))

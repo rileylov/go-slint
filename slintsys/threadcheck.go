@@ -26,7 +26,11 @@ import (
 // a thread-affine op called off the UI thread panics with a clear message instead of
 // corrupting. In a shipped build the guard is compiled-out cheap (a single bool
 // check), so there's no production cost.
-var threadCheck = os.Getenv("GOSLINT_DEV") != ""
+//
+// GOSLINT_GUARD=1 turns the same guard on in a production build, for when a
+// released app misbehaves in a way that smells like threading: a clear panic at
+// the offending call beats debugging silent corruption in the field.
+var threadCheck = os.Getenv("GOSLINT_DEV") != "" || os.Getenv("GOSLINT_GUARD") != ""
 
 // uiThreadID is the OS thread id of the event-loop thread, recorded by MarkUIThread.
 // Zero means "not yet known" (e.g. during setup before Run), which disables the guard.
@@ -34,12 +38,27 @@ var uiThreadID atomic.Uint64
 
 func osThreadID() uint64 { return uint64(C.goslint_os_thread_id()) }
 
-// MarkUIThread records the current OS thread as the UI (event-loop) thread. Called
-// when the event loop starts and when the headless backend is installed — both run
-// on the thread that owns Slint's context.
-func MarkUIThread() {
-	if threadCheck {
-		uiThreadID.Store(osThreadID())
+// MarkUIThread claims the current OS thread as the UI (event-loop) thread — or,
+// if one is already claimed, VERIFIES that this is it. Called by the operations
+// that establish Slint's context (event loop start, backend install, Show).
+//
+// First-claim-wins matters: storing unconditionally let a later call from the
+// wrong thread silently redefine which thread was "the UI thread", after which
+// the guard accused the genuine UI thread of being off-thread and waved the
+// offending one through — it inverted its own diagnosis. Slint's context belongs
+// to whichever thread first established it, and a UI operation arriving on a
+// different thread is the bug, never a redefinition. op names the operation, so
+// the panic points at the thing that was misused (e.g. Show).
+func MarkUIThread(op string) {
+	if !threadCheck {
+		return
+	}
+	id := osThreadID()
+	if uiThreadID.CompareAndSwap(0, id) {
+		return // this thread owns Slint's context from here on
+	}
+	if uiThreadID.Load() != id {
+		panicOffUIThread(op, "")
 	}
 }
 

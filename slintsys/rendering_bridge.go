@@ -29,6 +29,7 @@ import (
 // drawing and texture uploads. GL renderer (femtovg) only: the software renderer
 // returns an error. GLProcAddress works only inside fn.
 func (i *Instance) SetRenderingNotifier(fn func(state int)) error {
+	CheckUIThread("SetRenderingNotifier", "")
 	h := cgo.NewHandle(fn)
 	if C.goslintSetRenderingNotifierBridge(i.ptr, C.uintptr_t(h)) != 0 {
 		// The error path already released the handle via the Rust Drop guard

@@ -64,6 +64,7 @@ func (i *Instance) Invoke(name string, args []any) (any, error) {
 // `font-family`. Registers into the shared per-thread context, so it applies to all
 // windows; call before the text using the font is laid out.
 func (i *Instance) RegisterFontFromPath(path string) error {
+	CheckUIThread("RegisterFont", "")
 	cs := C.CString(path)
 	defer C.free(unsafe.Pointer(cs))
 	return rc(C.goslint_instance_register_font_from_path(i.ptr, cs), "register font "+path)
@@ -72,6 +73,7 @@ func (i *Instance) RegisterFontFromPath(path string) error {
 // RegisterFontFromMemory registers a font from an in-memory buffer. The data is
 // copied; the copy lives for the process (a registered font is permanent).
 func (i *Instance) RegisterFontFromMemory(data []byte) error {
+	CheckUIThread("RegisterFont", "")
 	if len(data) == 0 {
 		return errors.New("register font: empty data")
 	}
@@ -82,6 +84,7 @@ func (i *Instance) RegisterFontFromMemory(data []byte) error {
 // TakeSnapshot renders the window to a straight-RGBA8 pixel buffer (w*h*4 bytes),
 // returning a copy owned by Go.
 func (i *Instance) TakeSnapshot() (pix []byte, w, h int, err error) {
+	CheckUIThread("Snapshot", "")
 	var cw, ch C.uint32_t
 	p := C.goslint_instance_take_snapshot(i.ptr, &cw, &ch)
 	if p == nil {
@@ -159,16 +162,23 @@ func (i *Instance) InvokeGlobal(global, name string, args []any) (any, error) {
 // Show/Run establish (and require) the UI thread; record it so the off-thread guard
 // knows which thread is the event-loop thread. Single-window apps drive the loop via
 // Run(); multi-window apps Show() each window then slint.Run() (also marks).
-func (i *Instance) Show() error { MarkUIThread(); return rc(C.goslint_instance_show(i.ptr), "show") }
-func (i *Instance) Hide() error { return rc(C.goslint_instance_hide(i.ptr), "hide") }
+func (i *Instance) Show() error {
+	MarkUIThread("Show")
+	return rc(C.goslint_instance_show(i.ptr), "show")
+}
+func (i *Instance) Hide() error {
+	CheckUIThread("Hide", "")
+	return rc(C.goslint_instance_hide(i.ptr), "hide")
+}
 func (i *Instance) Run() error {
-	MarkUIThread()
+	MarkUIThread("Run")
 	return withLoopRunning(func() error { return rc(C.goslint_instance_run(i.ptr), "run") })
 }
 
 // ---- window control (physical pixels) ----
 
 func (i *Instance) WindowSize() (w, h int) {
+	CheckUIThread("WindowSize", "")
 	var cw, ch C.uint32_t
 	C.goslint_instance_window_size(i.ptr, &cw, &ch)
 	return int(cw), int(ch)
@@ -178,6 +188,7 @@ func (i *Instance) WindowSize() (w, h int) {
 // negative or oversized value would arrive as a nonsense dimension; such a call is
 // skipped and reported (see SetPanicHandler) rather than resizing to garbage.
 func (i *Instance) SetWindowSize(w, h int) {
+	CheckUIThread("SetWindowSize", "")
 	if !validDim("window size", w, h) {
 		return
 	}
@@ -198,6 +209,7 @@ func validDim(site string, w, h int) bool {
 }
 
 func (i *Instance) WindowPosition() (x, y int) {
+	CheckUIThread("WindowPosition", "")
 	var cx, cy C.int32_t
 	C.goslint_instance_window_position(i.ptr, &cx, &cy)
 	return int(cx), int(cy)
@@ -207,6 +219,7 @@ func (i *Instance) WindowPosition() (x, y int) {
 // legal (secondary monitors), but the ABI is int32: a value outside that range
 // would be truncated into a different position, so it's skipped and reported.
 func (i *Instance) SetWindowPosition(x, y int) {
+	CheckUIThread("SetWindowPosition", "")
 	if x < math.MinInt32 || x > math.MaxInt32 || y < math.MinInt32 || y > math.MaxInt32 {
 		reportInvalid("window position", "", fmt.Errorf("position %d,%d doesn't fit int32; ignoring", x, y))
 		return
@@ -215,22 +228,27 @@ func (i *Instance) SetWindowPosition(x, y int) {
 }
 
 func (i *Instance) WindowScaleFactor() float32 {
+	CheckUIThread("ScaleFactor", "")
 	return float32(C.goslint_instance_window_scale_factor(i.ptr))
 }
 
 func (i *Instance) SetWindowFullscreen(on bool) {
+	CheckUIThread("SetFullscreen", "")
 	C.goslint_instance_window_set_fullscreen(i.ptr, C._Bool(on))
 }
 
 func (i *Instance) SetWindowMaximized(on bool) {
+	CheckUIThread("SetMaximized", "")
 	C.goslint_instance_window_set_maximized(i.ptr, C._Bool(on))
 }
 
 func (i *Instance) SetWindowMinimized(on bool) {
+	CheckUIThread("SetMinimized", "")
 	C.goslint_instance_window_set_minimized(i.ptr, C._Bool(on))
 }
 
 func (i *Instance) RequestRedraw() {
+	CheckUIThread("RequestRedraw", "")
 	C.goslint_instance_window_request_redraw(i.ptr)
 }
 
@@ -238,6 +256,7 @@ func (i *Instance) RequestRedraw() {
 // drag_window — frameless title-bar dragging). Call from a pointer-event
 // callback while a button is pressed; winit desktop backends only.
 func (i *Instance) WindowDragMove() error {
+	CheckUIThread("StartSystemMove", "")
 	return rc(C.goslint_instance_window_drag_move(i.ptr), "drag move")
 }
 
@@ -246,6 +265,7 @@ func (i *Instance) WindowDragMove() error {
 // ResizeDirection order: 0=east 1=north 2=north-east 3=north-west 4=south
 // 5=south-east 6=south-west 7=west.
 func (i *Instance) WindowDragResize(direction int) error {
+	CheckUIThread("StartSystemResize", "")
 	return rc(C.goslint_instance_window_drag_resize(i.ptr, C.int32_t(direction)), "drag resize")
 }
 

@@ -485,6 +485,22 @@ saveState()        // shutdown work goes here, not in a posted callback
 win.Close()        // release (defer does this in the examples)
 ```
 
+**Catching off-thread UI access.** Slint is thread-affine: touching the UI from a
+worker goroutine is undefined behaviour that corrupts silently instead of failing.
+The built-in guard turns it into an immediate panic pointing at your line:
+
+```
+slint: Set status called off the UI (event-loop) thread (at main.go:29)
+  — Slint is thread-affine; run UI access on the event-loop thread
+    (wrap it in slint.InvokeFromEventLoop)
+```
+
+It's on under `goslint dev`, and `GOSLINT_GUARD=1` enables it in an ordinary build
+when a shipped app misbehaves in a way that smells like threading. Disabled it's a
+single bool check, so there's no production cost. The thread that first runs the
+event loop owns Slint's context; `Quit` and `InvokeFromEventLoop` are the only
+calls safe from any goroutine.
+
 **Panics in your callbacks.** Go code that Slint calls — callbacks, timers, models,
 close handlers, the rendering notifier, `InvokeFromEventLoop` work, file loaders,
 translators — runs behind a `recover`, because a panic must never unwind through C

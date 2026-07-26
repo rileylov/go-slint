@@ -19,6 +19,7 @@ import "runtime/cgo"
 // OnCloseRequested installs a handler for window-close requests. The handle is
 // released when the handler is replaced or the instance is freed.
 func (i *Instance) OnCloseRequested(fn CloseHandler) {
+	CheckUIThread("OnCloseRequested", "")
 	h := cgo.NewHandle(fn)
 	C.goslintOnCloseRequestedBridge(i.ptr, C.uintptr_t(h))
 }

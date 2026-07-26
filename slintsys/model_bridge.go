@@ -92,6 +92,7 @@ func (mh *ModelHandle) NotifyRowRemoved(row, count int) {
 
 // validRow reports whether a (row, count) pair can cross the size_t ABI intact.
 func validRow(site string, row, count int) bool {
+	CheckUIThread(site, "")
 	if row < 0 {
 		reportInvalid(site, "", fmt.Errorf("negative row %d; ignoring the notification", row))
 		return false
@@ -104,6 +105,7 @@ func validRow(site string, row, count int) bool {
 }
 
 func (mh *ModelHandle) NotifyReset() {
+	CheckUIThread("model.NotifyReset", "")
 	C.goslint_model_notify_reset(mh.raw())
 }
 
