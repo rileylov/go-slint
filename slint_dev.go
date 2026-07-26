@@ -24,17 +24,26 @@ func LiveReload(path, component string, bind func(*Instance) error, opts ...Opti
 	if err != nil {
 		return err // the initial load must succeed
 	}
-	last := newestMod(path)
+
+	// The watcher is bound to this call's lifetime: stop signals it, watcherDone
+	// lets us join it before returning. Without that it polled forever — every
+	// LiveReload leaked a goroutine that kept posting reloads referencing an
+	// instance this function had already closed.
+	stop := make(chan struct{})
+	watcherDone := make(chan struct{})
+
+	// stopped is read and written only on the UI goroutine (inside the posted
+	// closure, and here after Run returns), so a reload queued during shutdown
+	// becomes a no-op instead of touching a closed instance.
+	stopped := false
 
 	go func() {
-		for {
-			time.Sleep(300 * time.Millisecond)
-			m := newestMod(path)
-			if !m.After(last) {
-				continue
-			}
-			last = m
-			InvokeFromEventLoop(func() {
+		defer close(watcherDone)
+		watchSlint(path, 300*time.Millisecond, stop, func() {
+			if err := InvokeFromEventLoop(func() {
+				if stopped {
+					return // LiveReload has returned; the instance is gone
+				}
 				start := time.Now()
 				// Reuse the current window so the UI swaps in place (no new window).
 				next, err := loadReuse(path, component, bind, opts, cur.inst)
@@ -46,13 +55,39 @@ func LiveReload(path, component string, bind func(*Instance) error, opts ...Opti
 				cur = next
 				old.close() // drop the old instance; the window lives on in `next`
 				log.Printf("goslint dev: reloaded %s in %s", filepath.Base(path), time.Since(start).Round(time.Millisecond))
-			})
-		}
+			}); err != nil {
+				log.Printf("goslint dev: could not queue a reload: %v", err)
+			}
+		})
 	}()
 
 	err = Run()
+	close(stop)    // ask the watcher to finish
+	<-watcherDone  // and wait for it, so no goroutine outlives this call
+	stopped = true // neutralize any reload already queued on the loop
 	cur.close()
 	return err
+}
+
+// watchSlint polls the .slint files beside path every interval and calls onChange
+// (on the polling goroutine) whenever one is newer than the last observation. It
+// returns as soon as stop is closed — including while waiting between polls, so
+// shutdown doesn't hang for an interval.
+func watchSlint(path string, interval time.Duration, stop <-chan struct{}, onChange func()) {
+	last := newestMod(path)
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-stop:
+			return
+		case <-ticker.C:
+			if m := newestMod(path); m.After(last) {
+				last = m
+				onChange()
+			}
+		}
+	}
 }
 
 type liveInstance struct {
