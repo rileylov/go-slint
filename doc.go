@@ -78,6 +78,8 @@
 //
 // Build a writable model with [NewSliceModel] (or [NewModel] for a custom
 // [Model]) and assign it to an array/model property; mutating it notifies Slint.
+// A model that also implements [RowMutator] (SliceModel does) can be grown and
+// shrunk from .slint code with `push`, `insert` and `remove` (Slint 1.18).
 //
 // # Resource ownership
 //

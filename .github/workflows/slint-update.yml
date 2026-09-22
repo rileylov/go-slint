@@ -1,7 +1,7 @@
 # Weekly check for a new upstream Slint release. When one exists, it attempts the
 # update (bump .slint-version, build the shim, run the full test suite) and:
-#   - opens a PR if it builds + tests clean (the common case — just merge it), or
-#   - opens an Issue with the build log if it doesn't (a breaking API change —
+#   - opens a PR if it builds + tests clean (the common case - just merge it), or
+#   - opens an Issue with the build log if it doesn't (a breaking API change -
 #     fix the shim per UPDATING.md).
 # Only acts when .slint-version is pinned to a release tag (vX.Y.Z).
 name: slint-update
@@ -30,7 +30,7 @@ jobs:
           current="$(cat .slint-version)"
           case "$current" in
             v[0-9]*) ;;
-            *) echo "Pin '$current' is not a release tag — skipping (pin a tag to enable auto-updates)."
+            *) echo "Pin '$current' is not a release tag - skipping (pin a tag to enable auto-updates)."
                echo "skip=true" >> "$GITHUB_OUTPUT"; exit 0;;
           esac
           latest="$(gh api repos/slint-ui/slint/releases/latest --jq .tag_name)"
@@ -60,7 +60,7 @@ jobs:
           git -C slint fetch --depth 1 origin "$tag"
           git -C slint checkout -q FETCH_HEAD
           # libgl-dev: the GL examples import go-gl, whose cgo needs `pkg-config gl`
-          # and -lGL at link time (headers/stubs only — the tests never open GL).
+          # and -lGL at link time (headers/stubs only - the tests never open GL).
           sudo apt-get update && sudo apt-get install -y libfontconfig-dev libgl-dev
           rustup toolchain install stable --profile minimal --no-self-update
           set -o pipefail
@@ -94,7 +94,7 @@ jobs:
           if [ -z "$existing" ]; then
             excerpt="$(tail -c 6000 build.log 2>/dev/null || echo '(no log captured)')"
             printf '%s\n\n```\n%s\n```\n' \
-              "Slint released **$tag**, but \`make lib\` / the test suite failed against it — the interpreter API likely changed. See [UPDATING.md](../blob/main/UPDATING.md) for the fix process. Build log tail:" \
+              "Slint released **$tag**, but \`make lib\` / the test suite failed against it - the interpreter API likely changed. See [UPDATING.md](../blob/main/UPDATING.md) for the fix process. Build log tail:" \
               "$excerpt" > issue.md
             gh issue create --title "$title" --body-file issue.md
           fi

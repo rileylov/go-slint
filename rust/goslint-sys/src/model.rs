@@ -1,10 +1,11 @@
 // C ABI for Go-backed models. A Go object provides row_count/row_data/set_row_data
-// via function pointers + a host handle; this wraps it as a `ModelRc<Value>` that
-// Slint can drive. The opaque GoModel handle (a boxed ModelRc) is shared with any
-// Value::Model clones, so notifications reach the live model.
+// (plus insert_row/remove_row, which back Slint 1.18's `push`/`insert`/`remove`
+// from .slint code) via function pointers + a host handle; this wraps it as a
+// `ModelRc<Value>` that Slint can drive. The opaque GoModel handle (a boxed ModelRc)
+// is shared with any Value::Model clones, so notifications reach the live model.
 
 use crate::{guard, guard_release};
-use i_slint_core::model::{Model, ModelNotify, ModelRc, ModelTracker, VecModel};
+use i_slint_core::model::{Model, ModelError, ModelNotify, ModelRc, ModelTracker, VecModel};
 use slint_interpreter::Value;
 
 /// The Rust model that delegates to Go function pointers.
@@ -13,8 +14,39 @@ struct GoModelInner {
     row_count: extern "C" fn(usize) -> usize,
     row_data: extern "C" fn(usize, usize) -> *mut Value,
     set_row_data: extern "C" fn(usize, usize, *mut Value),
+    insert_row: extern "C" fn(usize, usize, *mut Value) -> i32,
+    remove_row: extern "C" fn(usize, usize) -> i32,
     drop: Option<extern "C" fn(usize)>,
     notify: ModelNotify,
+}
+
+/// Status codes the Go row-mutation trampolines return (mirrored in goslint.h and
+/// slintsys/model.go). Anything else is treated as "failed" (a recovered Go panic).
+const MUTATE_OK: i32 = 0;
+const MUTATE_OUT_OF_BOUNDS: i32 = 1;
+const MUTATE_UNSUPPORTED: i32 = 2;
+
+impl GoModelInner {
+    /// Map a trampoline's status to the `Result` the `Model` trait wants, which
+    /// Slint logs with the .slint source location on `Err`. Notifying an applied
+    /// change is the Go model's job (it calls goslint_model_notify_row_added /
+    /// _removed, exactly as for a change made from Go), so nothing is signalled here.
+    fn mutation_result(&self, status: i32) -> Result<(), ModelError> {
+        match status {
+            MUTATE_OK => Ok(()),
+            MUTATE_OUT_OF_BOUNDS => Err(ModelError::out_of_bounds(self.row_count())),
+            // `unsupported(self)` would name this wrapper type; `unsupported_by_name`
+            // exists for exactly these foreign-language bridges (Python/Node use it).
+            MUTATE_UNSUPPORTED => Err(ModelError::unsupported_by_name(
+                "Go model without slint.RowMutator",
+                i_slint_core::InternalToken,
+            )),
+            _ => Err(ModelError::unsupported_by_name(
+                "Go model whose InsertRow/RemoveRow panicked (see the panic report)",
+                i_slint_core::InternalToken,
+            )),
+        }
+    }
 }
 
 impl Model for GoModelInner {
@@ -37,6 +69,16 @@ impl Model for GoModelInner {
         (self.set_row_data)(self.handle, row, Box::into_raw(Box::new(data)));
     }
 
+    // `push_row` keeps the trait default: insert_row(row_count(), data).
+    fn insert_row(&self, row: usize, data: Value) -> Result<(), ModelError> {
+        let status = (self.insert_row)(self.handle, row, Box::into_raw(Box::new(data)));
+        self.mutation_result(status)
+    }
+
+    fn remove_row(&self, row: usize) -> Result<(), ModelError> {
+        self.mutation_result((self.remove_row)(self.handle, row))
+    }
+
     fn model_tracker(&self) -> &dyn ModelTracker {
         &self.notify
     }
@@ -57,14 +99,18 @@ impl Drop for GoModelInner {
 /// Opaque GoModel handle = a boxed ModelRc cloned into Value::Model on demand.
 type GoModelHandle = ModelRc<Value>;
 
-/// Create a Go-backed model. `drop` is called with `handle` when the underlying
-/// model is finally released (this handle freed AND no Value::Model references it).
+/// Create a Go-backed model. `insert_row`/`remove_row` serve `push`/`insert`/`remove`
+/// called from .slint code (status codes: see goslint.h). `drop` is called with
+/// `handle` when the underlying model is finally released (this handle freed AND no
+/// Value::Model references it).
 #[no_mangle]
 pub extern "C" fn goslint_model_new(
     handle: usize,
     row_count: extern "C" fn(usize) -> usize,
     row_data: extern "C" fn(usize, usize) -> *mut Value,
     set_row_data: extern "C" fn(usize, usize, *mut Value),
+    insert_row: extern "C" fn(usize, usize, *mut Value) -> i32,
+    remove_row: extern "C" fn(usize, usize) -> i32,
     drop: Option<extern "C" fn(usize)>,
 ) -> *mut GoModelHandle {
     guard(std::ptr::null_mut(), || {
@@ -73,6 +119,8 @@ pub extern "C" fn goslint_model_new(
             row_count,
             row_data,
             set_row_data,
+            insert_row,
+            remove_row,
             drop,
             notify: ModelNotify::default(),
         };

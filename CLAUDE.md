@@ -79,7 +79,11 @@ Image↔`slint.Image`, Model↔[]any (read snapshot) / `slint.SliceModel` |
 **Model bridge:** a Go `Model` (RowCount/RowData/SetRowData) is wrapped by a Rust
 `GoModelInner: i_slint_core::model::Model` holding a `ModelNotify`; the opaque
 handle is a boxed `ModelRc<Value>`. `slint.SliceModel` is the built-in
-auto-notifying model. **Threading:** every UI mutation (Set, model
+auto-notifying model. Slint 1.18's `push`/`insert`/`remove` from `.slint` reach Go
+through the optional `RowMutator` (InsertRow/RemoveRow → status 0/1/2 = ok /
+out-of-bounds / unsupported, mapped to `ModelError` in `model.rs`); the **Go side
+notifies**, the Rust side never does, so a change is signalled exactly once. A
+`Model` without `RowMutator` makes those calls a logged no-op. **Threading:** every UI mutation (Set, model
 Append/SetRowData) from a background goroutine must go through
 `InvokeFromEventLoop` — Slint's context is thread-local (lock with
 `runtime.LockOSThread`).

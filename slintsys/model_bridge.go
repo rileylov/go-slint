@@ -8,11 +8,14 @@ package slintsys
 extern size_t goslintModelRowCount(uintptr_t h);
 extern GoValue *goslintModelRowData(uintptr_t h, size_t row);
 extern void goslintModelSetRowData(uintptr_t h, size_t row, GoValue *v);
+extern int goslintModelInsertRow(uintptr_t h, size_t row, GoValue *v);
+extern int goslintModelRemoveRow(uintptr_t h, size_t row);
 extern void goslintModelDrop(uintptr_t h);
 
 static GoModel *goslintModelNewBridge(uintptr_t h) {
     return goslint_model_new(h, goslintModelRowCount, goslintModelRowData,
-                             goslintModelSetRowData, goslintModelDrop);
+                             goslintModelSetRowData, goslintModelInsertRow,
+                             goslintModelRemoveRow, goslintModelDrop);
 }
 */
 import "C"

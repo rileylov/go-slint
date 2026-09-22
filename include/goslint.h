@@ -206,9 +206,17 @@ char     *goslint_struct_field_name(const GoStruct *s, size_t i);
 typedef size_t (*GoModelRowCount)(uintptr_t handle);
 typedef GoValue *(*GoModelRowData)(uintptr_t handle, size_t row); /* owned; NULL == no row */
 typedef void (*GoModelSetRowData)(uintptr_t handle, size_t row, GoValue *value); /* takes ownership */
+/* Row mutation requested by .slint code (Slint 1.18: `m.push(v)`, `m.insert(i, v)`,
+   `m.remove(i)`; push arrives as an insert at row_count). Return 0 when applied — the
+   host must then notify via goslint_model_notify_row_added / _removed itself, exactly
+   as for a host-initiated change — 1 when `row` is out of range, 2 when the model does
+   not support the change; Slint logs the non-zero cases with the source location. */
+typedef int  (*GoModelInsertRow)(uintptr_t handle, size_t row, GoValue *value); /* takes ownership */
+typedef int  (*GoModelRemoveRow)(uintptr_t handle, size_t row);
 
 GoModel *goslint_model_new(uintptr_t handle, GoModelRowCount rc, GoModelRowData rd,
-                           GoModelSetRowData srd, void (*drop)(uintptr_t));
+                           GoModelSetRowData srd, GoModelInsertRow ir, GoModelRemoveRow rr,
+                           void (*drop)(uintptr_t));
 void     goslint_model_free(GoModel *m);
 GoValue *goslint_value_new_model(const GoModel *m);
 /* snapshot model from a list of values (a VecModel); items are cloned, caller frees them */

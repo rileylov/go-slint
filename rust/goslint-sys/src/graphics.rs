@@ -124,8 +124,10 @@ pub unsafe extern "C" fn goslint_image_load_from_data(
             return std::ptr::null_mut();
         }
         let bytes = std::slice::from_raw_parts(data, len);
-        let fmt = opt_str(format).unwrap_or("");
-        match i_slint_core::graphics::load_image_from_dynamic_data(bytes, fmt) {
+        // Slint 1.18 replaced the internal `load_image_from_dynamic_data` with the
+        // public `Image::load_from_data`; `None` means "guess from the bytes".
+        let fmt = opt_str(format).filter(|f| !f.is_empty());
+        match Image::load_from_data(bytes, fmt) {
             Ok(img) => Box::into_raw(Box::new(img)),
             Err(e) => {
                 set_last_error(format!("load image data: {e:?}"));

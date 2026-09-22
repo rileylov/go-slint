@@ -424,14 +424,24 @@ type ModelHandle = slintsys.ModelHandle
 // NewModel binds a custom Model implementation so it can be assigned to a property.
 func NewModel(m Model) *ModelHandle { return slintsys.NewModelHandle(m) }
 
+// RowMutator is the optional second half of a [Model]: implement it too and `.slint`
+// code can grow and shrink the model with `items.push(v)`, `items.insert(i, v)` and
+// `items.remove(i)` (Slint 1.18). InsertRow/RemoveRow run on the UI thread, must
+// apply the change and notify through the model's handle (NotifyRowAdded /
+// NotifyRowRemoved), and return false for a row out of range. A Model without it is
+// read-only to those functions (Slint logs the call; nothing changes). [SliceModel]
+// implements it.
+type RowMutator = slintsys.RowMutator
+
 // LiveModel is a model bindable to a `[T]` property so its rows update in place — a
 // *SliceModel, or the *ModelHandle returned by NewModel. The generated typed
 // Set<Name>Model setters (emitted only for array properties) accept it; unlike the
-// snapshot Set<Name>([]T), the binding stays live (Append/SetRowData/RemoveAt flow
-// to the UI per row).
+// snapshot Set<Name>([]T), the binding stays live (Append/Insert/SetRowData/RemoveAt
+// flow to the UI per row, and `push`/`insert`/`remove` from `.slint` flow back).
 type LiveModel interface{ Handle() *ModelHandle }
 
-// SliceModel is a built-in slice-backed Model whose mutators auto-notify Slint.
+// SliceModel is a built-in slice-backed Model whose mutators auto-notify Slint. It
+// also implements [RowMutator], so `.slint` code can push/insert/remove rows.
 type SliceModel struct {
 	items  []any
 	handle *slintsys.ModelHandle
@@ -470,6 +480,39 @@ func (s *SliceModel) Append(v any) {
 	slintsys.CheckUIThread("model Append", "")
 	s.items = append(s.items, v)
 	s.handle.NotifyRowAdded(len(s.items)-1, 1)
+}
+
+// Insert adds v at row (0 ≤ row ≤ Len; Len appends) and notifies Slint. Out of
+// range is a no-op.
+func (s *SliceModel) Insert(row int, v any) {
+	slintsys.CheckUIThread("model Insert", "")
+	if row < 0 || row > len(s.items) {
+		return
+	}
+	s.items = append(s.items, nil)
+	copy(s.items[row+1:], s.items[row:])
+	s.items[row] = v
+	s.handle.NotifyRowAdded(row, 1)
+}
+
+// InsertRow serves `push`/`insert` called from `.slint` code. Part of the
+// [RowMutator] interface; Go code uses Insert / Append.
+func (s *SliceModel) InsertRow(row int, v any) bool {
+	if row < 0 || row > len(s.items) {
+		return false
+	}
+	s.Insert(row, v)
+	return true
+}
+
+// RemoveRow serves `remove` called from `.slint` code. Part of the [RowMutator]
+// interface; Go code uses RemoveAt.
+func (s *SliceModel) RemoveRow(row int) bool {
+	if row < 0 || row >= len(s.items) {
+		return false
+	}
+	s.RemoveAt(row)
+	return true
 }
 
 // RemoveAt removes the item at row and notifies Slint.

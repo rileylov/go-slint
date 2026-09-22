@@ -26,9 +26,12 @@ After merging an update PR, **cut a release** to publish libraries built against
 the new pin:
 
 ```sh
-# bump libVersion in cmd/goslint/main.go to match, then:
 git tag vX.Y.Z && git push origin vX.Y.Z   # release.yml builds + publishes the libs
 ```
+
+Nothing in the CLI needs bumping: `goslint` resolves the lib version at runtime from
+the go-slint version in the user's `go.mod` (or its own install tag), and the
+published release is keyed by the tag.
 
 ## Manual path
 
@@ -60,7 +63,7 @@ Keep go-slint's own version meaningful relative to Slint:
 - a Slint **major** (e.g. 1.x → 2.0), which is the likely place the shim breaks →
   bump go-slint's **minor or major** and call it out in the release notes.
 
-Always bump `libVersion` in `cmd/goslint/main.go` to the new tag before tagging, so
-`goslint setup` resolves the matching libraries (it reads the user's `go.mod`, and
-the published release is keyed by tag).
+The tag is the only version to set: `goslint setup` resolves the matching libraries
+from the go-slint version in the user's `go.mod` (`GOSLINT_LIB_VERSION` overrides),
+and the published release is keyed by that tag.
 ```

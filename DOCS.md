@@ -394,6 +394,14 @@ win.Set("items", m)
 m.Append("c")        // the view updates
 ```
 
+Since Slint 1.18, `.slint` code can grow and shrink a model itself with
+`items.push(v)`, `items.insert(i, v)` and `items.remove(i)`. A `SliceModel` supports
+that out of the box. A custom `slint.Model` opts in by also implementing
+`slint.RowMutator` (`InsertRow`/`RemoveRow`: apply the change, notify through the
+handle, return false when the row is out of range). A model without it is read-only
+to those functions: Slint logs the rejected call with its source location, and
+nothing changes.
+
 **Brushes.** A `brush` property accepts a `slint.Color` or a `slint.Gradient`:
 
 ```go

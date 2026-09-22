@@ -631,7 +631,7 @@ fn reset_pointer_state_after_os_grab(i: &ComponentInstance) {
     i_slint_core::timers::Timer::single_shot(std::time::Duration::ZERO, move || {
         let _ = adapter
             .window()
-            .try_dispatch_event(i_slint_core::platform::WindowEvent::PointerExited);
+            .dispatch_event_with_result(i_slint_core::platform::WindowEvent::PointerExited);
     });
 }
 
