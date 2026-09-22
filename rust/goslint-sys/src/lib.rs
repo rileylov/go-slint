@@ -57,13 +57,31 @@ pub(crate) unsafe fn opt_str<'a>(p: *const c_char) -> Option<&'a str> {
 /// Run `f`, converting any panic into `default` plus a recorded last-error.
 ///
 /// Clears the last-error slot on entry, so `goslint_last_error` only ever reports
-/// what the MOST RECENT call recorded. Without the clear the slot was write-only:
-/// after the first error on a thread, any later failure that didn't set a message
-/// surfaced that stale, unrelated one — a confidently wrong diagnostic. Now an
-/// unset failure yields NULL and the Go side's generic "<op> failed" fallback.
-/// (`goslint_last_error` itself must NOT run through this — see its body.)
+/// what the MOST RECENT fallible call recorded. Without the clear the slot was
+/// write-only: after the first error on a thread, any later failure that didn't set
+/// a message surfaced that stale, unrelated one — a confidently wrong diagnostic. Now
+/// an unset failure yields NULL and the Go side's generic "<op> failed" fallback.
+///
+/// Use this for every entry point that can fail. The `_free` family goes through
+/// `guard_release` instead: a release never fails, and clearing the slot from one
+/// erased the diagnostic of the call that had just failed whenever a deferred free
+/// ran between that call and `goslint_last_error` — the Go compile path did exactly
+/// that and reported an empty message. (`goslint_last_error` itself runs through
+/// neither — see its body.)
 pub(crate) fn guard<T>(default: T, f: impl FnOnce() -> T) -> T {
     LAST_ERROR.with(|e| e.borrow_mut().take());
+    run_guarded(default, f)
+}
+
+/// `guard` for the infallible release entry points (`goslint_*_free`): the same
+/// catch_unwind containment, but the last-error slot is left untouched, so a free
+/// between a failing call and `goslint_last_error` cannot erase its message. A
+/// panic inside a release still records "panic in goslint-sys".
+pub(crate) fn guard_release<T>(default: T, f: impl FnOnce() -> T) -> T {
+    run_guarded(default, f)
+}
+
+fn run_guarded<T>(default: T, f: impl FnOnce() -> T) -> T {
     match catch_unwind(AssertUnwindSafe(f)) {
         Ok(v) => v,
         Err(_) => {
@@ -79,9 +97,11 @@ pub extern "C" fn goslint_version() -> *mut c_char {
     guard(std::ptr::null_mut(), || to_c_string(env!("SLINT_VERSION")))
 }
 
-/// The last error recorded on the calling thread by the most recent call, or NULL
-/// if it succeeded / recorded nothing. Read it immediately after the failing call:
-/// every other entry point clears the slot on entry (see `guard`).
+/// The last error recorded on the calling thread by the most recent fallible call,
+/// or NULL if it succeeded / recorded nothing. Read it before the next fallible
+/// call: every non-release entry point clears the slot on entry (see `guard`). The
+/// `_free` entry points (and this accessor) leave it alone, so freeing a handle —
+/// or freeing the string this returns — between a failure and the read is fine.
 #[no_mangle]
 pub extern "C" fn goslint_last_error() -> *mut c_char {
     // Deliberately NOT `guard`: guard clears the slot on entry, and this accessor's
@@ -102,7 +122,7 @@ pub extern "C" fn goslint_last_error() -> *mut c_char {
 /// `s` must be a pointer previously returned by this library (or NULL).
 #[no_mangle]
 pub unsafe extern "C" fn goslint_string_free(s: *mut c_char) {
-    guard((), || {
+    guard_release((), || {
         if !s.is_null() {
             drop(CString::from_raw(s));
         }

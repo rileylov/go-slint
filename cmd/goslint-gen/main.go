@@ -52,7 +52,10 @@ func main() {
 	defer c.Free()
 	c.SetStyle(*style)
 	c.SetIncludePaths([]string{filepath.Dir(in)})
-	r := c.BuildFromSource(string(src), in)
+	r, err := c.BuildFromSource(string(src), in)
+	if err != nil {
+		fatal(fmt.Errorf("compile %s: %w", in, err))
+	}
 	defer r.Free()
 	if r.HasErrors() {
 		var msgs []string

@@ -18,9 +18,12 @@ func TestRejectedRegistrationReleasesHandle(t *testing.T) {
 
 	c := NewCompiler()
 	defer c.Free()
-	r := c.BuildFromSource(`export component T inherits Window {
+	r, err := c.BuildFromSource(`export component T inherits Window {
 		callback ping();
 	}`, "t.slint")
+	if err != nil {
+		t.Fatalf("BuildFromSource: %v", err)
+	}
 	defer r.Free()
 	if r.HasErrors() {
 		t.Fatal("test component failed to compile")

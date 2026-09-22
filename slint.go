@@ -172,14 +172,14 @@ func WithFileLoader(fn FileLoader) Option {
 // Compile compiles `.slint` source. It returns a [*DiagnosticError] if the
 // source has errors.
 func Compile(source string, opts ...Option) (*Compilation, error) {
-	return finish(build(opts, func(c *slintsys.Compiler) *slintsys.Result {
+	return finish(build(opts, func(c *slintsys.Compiler) (*slintsys.Result, error) {
 		return c.BuildFromSource(source, "")
 	}))
 }
 
 // CompileFile compiles a `.slint` file from disk.
 func CompileFile(path string, opts ...Option) (*Compilation, error) {
-	return finish(build(opts, func(c *slintsys.Compiler) *slintsys.Result {
+	return finish(build(opts, func(c *slintsys.Compiler) (*slintsys.Result, error) {
 		return c.BuildFromPath(path)
 	}))
 }
@@ -189,7 +189,7 @@ func CompileFile(path string, opts ...Option) (*Compilation, error) {
 // disk. Generated typed code uses this so multi-file components work; for a single
 // embedded file with no relative imports, plain [Compile] is enough.
 func CompileSource(path, source string, opts ...Option) (*Compilation, error) {
-	return finish(build(opts, func(c *slintsys.Compiler) *slintsys.Result {
+	return finish(build(opts, func(c *slintsys.Compiler) (*slintsys.Result, error) {
 		return c.BuildFromSource(source, path)
 	}))
 }
@@ -280,7 +280,11 @@ func imageMIME(path string) string {
 	}
 }
 
-func build(opts []Option, f func(*slintsys.Compiler) *slintsys.Result) *slintsys.Result {
+// build runs one compile with a throwaway Compiler. The build's own error is
+// captured inside f (see slintsys.Compiler.BuildFromSource), so the deferred
+// Compiler.Free here can't lose it — reading the shim's last error after this
+// function returned is what used to yield a bare "slint: " for a hard failure.
+func build(opts []Option, f func(*slintsys.Compiler) (*slintsys.Result, error)) (*slintsys.Result, error) {
 	c := slintsys.NewCompiler()
 	defer c.Free()
 	for _, o := range opts {
@@ -289,9 +293,9 @@ func build(opts []Option, f func(*slintsys.Compiler) *slintsys.Result) *slintsys
 	return f(c)
 }
 
-func finish(r *slintsys.Result) (*Compilation, error) {
-	if !r.Valid() {
-		return nil, fmt.Errorf("slint: %s", slintsys.LastError())
+func finish(r *slintsys.Result, err error) (*Compilation, error) {
+	if err != nil {
+		return nil, fmt.Errorf("slint: %w", err)
 	}
 	if r.HasErrors() {
 		diags := r.Diagnostics()

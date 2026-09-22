@@ -71,21 +71,33 @@ func (c *Compiler) SetLibraryPaths(libs map[string]string) {
 		C.size_t(len(names)))
 }
 
-// BuildFromSource compiles `.slint` source. The returned Result is always
-// non-nil unless a hard failure occurred (check Result.Valid).
-func (c *Compiler) BuildFromSource(src, path string) *Result {
+// BuildFromSource compiles `.slint` source. Compile diagnostics are NOT an error
+// here — inspect Result.HasErrors / Diagnostics. The error covers a hard failure
+// only (no result handle at all, e.g. source that isn't valid UTF-8); its message
+// is captured right at the failing call, before any deferred release can run.
+func (c *Compiler) BuildFromSource(src, path string) (*Result, error) {
 	cs := C.CString(src)
 	defer C.free(unsafe.Pointer(cs))
 	cp := C.CString(path)
 	defer C.free(unsafe.Pointer(cp))
-	return (&Result{ptr: C.goslint_compiler_build_from_source(c.ptr, cs, cp)}).watch()
+	return newResult(C.goslint_compiler_build_from_source(c.ptr, cs, cp), "build from source")
 }
 
-// BuildFromPath compiles a `.slint` file from disk.
-func (c *Compiler) BuildFromPath(path string) *Result {
+// BuildFromPath compiles a `.slint` file from disk. Errors as BuildFromSource.
+func (c *Compiler) BuildFromPath(path string) (*Result, error) {
 	cp := C.CString(path)
 	defer C.free(unsafe.Pointer(cp))
-	return (&Result{ptr: C.goslint_compiler_build_from_path(c.ptr, cp)}).watch()
+	return newResult(C.goslint_compiler_build_from_path(c.ptr, cp), "build from path")
+}
+
+// newResult wraps a build's result handle, or reads the shim's error for a NULL
+// one immediately — the message lives in a thread-local slot that the next fallible
+// shim call clears, so it must be taken here, not by the caller after its defers.
+func newResult(p *C.GoCompilationResult, what string) (*Result, error) {
+	if p == nil {
+		return nil, errors.New(lastErrorOr(what))
+	}
+	return (&Result{ptr: p}).watch(), nil
 }
 
 // Diagnostic is a compiler message. Level: 0=error, 1=warning, 2=note.
@@ -100,7 +112,9 @@ type Diagnostic struct {
 // Result wraps slint_interpreter::CompilationResult.
 type Result struct{ ptr *C.GoCompilationResult }
 
-// Valid reports whether the build produced a result handle at all.
+// Valid reports whether the result holds a build handle. A Result returned by
+// BuildFromSource/BuildFromPath without an error always does; it is false only
+// after Free.
 func (r *Result) Valid() bool { return r.ptr != nil }
 
 func (r *Result) HasErrors() bool { return bool(C.goslint_result_has_errors(r.ptr)) }

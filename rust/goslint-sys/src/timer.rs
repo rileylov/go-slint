@@ -2,7 +2,7 @@
 // (cgo.Handle), with a drop invoked when the timer's closure is released. Timers
 // fire on the event-loop thread, so a loop must be running.
 
-use crate::guard;
+use crate::{guard, guard_release};
 use i_slint_core::timers::{Timer, TimerMode};
 
 /// Holds a foreign tick callback; calls `drop` when released.
@@ -48,7 +48,7 @@ pub extern "C" fn goslint_timer_new() -> *mut Timer {
 /// `t` must be NULL or a pointer from goslint_timer_new.
 #[no_mangle]
 pub unsafe extern "C" fn goslint_timer_free(t: *mut Timer) {
-    guard((), || {
+    guard_release((), || {
         if !t.is_null() {
             drop(Box::from_raw(t));
         }

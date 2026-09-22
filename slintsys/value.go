@@ -7,18 +7,23 @@ package slintsys
 import "C"
 
 import (
+	"errors"
 	"fmt"
+	"strings"
+	"unicode/utf8"
 	"unsafe"
 )
 
-// toCValues converts Go args to owned C values; on error it frees what it built.
-func toCValues(args []any) ([]*C.GoValue, error) {
-	out := make([]*C.GoValue, 0, len(args))
-	for _, a := range args {
-		cv, err := cValue(a)
+// toCValues converts a list of Go values to owned C values; on error it frees
+// what it built. `what` names one item ("argument", "element") so the error says
+// which index failed: `element 3: string is not valid UTF-8`.
+func toCValues(what string, vals []any) ([]*C.GoValue, error) {
+	out := make([]*C.GoValue, 0, len(vals))
+	for i, v := range vals {
+		cv, err := cValue(v)
 		if err != nil {
 			freeCValues(out)
-			return nil, err
+			return nil, fmt.Errorf("%s %d: %w", what, i, err)
 		}
 		out = append(out, cv)
 	}
@@ -88,54 +93,110 @@ const (
 // bridges its plain-text content; create one with a string and read it back as Text.
 type DataTransfer struct{ Text string }
 
+// validString checks that a Go string can cross the C boundary unchanged. The shim
+// reads inbound text as UTF-8 and rejects anything else (returning NULL), and
+// C.CString stops at the first NUL byte, silently truncating the rest. Without this
+// check either case turned into a quiet data loss: a struct field vanished, an array
+// element was dropped, a model row read as missing, and a scalar Set failed with the
+// misleading "value is NULL". Rejecting here yields a precise error instead.
+//
+// Conversion errors (this, cValue, toCValues, cStruct) carry no "slint:" prefix
+// and name only the inner place — `element 1`, `struct field "name"`. The Layer-1
+// entry point that took the value adds the prefix and the property or callback
+// name, so the user reads one message with a single prefix, outermost first:
+// `slint: set property "rows": element 1: struct field "name": string is not valid UTF-8`.
+func validString(what, s string) error {
+	if !utf8.ValidString(s) {
+		return fmt.Errorf("%s is not valid UTF-8", what)
+	}
+	if strings.IndexByte(s, 0) >= 0 {
+		return fmt.Errorf("%s contains a NUL byte", what)
+	}
+	return nil
+}
+
+// own wraps a freshly built C value, turning the shim's NULL-on-failure into an
+// error. It is the single exit for every cValue case, so cValue never returns a nil
+// value with a nil error — callers used to pass that nil on to C, where it was
+// either rejected as "value is NULL" or silently skipped.
+func own(cv *C.GoValue, what string) (*C.GoValue, error) {
+	if cv == nil {
+		return nil, buildFailed(what + " value")
+	}
+	return cv, nil
+}
+
+// buildFailed is the error for a value constructor that returned NULL: the shim's
+// recorded message if there is one, else a generic one. Prefix-free like every
+// conversion error (see validString) — not lastErrorOr, whose fallback carries
+// the "slint:" prefix the entry point is about to add.
+func buildFailed(what string) error {
+	if e := LastError(); e != "" {
+		return errors.New(e)
+	}
+	return fmt.Errorf("build %s failed", what)
+}
+
 // cValue builds an owned C value from a Go value. The caller frees it with
-// C.goslint_value_free. M1 supports the scalar types; richer types come later.
+// C.goslint_value_free. On error no C value is returned (never a nil, nil pair).
 func cValue(v any) (*C.GoValue, error) {
 	switch x := v.(type) {
 	case nil:
-		return C.goslint_value_new_void(), nil
+		return own(C.goslint_value_new_void(), "void")
 	case bool:
-		return C.goslint_value_new_bool(C._Bool(x)), nil
+		return own(C.goslint_value_new_bool(C._Bool(x)), "bool")
 	case int:
-		return C.goslint_value_new_double(C.double(float64(x))), nil
+		return own(C.goslint_value_new_double(C.double(float64(x))), "number")
 	case int32:
-		return C.goslint_value_new_double(C.double(float64(x))), nil
+		return own(C.goslint_value_new_double(C.double(float64(x))), "number")
 	case int64:
-		return C.goslint_value_new_double(C.double(float64(x))), nil
+		return own(C.goslint_value_new_double(C.double(float64(x))), "number")
 	case float32:
-		return C.goslint_value_new_double(C.double(float64(x))), nil
+		return own(C.goslint_value_new_double(C.double(float64(x))), "number")
 	case float64:
-		return C.goslint_value_new_double(C.double(x)), nil
+		return own(C.goslint_value_new_double(C.double(x)), "number")
 	case string:
+		if err := validString("string", x); err != nil {
+			return nil, err
+		}
 		cs := C.CString(x)
 		defer C.free(unsafe.Pointer(cs))
-		return C.goslint_value_new_string(cs), nil
+		return own(C.goslint_value_new_string(cs), "string")
 	case Enum:
+		if err := validString("enum type name", x.Type); err != nil {
+			return nil, err
+		}
+		if err := validString("enum value", x.Value); err != nil {
+			return nil, err
+		}
 		cn := C.CString(x.Type)
 		defer C.free(unsafe.Pointer(cn))
 		cv := C.CString(x.Value)
 		defer C.free(unsafe.Pointer(cv))
-		return C.goslint_value_new_enum(cn, cv), nil
+		return own(C.goslint_value_new_enum(cn, cv), "enum")
 	case DataTransfer:
+		if err := validString("data-transfer text", x.Text); err != nil {
+			return nil, err
+		}
 		ct := C.CString(x.Text)
 		defer C.free(unsafe.Pointer(ct))
-		return C.goslint_value_new_data_transfer(ct), nil
+		return own(C.goslint_value_new_data_transfer(ct), "data-transfer")
 	case map[string]any:
 		return cStruct(x)
 	case Color:
-		return C.goslint_value_new_color(C.uint8_t(x.R), C.uint8_t(x.G), C.uint8_t(x.B), C.uint8_t(x.A)), nil
+		return own(C.goslint_value_new_color(C.uint8_t(x.R), C.uint8_t(x.G), C.uint8_t(x.B), C.uint8_t(x.A)), "color")
 	case Gradient:
-		return cGradient(x), nil
+		return own(cGradient(x), "gradient")
 	case *Gradient:
-		return cGradient(*x), nil
+		return own(cGradient(*x), "gradient")
 	case *Image:
-		return C.goslint_value_new_image(x.raw()), nil
+		return own(C.goslint_value_new_image(x.raw()), "image")
 	case *ModelHandle:
-		return C.goslint_value_new_model(x.raw()), nil
+		return own(C.goslint_value_new_model(x.raw()), "model")
 	case []any:
 		return cArray(x)
 	default:
-		return nil, fmt.Errorf("slint: unsupported value type %T", v)
+		return nil, fmt.Errorf("unsupported value type %T", v)
 	}
 }
 
@@ -143,12 +204,12 @@ func cValue(v any) (*C.GoValue, error) {
 // converted via cValue; the C side clones them, so the temporaries are freed here.
 // Use this to Set an array / `[T]` property to a fixed list (not a live model).
 func cArray(items []any) (*C.GoValue, error) {
-	cvals, err := toCValues(items)
+	cvals, err := toCValues("element", items)
 	if err != nil {
 		return nil, err
 	}
 	defer freeCValues(cvals)
-	return C.goslint_value_new_array((**C.GoValue)(unsafe.Pointer(cvaluePtr(cvals))), C.size_t(len(cvals))), nil
+	return own(C.goslint_value_new_array((**C.GoValue)(unsafe.Pointer(cvaluePtr(cvals))), C.size_t(len(cvals))), "array")
 }
 
 // cGradient builds a gradient brush Value. The C side copies the stops during the
@@ -198,8 +259,16 @@ func goGradient(v *C.GoValue, radial bool) Gradient {
 // cStruct builds a struct Value from a Go map.
 func cStruct(m map[string]any) (*C.GoValue, error) {
 	s := C.goslint_struct_new()
+	if s == nil {
+		return nil, buildFailed("struct value")
+	}
 	defer C.goslint_struct_free(s)
 	for k, val := range m {
+		// The field name crosses as a C string too: a bad one used to make the shim
+		// skip the field without a word.
+		if err := validString("name", k); err != nil {
+			return nil, fmt.Errorf("struct field %q: %w", k, err)
+		}
 		cv, err := cValue(val)
 		if err != nil {
 			return nil, fmt.Errorf("struct field %q: %w", k, err)
@@ -209,7 +278,7 @@ func cStruct(m map[string]any) (*C.GoValue, error) {
 		C.free(unsafe.Pointer(ck))
 		C.goslint_value_free(cv)
 	}
-	return C.goslint_value_new_struct(s), nil
+	return own(C.goslint_value_new_struct(s), "struct")
 }
 
 // goStruct converts a struct Value into a Go map (recursively).

@@ -159,9 +159,9 @@ func runCase(path string) (outcome, string) {
 		c.SetIncludePaths(inc)
 	}
 
-	r := c.BuildFromSource(source, path)
-	if !r.Valid() {
-		return compileErr, slintsys.LastError()
+	r, err := c.BuildFromSource(source, path)
+	if err != nil {
+		return compileErr, err.Error()
 	}
 	defer r.Free()
 	if r.HasErrors() {

@@ -44,8 +44,19 @@ localized Rust compile error in `make lib`, not a silent runtime break.
 ## Layer 0 conventions (enforced)
 
 - Every `extern "C"` body runs inside `guard` (catch_unwind) — never unwind across C.
+  `guard` clears the thread-local last-error slot on entry; the `_free` entry points
+  use `guard_release`, which doesn't, so a deferred free can't erase the diagnostic
+  of the call that just failed. On the Go side, read `LastError()` at the failing
+  call site (see `newResult` in `compiler.go`), never after a function's defers ran.
 - Returned `char*`/handles are library-owned; callers free via the matching `_free`.
   NULL = failure; detail via `goslint_last_error()`.
+- Go strings are validated before crossing (`validString` in `value.go`): the shim
+  rejects non-UTF-8 and `C.CString` truncates at NUL, so both must fail loudly.
+  `cValue` never returns a nil value with a nil error. Conversion errors carry no
+  `slint:` prefix and name only the inner place (`element 1`, `struct field "name"`);
+  the Layer-1 entry point that took the value (`SetProperty`, `Invoke`, …) adds the
+  prefix and the property/callback name, so a message reads outermost-first:
+  `slint: set property "rows": element 1: struct field "name": string is not valid UTF-8`.
 - Inbound strings are borrowed (copied in Rust).
 - Go callbacks cross into C only via `runtime/cgo.Handle` — never raw Go pointers.
   (Static C bridges in `*_bridge.go`; `//export` funcs in their own files.)

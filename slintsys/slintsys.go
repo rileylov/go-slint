@@ -58,10 +58,12 @@ func rc(code C.int, what string) error {
 // Version returns the Slint version the shim was built against.
 func Version() string { return takeString(C.goslint_version()) }
 
-// LastError returns the message the most recent shim call recorded on the current
-// OS thread, or "" if it succeeded (every entry point clears the slot on entry).
-// Read it immediately after the failing call, and read it once: freeing the
-// returned string is itself a shim call, so a second read reports "".
+// LastError returns the message the most recent fallible shim call recorded on the
+// current OS thread, or "" if it succeeded (every fallible entry point clears the
+// slot on entry). Read it before the next fallible call. The release entry points
+// (Free/Close, and the free of the returned string itself) leave the slot alone, so
+// a deferred Free between the failure and the read does not erase it, and reading
+// twice returns the same message.
 func LastError() string { return takeString(C.goslint_last_error()) }
 
 // SmokeCompile compiles a trivial component and returns its component name(s).

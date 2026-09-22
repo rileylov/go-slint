@@ -3,7 +3,7 @@
 // Slint can drive. The opaque GoModel handle (a boxed ModelRc) is shared with any
 // Value::Model clones, so notifications reach the live model.
 
-use crate::guard;
+use crate::{guard, guard_release};
 use i_slint_core::model::{Model, ModelNotify, ModelRc, ModelTracker, VecModel};
 use slint_interpreter::Value;
 
@@ -84,7 +84,7 @@ pub extern "C" fn goslint_model_new(
 /// `m` must be NULL or a pointer from `goslint_model_new`.
 #[no_mangle]
 pub unsafe extern "C" fn goslint_model_free(m: *mut GoModelHandle) {
-    guard((), || {
+    guard_release((), || {
         if !m.is_null() {
             drop(Box::from_raw(m));
         }

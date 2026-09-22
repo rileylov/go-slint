@@ -2,7 +2,7 @@
 // A `*mut Struct` is heap-owned and freed with `goslint_struct_free`. Pair with
 // goslint_value_new_struct / goslint_value_as_struct to cross the Value boundary.
 
-use crate::{guard, opt_str, to_c_string};
+use crate::{guard, guard_release, opt_str, to_c_string};
 use slint_interpreter::{Struct, Value};
 use std::ffi::c_char;
 
@@ -17,7 +17,7 @@ pub extern "C" fn goslint_struct_new() -> *mut Struct {
 /// `s` must be NULL or a pointer from goslint_struct_new / goslint_value_as_struct.
 #[no_mangle]
 pub unsafe extern "C" fn goslint_struct_free(s: *mut Struct) {
-    guard((), || {
+    guard_release((), || {
         if !s.is_null() {
             drop(Box::from_raw(s));
         }

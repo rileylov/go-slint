@@ -2,7 +2,7 @@
 // structs, models, brushes and images arrive in later milestones. A `*mut Value`
 // is heap-owned by the library and freed with `goslint_value_free`.
 
-use crate::{guard, to_c_string};
+use crate::{guard, guard_release, to_c_string};
 use i_slint_core::graphics::{GradientStop, LinearGradientBrush, RadialGradientBrush};
 use i_slint_core::{Brush, Color, DataTransfer};
 use slint_interpreter::{SharedString, Struct, Value, ValueType};
@@ -434,7 +434,7 @@ pub unsafe extern "C" fn goslint_value_eq(a: *const Value, b: *const Value) -> b
 /// `v` must be NULL or a pointer returned by this library, freed at most once.
 #[no_mangle]
 pub unsafe extern "C" fn goslint_value_free(v: *mut Value) {
-    guard((), || {
+    guard_release((), || {
         if !v.is_null() {
             drop(Box::from_raw(v));
         }

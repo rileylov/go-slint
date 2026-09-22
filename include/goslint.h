@@ -32,9 +32,11 @@ typedef struct GoComponentInstance GoComponentInstance;
 
 /* ---- library / diagnostics-as-strings ---- */
 char *goslint_version(void);
-/* Message recorded by the MOST RECENT call on this thread, or NULL if it succeeded.
-   Every other entry point clears the slot on entry, so read this immediately after
-   the failing call (and once: goslint_string_free is a call too). */
+/* Message recorded by the MOST RECENT fallible call on this thread, or NULL if it
+   succeeded. Every fallible entry point clears the slot on entry, so read this
+   before the next one. The *_free entry points (including goslint_string_free on the
+   returned string) do NOT touch the slot: a release between the failing call and
+   this read is safe, and reading twice returns the same message. */
 char *goslint_last_error(void);
 void  goslint_string_free(char *s);
 char *goslint_smoke_compile(void);

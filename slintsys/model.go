@@ -70,6 +70,9 @@ func goslintModelRowData(h C.uintptr_t, row C.size_t) (ret *C.GoValue) {
 	}
 	cv, err := cValue(v)
 	if err != nil {
+		// Slint sees "no row" for this index; without the report the row just
+		// rendered as missing with nothing to explain why.
+		reportInvalid("model.RowData", "", fmt.Errorf("row %d: %w", int(row), err))
 		return nil
 	}
 	return cv

@@ -22,7 +22,10 @@ func TestTypeInfoJSON(t *testing.T) {
 		}`
 	c := NewCompiler()
 	defer c.Free()
-	r := c.BuildFromSource(src, "test.slint")
+	r, err := c.BuildFromSource(src, "test.slint")
+	if err != nil {
+		t.Fatalf("BuildFromSource: %v", err)
+	}
 	defer r.Free()
 	if r.HasErrors() {
 		t.Fatalf("compile errors: %v", r.Diagnostics())
@@ -59,7 +62,10 @@ func TestTypeInfoDirection(t *testing.T) {
 		}`
 	c := NewCompiler()
 	defer c.Free()
-	r := c.BuildFromSource(src, "test.slint")
+	r, err := c.BuildFromSource(src, "test.slint")
+	if err != nil {
+		t.Fatalf("BuildFromSource: %v", err)
+	}
 	defer r.Free()
 	if r.HasErrors() {
 		t.Fatalf("compile errors: %v", r.Diagnostics())

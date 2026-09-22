@@ -2,7 +2,7 @@
 // ComponentDefinition. Mirrors `slint_interpreter`'s safe API. All handles are
 // heap-owned and freed with their matching `_free`.
 
-use crate::{guard, opt_str, set_last_error, to_c_string};
+use crate::{guard, guard_release, opt_str, set_last_error, to_c_string};
 use slint_interpreter::{CompilationResult, Compiler, ComponentDefinition, DiagnosticLevel};
 use std::ffi::{c_char, CStr, CString};
 use std::future::{ready, Future};
@@ -20,7 +20,7 @@ pub extern "C" fn goslint_compiler_new() -> *mut Compiler {
 /// `c` must be NULL or a pointer returned by `goslint_compiler_new`.
 #[no_mangle]
 pub unsafe extern "C" fn goslint_compiler_free(c: *mut Compiler) {
-    guard((), || {
+    guard_release((), || {
         if !c.is_null() {
             drop(Box::from_raw(c));
         }
@@ -371,7 +371,7 @@ pub unsafe extern "C" fn goslint_result_component(
 /// `r` must be NULL or a result pointer.
 #[no_mangle]
 pub unsafe extern "C" fn goslint_result_free(r: *mut CompilationResult) {
-    guard((), || {
+    guard_release((), || {
         if !r.is_null() {
             drop(Box::from_raw(r));
         }

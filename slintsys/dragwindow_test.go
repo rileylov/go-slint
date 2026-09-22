@@ -18,7 +18,10 @@ func TestDragWindowHeadless(t *testing.T) {
 	}
 	c := NewCompiler()
 	defer c.Free()
-	r := c.BuildFromSource(`export component T inherits Window {}`, "t.slint")
+	r, err := c.BuildFromSource(`export component T inherits Window {}`, "t.slint")
+	if err != nil {
+		t.Fatalf("BuildFromSource: %v", err)
+	}
 	defer r.Free()
 	def := r.Component("T")
 	defer def.Free()

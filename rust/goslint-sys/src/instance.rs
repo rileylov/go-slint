@@ -1,7 +1,7 @@
 // C ABI for ComponentDefinition::create and the resulting ComponentInstance:
 // property get/set and window show/hide/run. UI-thread affine.
 
-use crate::{guard, opt_str, set_last_error, to_c_string};
+use crate::{guard, guard_release, opt_str, set_last_error, to_c_string};
 use slint_interpreter::{ComponentDefinition, ComponentHandle, ComponentInstance, Value};
 use std::ffi::c_char;
 
@@ -83,7 +83,7 @@ pub unsafe extern "C" fn goslint_definition_create_with_window(
 /// `d` must be NULL or a definition pointer.
 #[no_mangle]
 pub unsafe extern "C" fn goslint_definition_free(d: *mut ComponentDefinition) {
-    guard((), || {
+    guard_release((), || {
         if !d.is_null() {
             drop(Box::from_raw(d));
         }
@@ -390,7 +390,7 @@ pub unsafe extern "C" fn goslint_instance_take_snapshot(
 /// `ptr` must be NULL or a buffer from `goslint_instance_take_snapshot` with length `n`.
 #[no_mangle]
 pub unsafe extern "C" fn goslint_pixels_free(ptr: *mut u8, n: usize) {
-    guard((), || {
+    guard_release((), || {
         if !ptr.is_null() {
             // Rebuild the exact Box<[u8]> take_snapshot leaked (cap == len == n) so
             // the dealloc Layout matches the allocation.
@@ -743,7 +743,7 @@ pub unsafe extern "C" fn goslint_instance_window_drag_resize(
 /// `i` must be NULL or an instance pointer.
 #[no_mangle]
 pub unsafe extern "C" fn goslint_instance_free(i: *mut ComponentInstance) {
-    guard((), || {
+    guard_release((), || {
         if !i.is_null() {
             drop(Box::from_raw(i));
         }

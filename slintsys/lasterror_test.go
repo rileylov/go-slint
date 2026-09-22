@@ -20,9 +20,12 @@ func TestLastErrorFreshPerCall(t *testing.T) {
 
 	c := NewCompiler()
 	defer c.Free()
-	r := c.BuildFromSource(`export component T inherits Window {
+	r, err := c.BuildFromSource(`export component T inherits Window {
 		in-out property <string> s: "x";
 	}`, "t.slint")
+	if err != nil {
+		t.Fatalf("BuildFromSource: %v", err)
+	}
 	defer r.Free()
 	if r.HasErrors() {
 		t.Fatal("test component failed to compile")
@@ -61,5 +64,62 @@ func TestLastErrorFreshPerCall(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "UTF-8") {
 		t.Errorf("LoadImage error = %q, want the annotated UTF-8 message", err)
+	}
+}
+
+// TestLastErrorSurvivesRelease pins the other half of the last-error contract: the
+// `_free` entry points do not clear the slot. Before, any deferred Free that ran
+// between a failing call and LastError() erased the diagnostic — the compile path
+// reported a bare "slint: " for a hard failure — and even reading LastError twice
+// gave "" the second time, because freeing the returned string was itself a call.
+func TestLastErrorSurvivesRelease(t *testing.T) {
+	runtime.LockOSThread()
+	if err := InitHeadless(); err != nil && !strings.Contains(err.Error(), "lready") {
+		t.Fatalf("InitHeadless: %v", err)
+	}
+	c := NewCompiler()
+	defer c.Free()
+	r, err := c.BuildFromSource(`export component T inherits Window {}`, "t.slint")
+	if err != nil {
+		t.Fatalf("BuildFromSource: %v", err)
+	}
+	defer r.Free()
+
+	// Handles to release later — created up front, since creating one is itself a
+	// fallible call and would clear the slot.
+	tm := NewTimer()
+	def := r.Component("T")
+	if def == nil {
+		t.Fatal("Component(T) should exist")
+	}
+
+	// A failing call whose Go wrapper does NOT read the error itself.
+	if bad := r.Component("no-such-component"); bad != nil {
+		bad.Free()
+		t.Fatal("Component(no-such) should be nil")
+	}
+	// Releases of two kinds in between: a timer and a definition.
+	tm.Close()
+	def.Free()
+	const want = "no-such-component"
+	first := LastError()
+	if !strings.Contains(first, want) {
+		t.Fatalf("LastError after releases = %q, want the %q message", first, want)
+	}
+	if second := LastError(); second != first {
+		t.Errorf("second read = %q, want the same %q (freeing the string must not clear it)", second, first)
+	}
+	// And a fallible call still clears it, so nothing stale leaks forward.
+	if def := r.Component("T"); def != nil {
+		def.Free()
+	}
+	if e := LastError(); e != "" {
+		t.Errorf("after a successful fallible call LastError() = %q, want empty", e)
+	}
+
+	// The compile path captures a hard failure's message at the call, so its
+	// deferred Compiler.Free can't matter either way.
+	if _, err := c.BuildFromSource("export component A inherits Window { /* \xff */ }", "u.slint"); err == nil || !strings.Contains(err.Error(), "UTF-8") {
+		t.Errorf("BuildFromSource with invalid UTF-8: err = %v, want the UTF-8 message", err)
 	}
 }

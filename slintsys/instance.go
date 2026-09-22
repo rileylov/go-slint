@@ -29,12 +29,16 @@ func (i *Instance) GetProperty(name string) (any, error) {
 	return goValue(v), nil
 }
 
-// SetProperty writes a public property from a Go value.
+// SetProperty writes a public property from a Go value. A value that can't cross
+// the ABI unchanged (unsupported Go type, invalid UTF-8, interior NUL) is rejected
+// before anything reaches Slint — the property is left untouched — with an error
+// naming the property and the failing part, e.g.
+// `slint: set property "rows": element 1: struct field "name": string is not valid UTF-8`.
 func (i *Instance) SetProperty(name string, val any) error {
 	CheckUIThread("Set", name)
 	cv, err := cValue(val)
 	if err != nil {
-		return err
+		return fmt.Errorf("slint: set property %q: %w", name, err)
 	}
 	defer C.goslint_value_free(cv)
 	cs := C.CString(name)
@@ -45,9 +49,9 @@ func (i *Instance) SetProperty(name string, val any) error {
 // Invoke calls a callback or function and returns its result (nil for void).
 func (i *Instance) Invoke(name string, args []any) (any, error) {
 	CheckUIThread("Invoke", name)
-	cvals, err := toCValues(args)
+	cvals, err := toCValues("argument", args)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("slint: invoke %q: %w", name, err)
 	}
 	defer freeCValues(cvals)
 	cs := C.CString(name)
@@ -129,7 +133,7 @@ func (i *Instance) SetGlobalProperty(global, name string, val any) error {
 	CheckUIThread("SetGlobal", name)
 	cv, err := cValue(val)
 	if err != nil {
-		return err
+		return fmt.Errorf("slint: set global property %q: %w", global+"."+name, err)
 	}
 	defer C.goslint_value_free(cv)
 	cg := C.CString(global)
@@ -142,9 +146,9 @@ func (i *Instance) SetGlobalProperty(global, name string, val any) error {
 // InvokeGlobal calls a callback or function on an exported global singleton.
 func (i *Instance) InvokeGlobal(global, name string, args []any) (any, error) {
 	CheckUIThread("InvokeGlobal", name)
-	cvals, err := toCValues(args)
+	cvals, err := toCValues("argument", args)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("slint: invoke global %q: %w", global+"."+name, err)
 	}
 	defer freeCValues(cvals)
 	cg := C.CString(global)

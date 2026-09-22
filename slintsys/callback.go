@@ -6,6 +6,7 @@ package slintsys
 import "C"
 
 import (
+	"fmt"
 	"runtime/cgo"
 	"unsafe"
 )
@@ -51,7 +52,10 @@ func goslintCallbackTrampoline(ud C.uintptr_t, args **C.GoValue, n C.size_t) (re
 	}
 
 	cv, err := cValue(fn(goArgs))
-	if err != nil || cv == nil {
+	if err != nil {
+		// Slint receives void; the handler's real return (an unsupported Go type, or a
+		// string that can't cross the ABI) is lost, so say so rather than hide it.
+		reportInvalid("callback", name, fmt.Errorf("return value: %w", err))
 		return C.goslint_value_new_void()
 	}
 	return cv

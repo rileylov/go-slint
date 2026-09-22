@@ -2,7 +2,7 @@
 // (the SharedPixelBuffer path, for generated/decoded images), and read the size.
 // The Image can then be assigned to an `image` property.
 
-use crate::{guard, opt_str, set_last_error};
+use crate::{guard, guard_release, opt_str, set_last_error};
 use i_slint_core::graphics::{Image, Rgb8Pixel, Rgba8Pixel, SharedPixelBuffer};
 use slint_interpreter::Value;
 use std::ffi::c_char;
@@ -139,7 +139,7 @@ pub unsafe extern "C" fn goslint_image_load_from_data(
 /// `img` must be NULL or a pointer from this library.
 #[no_mangle]
 pub unsafe extern "C" fn goslint_image_free(img: *mut Image) {
-    guard((), || {
+    guard_release((), || {
         if !img.is_null() {
             drop(Box::from_raw(img));
         }
