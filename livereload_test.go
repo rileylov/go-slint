@@ -115,3 +115,94 @@ func TestWatchSlintNoGoroutineLeak(t *testing.T) {
 		t.Errorf("goroutines grew from %d to %d after 5 watcher cycles", before, after)
 	}
 }
+
+// TestWatchSlintSkipsUnrelatedTrees: the poll walks the entry's directory tree on
+// every tick, so it must stay out of the trees that hold no markup and can be huge
+// (.git, node_modules, build output) while still seeing a real subdirectory.
+func TestWatchSlintSkipsUnrelatedTrees(t *testing.T) {
+	dir := t.TempDir()
+	entry := writeSlint(t, dir, "app.slint", `export component App inherits Window {}`)
+	base := newestMod(entry)
+
+	future := time.Now().Add(time.Hour)
+	touch := func(rel string) {
+		t.Helper()
+		p := filepath.Join(dir, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(`export component X {}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(p, future, future); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for _, rel := range []string{".git/x.slint", "node_modules/pkg/x.slint", "target/x.slint", "vendor/x.slint", ".cache/deep/x.slint"} {
+		touch(rel)
+	}
+	if got := newestMod(entry); !got.Equal(base) {
+		t.Errorf("a .slint under a skipped directory moved the watch time (%v -> %v)", base, got)
+	}
+
+	touch("components/card.slint")
+	if got := newestMod(entry); !got.After(base) {
+		t.Error("a .slint in an ordinary subdirectory must still be seen")
+	}
+}
+
+// TestReloadAdoptsInstanceWhenBindFails: creating the reloaded instance hands it
+// the window, so when bind then fails there is no old UI left to "keep". loadReuse
+// used to close the new instance and report failure, leaving the window attached
+// to a released component while the old, detached one stayed "current". It must
+// hand the new instance back, alive, alongside the bind error.
+func TestReloadAdoptsInstanceWhenBindFails(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	_ = InitHeadless()
+
+	dir := t.TempDir()
+	entry := writeSlint(t, dir, "app.slint", `export component App inherits Window {
+		in-out property <int> v: 1;
+		callback clicked();
+	}`)
+	bind := func(i *Instance) error { return i.OnCallback("clicked", func([]any) any { return nil }) }
+
+	cur, err := loadAndShow(entry, "", bind, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { cur.close() }()
+
+	// The markup renames the callback before the Go side catches up.
+	writeSlint(t, dir, "app.slint", `export component App inherits Window {
+		in-out property <int> v: 2;
+		callback pressed();
+	}`)
+	next, bindErr, err := loadReuse(entry, "", bind, nil, cur.inst)
+	if err != nil {
+		t.Fatalf("the markup compiles, so this is not a failed reload: %v", err)
+	}
+	if bindErr == nil {
+		t.Fatal("bind should have failed: the callback it wires no longer exists")
+	}
+	if next == nil {
+		t.Fatal("the new instance owns the window and must be returned")
+	}
+	old := cur
+	cur = next
+	old.close()
+	if v, err := cur.inst.Int("v"); err != nil || v != 2 {
+		t.Errorf("the adopted instance must be live and be the new markup: v = %d, err = %v", v, err)
+	}
+
+	// A reload that doesn't compile changes nothing and reports err.
+	writeSlint(t, dir, "app.slint", `export component App inherits Window { oops }`)
+	if next, _, err := loadReuse(entry, "", bind, nil, cur.inst); err == nil || next != nil {
+		t.Errorf("a compile error must fail the reload outright (next = %v, err = %v)", next, err)
+	}
+	if v, err := cur.inst.Int("v"); err != nil || v != 2 {
+		t.Errorf("after a failed compile the current instance must be untouched: v = %d, err = %v", v, err)
+	}
+}

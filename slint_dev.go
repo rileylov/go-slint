@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"log"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -46,7 +47,7 @@ func LiveReload(path, component string, bind func(*Instance) error, opts ...Opti
 				}
 				start := time.Now()
 				// Reuse the current window so the UI swaps in place (no new window).
-				next, err := loadReuse(path, component, bind, opts, cur.inst)
+				next, bindErr, err := loadReuse(path, component, bind, opts, cur.inst)
 				if err != nil {
 					log.Printf("goslint dev: reload failed, keeping current UI: %v", err)
 					return
@@ -54,6 +55,10 @@ func LiveReload(path, component string, bind func(*Instance) error, opts ...Opti
 				old := cur
 				cur = next
 				old.close() // drop the old instance; the window lives on in `next`
+				if bindErr != nil {
+					log.Printf("goslint dev: reloaded %s, but wiring it up failed: %v — the window shows the new markup with its callbacks/properties only partly set; fix the code or the markup and save again", filepath.Base(path), bindErr)
+					return
+				}
 				log.Printf("goslint dev: reloaded %s in %s", filepath.Base(path), time.Since(start).Round(time.Millisecond))
 			}); err != nil {
 				log.Printf("goslint dev: could not queue a reload: %v", err)
@@ -67,6 +72,16 @@ func LiveReload(path, component string, bind func(*Instance) error, opts ...Opti
 	stopped = true // neutralize any reload already queued on the loop
 	cur.close()
 	return err
+}
+
+// skipWatchDir reports whether the reload watcher should stay out of a directory
+// with this name.
+func skipWatchDir(name string) bool {
+	switch name {
+	case "node_modules", "target", "vendor":
+		return true
+	}
+	return strings.HasPrefix(name, ".")
 }
 
 // watchSlint polls the .slint files beside path every interval and calls onChange
@@ -154,32 +169,48 @@ func loadAndShow(path, component string, bind func(*Instance) error, opts []Opti
 // loadReuse recompiles and instantiates into old's existing window (an in-place
 // content swap), so no new window appears and nothing flashes. The caller closes
 // old afterward — the window stays alive via the returned instance.
-func loadReuse(path, component string, bind func(*Instance) error, opts []Option, old *Instance) (*liveInstance, error) {
+//
+// err means nothing changed: the markup didn't compile or instantiate, and old is
+// still what the window shows. bindErr is different. Creating the new instance
+// already handed it the window, so by the time bind runs there is no "current UI"
+// left to keep: the returned instance IS the UI, and the caller must adopt it even
+// though bind failed. Closing it here (as this once did) left the window attached
+// to a released component while the log claimed the old UI was still up — the
+// usual trigger being a callback renamed in the markup before the Go side caught up.
+func loadReuse(path, component string, bind func(*Instance) error, opts []Option, old *Instance) (next *liveInstance, bindErr, err error) {
 	app, name, err := compileAndName(path, component, opts)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	inst, err := app.CreateWithWindow(name, old)
 	if err != nil {
 		app.Close()
-		return nil, err
+		return nil, nil, err
 	}
 	if bind != nil {
-		if err := bind(inst); err != nil {
-			inst.Close()
-			app.Close()
-			return nil, err
-		}
+		bindErr = bind(inst)
 	}
-	return &liveInstance{app: app, inst: inst}, nil
+	return &liveInstance{app: app, inst: inst}, bindErr, nil
 }
 
 // newestMod returns the latest modification time among all .slint files in the
-// directory of path (so edits to imported components trigger a reload too).
+// directory of path and below (so edits to imported components trigger a reload
+// too). It runs every poll, so it stays out of trees that hold no markup and can
+// be enormous: dot-directories (.git above all) and dependency/build output.
 func newestMod(path string) time.Time {
 	var newest time.Time
-	_ = filepath.WalkDir(filepath.Dir(path), func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() || filepath.Ext(p) != ".slint" {
+	root := filepath.Dir(path)
+	_ = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			if p != root && skipWatchDir(d.Name()) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if filepath.Ext(p) != ".slint" {
 			return nil
 		}
 		if fi, err := d.Info(); err == nil && fi.ModTime().After(newest) {

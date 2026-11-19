@@ -124,6 +124,17 @@ jobs:
           dest="$GITHUB_WORKSPACE/dist/libgoslint-${{ matrix.target }}.a"
           cp "target/${{ matrix.rust }}/release/libgoslint.a" "$dest"
 
+          # Linux: drop the LLVM bitcode that Rust's std leaves in the archive
+          # (compiler_builtins is exempt from LTO, so its `.llvmbc` sections survive).
+          # It is dead weight for a normal link, and current Go refuses to link an
+          # archive that has it when the lib dir is named by `#cgo` or pkg-config and
+          # sits under the build directory or the temp dir ("disallowed LTO section").
+          # Same step as `strip-bitcode` in the Makefile. Linux only: that is the
+          # format this has been verified on; the other targets ship as built.
+          case "${{ matrix.target }}" in
+            linux_*) objcopy --remove-section=.llvmbc --remove-section=.llvmcmd "$dest" ;;
+          esac
+
           # Windows: the `windows` crate (via winit) needs umbrella import libs like
           # `-lwindows.0.52.0`, whose .a files ship inside the windows_*_gnu crate and
           # are NOT present on a user's machine. Merge them INTO libgoslint.a so the

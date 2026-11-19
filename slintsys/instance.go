@@ -16,14 +16,28 @@ import (
 // Instance wraps slint_interpreter::ComponentInstance.
 type Instance struct{ ptr *C.GoComponentInstance }
 
+// closed returns the error for using the instance after Free, or nil while it is
+// live. Checked up front by every fallible method: the shim would reject the NULL
+// handle too, but with "get_property: instance is NULL" — true, and no help to
+// someone who called Get after Close.
+func (i *Instance) closed(op string) error {
+	if i.ptr == nil {
+		return fmt.Errorf("slint: %s: %w", op, errClosed)
+	}
+	return nil
+}
+
 // GetProperty reads a public property and converts it to a Go value.
 func (i *Instance) GetProperty(name string) (any, error) {
 	CheckUIThread("Get", name)
+	if i.ptr == nil {
+		return nil, i.closed(fmt.Sprintf("get property %q", name))
+	}
 	cs := C.CString(name)
 	defer C.free(unsafe.Pointer(cs))
 	v := C.goslint_instance_get_property(i.ptr, cs)
 	if v == nil {
-		return nil, errors.New(lastErrorOr("get property " + name))
+		return nil, opError(fmt.Sprintf("get property %q", name))
 	}
 	defer C.goslint_value_free(v)
 	return goValue(v), nil
@@ -36,6 +50,9 @@ func (i *Instance) GetProperty(name string) (any, error) {
 // `slint: set property "rows": element 1: struct field "name": string is not valid UTF-8`.
 func (i *Instance) SetProperty(name string, val any) error {
 	CheckUIThread("Set", name)
+	if i.ptr == nil {
+		return i.closed(fmt.Sprintf("set property %q", name))
+	}
 	cv, err := cValue(val)
 	if err != nil {
 		return fmt.Errorf("slint: set property %q: %w", name, err)
@@ -43,12 +60,21 @@ func (i *Instance) SetProperty(name string, val any) error {
 	defer C.goslint_value_free(cv)
 	cs := C.CString(name)
 	defer C.free(unsafe.Pointer(cs))
-	return rc(C.goslint_instance_set_property(i.ptr, cs, cv), "set property "+name)
+	if C.goslint_instance_set_property(i.ptr, cs, cv) != 0 {
+		return opError(fmt.Sprintf("set property %q", name))
+	}
+	return nil
 }
 
-// Invoke calls a callback or function and returns its result (nil for void).
+// Invoke calls a callback or function and returns its result (nil for void). The
+// arguments are checked against the declared signature first: a wrong count or a
+// value of the wrong kind is an error (`slint: invoke "add": takes 2 arguments, got
+// 1`), not a call — the interpreter itself would panic on it.
 func (i *Instance) Invoke(name string, args []any) (any, error) {
 	CheckUIThread("Invoke", name)
+	if i.ptr == nil {
+		return nil, i.closed(fmt.Sprintf("invoke %q", name))
+	}
 	cvals, err := toCValues("argument", args)
 	if err != nil {
 		return nil, fmt.Errorf("slint: invoke %q: %w", name, err)
@@ -58,7 +84,7 @@ func (i *Instance) Invoke(name string, args []any) (any, error) {
 	defer C.free(unsafe.Pointer(cs))
 	ret := C.goslint_instance_invoke(i.ptr, cs, cvaluePtr(cvals), C.size_t(len(cvals)))
 	if ret == nil {
-		return nil, errors.New(lastErrorOr("invoke " + name))
+		return nil, opError(fmt.Sprintf("invoke %q", name))
 	}
 	defer C.goslint_value_free(ret)
 	return goValue(ret), nil
@@ -69,37 +95,52 @@ func (i *Instance) Invoke(name string, args []any) (any, error) {
 // windows; call before the text using the font is laid out.
 func (i *Instance) RegisterFontFromPath(path string) error {
 	CheckUIThread("RegisterFont", "")
+	if i.ptr == nil {
+		return i.closed("register font")
+	}
 	cs := C.CString(path)
 	defer C.free(unsafe.Pointer(cs))
-	return rc(C.goslint_instance_register_font_from_path(i.ptr, cs), "register font "+path)
+	if C.goslint_instance_register_font_from_path(i.ptr, cs) != 0 {
+		return shimError("register font " + path)
+	}
+	return nil
 }
 
 // RegisterFontFromMemory registers a font from an in-memory buffer. The data is
 // copied; the copy lives for the process (a registered font is permanent).
 func (i *Instance) RegisterFontFromMemory(data []byte) error {
 	CheckUIThread("RegisterFont", "")
-	if len(data) == 0 {
-		return errors.New("register font: empty data")
+	if i.ptr == nil {
+		return i.closed("register font")
 	}
-	return rc(C.goslint_instance_register_font_from_memory(i.ptr,
-		(*C.uint8_t)(unsafe.Pointer(&data[0])), C.size_t(len(data))), "register font (memory)")
+	if len(data) == 0 {
+		return errors.New("slint: register font: empty data")
+	}
+	if C.goslint_instance_register_font_from_memory(i.ptr,
+		(*C.uint8_t)(unsafe.Pointer(&data[0])), C.size_t(len(data))) != 0 {
+		return shimError("register font (memory)")
+	}
+	return nil
 }
 
 // TakeSnapshot renders the window to a straight-RGBA8 pixel buffer (w*h*4 bytes),
 // returning a copy owned by Go.
 func (i *Instance) TakeSnapshot() (pix []byte, w, h int, err error) {
 	CheckUIThread("Snapshot", "")
+	if i.ptr == nil {
+		return nil, 0, 0, i.closed("take snapshot")
+	}
 	var cw, ch C.uint32_t
 	p := C.goslint_instance_take_snapshot(i.ptr, &cw, &ch)
 	if p == nil {
-		return nil, 0, 0, errors.New(lastErrorOr("take snapshot"))
+		return nil, 0, 0, shimError("take snapshot")
 	}
 	n, ok := snapshotLen(uint32(cw), uint32(ch))
 	defer C.goslint_pixels_free(p, C.size_t(n))
 	if !ok {
 		// C.GoBytes takes the length as a C.int: a buffer past 2^31-1 bytes would
 		// wrap negative (panic) or truncate (silent corruption). Refuse it instead.
-		return nil, 0, 0, fmt.Errorf("snapshot too large: %d×%d is %d bytes, over the 2 GiB copy limit", uint32(cw), uint32(ch), n)
+		return nil, 0, 0, fmt.Errorf("slint: snapshot too large: %d×%d is %d bytes, over the 2 GiB copy limit", uint32(cw), uint32(ch), n)
 	}
 	return C.GoBytes(unsafe.Pointer(p), C.int(n)), int(cw), int(ch), nil
 }
@@ -116,13 +157,16 @@ func snapshotLen(w, h uint32) (n uint64, ok bool) {
 // GetGlobalProperty reads a property of an exported global singleton.
 func (i *Instance) GetGlobalProperty(global, name string) (any, error) {
 	CheckUIThread("GetGlobal", name)
+	if i.ptr == nil {
+		return nil, i.closed(fmt.Sprintf("get global property %q", global+"."+name))
+	}
 	cg := C.CString(global)
 	defer C.free(unsafe.Pointer(cg))
 	cs := C.CString(name)
 	defer C.free(unsafe.Pointer(cs))
 	v := C.goslint_instance_get_global_property(i.ptr, cg, cs)
 	if v == nil {
-		return nil, errors.New(lastErrorOr("get global property " + global + "." + name))
+		return nil, opError(fmt.Sprintf("get global property %q", global+"."+name))
 	}
 	defer C.goslint_value_free(v)
 	return goValue(v), nil
@@ -131,6 +175,9 @@ func (i *Instance) GetGlobalProperty(global, name string) (any, error) {
 // SetGlobalProperty writes a property of an exported global singleton.
 func (i *Instance) SetGlobalProperty(global, name string, val any) error {
 	CheckUIThread("SetGlobal", name)
+	if i.ptr == nil {
+		return i.closed(fmt.Sprintf("set global property %q", global+"."+name))
+	}
 	cv, err := cValue(val)
 	if err != nil {
 		return fmt.Errorf("slint: set global property %q: %w", global+"."+name, err)
@@ -140,12 +187,18 @@ func (i *Instance) SetGlobalProperty(global, name string, val any) error {
 	defer C.free(unsafe.Pointer(cg))
 	cs := C.CString(name)
 	defer C.free(unsafe.Pointer(cs))
-	return rc(C.goslint_instance_set_global_property(i.ptr, cg, cs, cv), "set global property "+global+"."+name)
+	if C.goslint_instance_set_global_property(i.ptr, cg, cs, cv) != 0 {
+		return opError(fmt.Sprintf("set global property %q", global+"."+name))
+	}
+	return nil
 }
 
 // InvokeGlobal calls a callback or function on an exported global singleton.
 func (i *Instance) InvokeGlobal(global, name string, args []any) (any, error) {
 	CheckUIThread("InvokeGlobal", name)
+	if i.ptr == nil {
+		return nil, i.closed(fmt.Sprintf("invoke global %q", global+"."+name))
+	}
 	cvals, err := toCValues("argument", args)
 	if err != nil {
 		return nil, fmt.Errorf("slint: invoke global %q: %w", global+"."+name, err)
@@ -157,7 +210,7 @@ func (i *Instance) InvokeGlobal(global, name string, args []any) (any, error) {
 	defer C.free(unsafe.Pointer(cs))
 	ret := C.goslint_instance_invoke_global(i.ptr, cg, cs, cvaluePtr(cvals), C.size_t(len(cvals)))
 	if ret == nil {
-		return nil, errors.New(lastErrorOr("invoke global " + global + "." + name))
+		return nil, opError(fmt.Sprintf("invoke global %q", global+"."+name))
 	}
 	defer C.goslint_value_free(ret)
 	return goValue(ret), nil
@@ -168,15 +221,24 @@ func (i *Instance) InvokeGlobal(global, name string, args []any) (any, error) {
 // Run(); multi-window apps Show() each window then slint.Run() (also marks).
 func (i *Instance) Show() error {
 	MarkUIThread("Show")
-	return rc(C.goslint_instance_show(i.ptr), "show")
+	if i.ptr == nil {
+		return i.closed("show")
+	}
+	return opRC(C.goslint_instance_show(i.ptr), "show")
 }
 func (i *Instance) Hide() error {
 	CheckUIThread("Hide", "")
-	return rc(C.goslint_instance_hide(i.ptr), "hide")
+	if i.ptr == nil {
+		return i.closed("hide")
+	}
+	return opRC(C.goslint_instance_hide(i.ptr), "hide")
 }
 func (i *Instance) Run() error {
 	MarkUIThread("Run")
-	return withLoopRunning(func() error { return rc(C.goslint_instance_run(i.ptr), "run") })
+	if i.ptr == nil {
+		return i.closed("run")
+	}
+	return withLoopRunning(func() error { return opRC(C.goslint_instance_run(i.ptr), "run") })
 }
 
 // ---- window control (physical pixels) ----
@@ -261,7 +323,13 @@ func (i *Instance) RequestRedraw() {
 // callback while a button is pressed; winit desktop backends only.
 func (i *Instance) WindowDragMove() error {
 	CheckUIThread("StartSystemMove", "")
-	return rc(C.goslint_instance_window_drag_move(i.ptr), "drag move")
+	if i.ptr == nil {
+		return i.closed("start system move")
+	}
+	if C.goslint_instance_window_drag_move(i.ptr) != 0 {
+		return shimError("start system move")
+	}
+	return nil
 }
 
 // WindowDragResize begins an interactive, OS-driven resize from an edge or
@@ -270,7 +338,13 @@ func (i *Instance) WindowDragMove() error {
 // 5=south-east 6=south-west 7=west.
 func (i *Instance) WindowDragResize(direction int) error {
 	CheckUIThread("StartSystemResize", "")
-	return rc(C.goslint_instance_window_drag_resize(i.ptr, C.int32_t(direction)), "drag resize")
+	if i.ptr == nil {
+		return i.closed("start system resize")
+	}
+	if C.goslint_instance_window_drag_resize(i.ptr, C.int32_t(direction)) != 0 {
+		return shimError("start system resize")
+	}
+	return nil
 }
 
 func (i *Instance) Free() {

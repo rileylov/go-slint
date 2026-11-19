@@ -26,5 +26,6 @@ func (i *Instance) OnCloseRequested(fn CloseHandler) {
 
 // RequestClose asks the window to close, running the close handler.
 func (i *Instance) RequestClose() {
+	CheckUIThread("RequestClose", "")
 	C.goslint_instance_request_close(i.ptr)
 }

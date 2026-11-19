@@ -9,7 +9,10 @@ import "C"
 import (
 	"errors"
 	"fmt"
+	"math"
+	"reflect"
 	"strings"
+	"time"
 	"unicode/utf8"
 	"unsafe"
 )
@@ -146,15 +149,33 @@ func cValue(v any) (*C.GoValue, error) {
 	case bool:
 		return own(C.goslint_value_new_bool(C._Bool(x)), "bool")
 	case int:
-		return own(C.goslint_value_new_double(C.double(float64(x))), "number")
-	case int32:
-		return own(C.goslint_value_new_double(C.double(float64(x))), "number")
-	case int64:
-		return own(C.goslint_value_new_double(C.double(float64(x))), "number")
-	case float32:
-		return own(C.goslint_value_new_double(C.double(float64(x))), "number")
+		return cNumber(float64(x))
 	case float64:
-		return own(C.goslint_value_new_double(C.double(x)), "number")
+		return cNumber(x)
+	case int8:
+		return cNumber(float64(x))
+	case int16:
+		return cNumber(float64(x))
+	case int32:
+		return cNumber(float64(x))
+	case int64:
+		return cNumber(float64(x))
+	case uint:
+		return cNumber(float64(x))
+	case uint8:
+		return cNumber(float64(x))
+	case uint16:
+		return cNumber(float64(x))
+	case uint32:
+		return cNumber(float64(x))
+	case uint64:
+		return cNumber(float64(x))
+	case float32:
+		return cNumber(float64(x))
+	case time.Duration:
+		// A Slint `duration` is a number of milliseconds. Named here so it isn't
+		// caught by cOther's by-kind fallback, which would pass nanoseconds.
+		return cNumber(float64(x) / float64(time.Millisecond))
 	case string:
 		if err := validString("string", x); err != nil {
 			return nil, err
@@ -196,8 +217,78 @@ func cValue(v any) (*C.GoValue, error) {
 	case []any:
 		return cArray(x)
 	default:
-		return nil, fmt.Errorf("unsupported value type %T", v)
+		return cOther(v)
 	}
+}
+
+// cNumber builds a number Value. Every Slint number is a float64, so an integer
+// beyond ±2^53 arrives rounded — the same as it would in .slint itself.
+func cNumber(f float64) (*C.GoValue, error) {
+	return own(C.goslint_value_new_double(C.double(f)), "number")
+}
+
+// modelHandler is anything that stands for a bound model: slint.SliceModel, and
+// whatever else satisfies slint.LiveModel.
+type modelHandler interface{ Handle() *ModelHandle }
+
+// cOther converts the Go values cValue's type switch doesn't name:
+//
+//   - a model wrapper (a *slint.SliceModel — anything with Handle() *ModelHandle).
+//     Recognizing it HERE, where every value passes on its way to C, is what lets
+//     one appear anywhere a value can: a struct field, an array element, a model
+//     row, a callback's return. It used to be unwrapped by the slint package and
+//     only for the top-level argument of Set/Invoke, so `Set("page",
+//     map[string]any{"items": model})` failed with "unsupported value type".
+//   - named and sized variants of the basic kinds (`type Mode int`, uintptr, a
+//     `type ID string`), by their underlying kind.
+//   - typed slices and arrays ([]string, []float64, []map[string]any, [3]int) as
+//     arrays, and string-keyed typed maps (map[string]string) as structs — the
+//     shapes Go code actually holds, which previously had to be copied into []any /
+//     map[string]any by hand first.
+//
+// Reflection is confined to this fallback; the common types never reach it.
+func cOther(v any) (*C.GoValue, error) {
+	rv := reflect.ValueOf(v)
+	if rv.Kind() == reflect.Pointer && rv.IsNil() {
+		// A typed nil pointer: calling Handle() on it would dereference nil, and
+		// there is no value it could stand for.
+		return nil, fmt.Errorf("unsupported value: nil %T", v)
+	}
+	if m, ok := v.(modelHandler); ok {
+		h := m.Handle()
+		if h.raw() == nil {
+			return nil, fmt.Errorf("%T is closed (its model handle was released)", v)
+		}
+		return own(C.goslint_value_new_model(h.raw()), "model")
+	}
+	switch rv.Kind() {
+	case reflect.Bool:
+		return cValue(rv.Bool())
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return cNumber(float64(rv.Int()))
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		return cNumber(float64(rv.Uint()))
+	case reflect.Float32, reflect.Float64:
+		return cNumber(rv.Float())
+	case reflect.String:
+		return cValue(rv.String())
+	case reflect.Slice, reflect.Array:
+		items := make([]any, rv.Len())
+		for i := range items {
+			items[i] = rv.Index(i).Interface()
+		}
+		return cArray(items)
+	case reflect.Map:
+		if rv.Type().Key().Kind() != reflect.String {
+			break
+		}
+		m := make(map[string]any, rv.Len())
+		for it := rv.MapRange(); it.Next(); {
+			m[it.Key().String()] = it.Value().Interface()
+		}
+		return cStruct(m)
+	}
+	return nil, fmt.Errorf("unsupported value type %T", v)
 }
 
 // cArray builds a snapshot model Value (a VecModel) from a slice. Each element is
@@ -303,6 +394,24 @@ func goStruct(v *C.GoValue) any {
 	return m
 }
 
+// goString reads a string Value. It borrows the Value's own bytes (pointer +
+// length) and copies them once into a Go string, so a string containing a NUL byte
+// arrives whole — the NUL-terminated accessor could not carry one, and it read as
+// "". It is also one cgo call where that took two (the read, then the free).
+func goString(v *C.GoValue) string {
+	var n C.size_t
+	p := C.goslint_value_str(v, &n)
+	if p == nil || n == 0 {
+		return ""
+	}
+	if uint64(n) > math.MaxInt32 {
+		// C.GoStringN takes a C int; a string past 2 GiB can't be copied in one
+		// call. unsafe.String has no such limit.
+		return strings.Clone(unsafe.String((*byte)(unsafe.Pointer(p)), int(n)))
+	}
+	return C.GoStringN(p, C.int(n))
+}
+
 // goValue converts a borrowed C value into a Go value. It does not free `v`.
 // Unsupported (non-scalar) kinds return nil for now.
 func goValue(v *C.GoValue) any {
@@ -320,7 +429,7 @@ func goValue(v *C.GoValue) any {
 		C.goslint_value_as_bool(v, &out)
 		return bool(out)
 	case TypeString:
-		return takeString(C.goslint_value_as_string(v))
+		return goString(v)
 	case TypeImage:
 		// Owned clone (Rc-backed, cheap); caller frees via Image.Free. Without this,
 		// image reads returned nil and the generated getter's type assertion panicked.

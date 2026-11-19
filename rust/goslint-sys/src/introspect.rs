@@ -3,8 +3,9 @@
 // properties_and_callbacks() / global_properties_and_callbacks() and emits the
 // component's interface as JSON, which the Go generator consumes.
 //
-// This is the ONLY place that depends on the compiler's internal type AST; it
-// affects `goslint generate` only, never the runtime binding.
+// Together with the invoke argument check in instance.rs (which reads the same
+// declared types to validate a call), this is the only code that depends on the
+// compiler's internal type AST.
 
 use crate::{guard, to_c_string};
 use i_slint_compiler::langtype::{Function, Struct as LangStruct, Type as LangType};

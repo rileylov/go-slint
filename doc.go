@@ -76,10 +76,41 @@
 //	image                         <-> *[Image] (write; load via [LoadImage])
 //	array / model                 <-> []any (read) or [*ModelHandle] (write)
 //
+// That is the form values are read in. Writing — [Instance.Set], the arguments of
+// [Instance.Invoke], a callback's return value, a model's rows — accepts more, so
+// Go data rarely needs converting by hand first:
+//
+//   - any integer or float type (int, uint8, float32, …) and named types built on
+//     the basic kinds (`type Level int`) for a number, bool or string;
+//   - a [time.Duration] for a `duration` (it arrives as milliseconds);
+//   - typed slices and arrays ([]string, []float64, []map[string]any) for an array,
+//     and string-keyed typed maps (map[string]string) for a struct;
+//   - a live model — a [*SliceModel] or [*ModelHandle] — anywhere an array is
+//     expected, including inside a struct field or as an array element.
+//
+// Go structs are not converted; use map[string]any, or the typed bindings that
+// `goslint generate` emits. A value of any other type is rejected with an error
+// naming the property and the place inside it.
+//
 // Build a writable model with [NewSliceModel] (or [NewModel] for a custom
 // [Model]) and assign it to an array/model property; mutating it notifies Slint.
 // A model that also implements [RowMutator] (SliceModel does) can be grown and
 // shrunk from .slint code with `push`, `insert` and `remove` (Slint 1.18).
+//
+// # Errors
+//
+// Errors from this package start with "slint:" and say what was being done and to
+// what, so one logged on its own can be placed:
+//
+//	slint: get property "countr": no such property
+//	slint: set property "rows": element 1: struct field "name": string is not valid UTF-8
+//	slint: invoke "add": takes 2 arguments, got 1
+//	slint: set property "title": instance is closed
+//
+// [Instance.Invoke] checks its arguments against the callback's or function's
+// declared signature before calling, so a wrong count or kind is such an error
+// rather than a failure inside the interpreter. A [*DiagnosticError] carries the
+// compiler's messages when markup does not compile.
 //
 // # Resource ownership
 //

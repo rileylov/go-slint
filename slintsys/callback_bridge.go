@@ -19,7 +19,7 @@ static int goslintSetGlobalCallbackBridge(GoComponentInstance *i, const char *g,
 import "C"
 
 import (
-	"errors"
+	"fmt"
 	"runtime/cgo"
 	"unsafe"
 )
@@ -29,6 +29,9 @@ import (
 // is dropped or the handler replaced.
 func (i *Instance) SetCallback(name string, fn CallbackFunc) error {
 	CheckUIThread("OnCallback", name)
+	if i.ptr == nil {
+		return i.closed(fmt.Sprintf("set callback %q", name))
+	}
 	h := cgo.NewHandle(&callbackEntry{name: name, fn: fn})
 	cs := C.CString(name)
 	defer C.free(unsafe.Pointer(cs))
@@ -36,7 +39,7 @@ func (i *Instance) SetCallback(name string, fn CallbackFunc) error {
 		// Don't Delete here: on the bridge's error path the Rust Drop guard already
 		// released this handle; a second Delete panics ("misuse of an invalid
 		// Handle"). Matches SetTranslator. See translator_bridge.go.
-		return errors.New(lastErrorOr("set callback " + name))
+		return opError(fmt.Sprintf("set callback %q", name))
 	}
 	return nil
 }
@@ -44,6 +47,9 @@ func (i *Instance) SetCallback(name string, fn CallbackFunc) error {
 // SetGlobalCallback installs a handler for a callback on an exported global.
 func (i *Instance) SetGlobalCallback(global, name string, fn CallbackFunc) error {
 	CheckUIThread("OnGlobalCallback", name)
+	if i.ptr == nil {
+		return i.closed(fmt.Sprintf("set global callback %q", global+"."+name))
+	}
 	h := cgo.NewHandle(&callbackEntry{name: global + "." + name, fn: fn})
 	cg := C.CString(global)
 	defer C.free(unsafe.Pointer(cg))
@@ -52,7 +58,7 @@ func (i *Instance) SetGlobalCallback(global, name string, fn CallbackFunc) error
 	if C.goslintSetGlobalCallbackBridge(i.ptr, cg, cs, C.uintptr_t(h)) != 0 {
 		// See SetCallback: the Rust Drop guard already released this handle on the
 		// error path; a second Delete would panic.
-		return errors.New(lastErrorOr("set global callback " + name))
+		return opError(fmt.Sprintf("set global callback %q", global+"."+name))
 	}
 	return nil
 }

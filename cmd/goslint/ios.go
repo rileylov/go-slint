@@ -92,6 +92,12 @@ func buildIOSApp(cfg iosBuildCfg) error {
 		plat = iosDevice
 	}
 
+	// The bundle at cfg.out is replaced wholesale further down; refuse a path that
+	// isn't ours to delete now, before spending a cross-build on it.
+	if err := checkIOSOutput(cfg.out); err != nil {
+		return err
+	}
+
 	// resolve the SDK + clang target triple for this platform.
 	sdkPath, err := xcrunSDKPath(plat.sdk)
 	if err != nil {
@@ -116,14 +122,9 @@ func buildIOSApp(cfg iosBuildCfg) error {
 
 	execName := execBaseName(cfg.label)
 	exePath := filepath.Join(stage, execName)
-	sysroot := fmt.Sprintf("-target %s -isysroot %s", clangTarget, sdkPath)
-	env := []string{
-		"GOOS=ios", "GOARCH=arm64", "CGO_ENABLED=1", "CC=clang",
-		"CGO_CFLAGS=" + sysroot,
-		// The shim .a is named by full path (not -l:), and appears twice in the final
-		// link via Go's CGO_LDFLAGS doubling — that second pass resolves the archive↔
-		// framework cycle, the macOS/iOS analog of GNU ld's --start-group.
-		"CGO_LDFLAGS=" + fmt.Sprintf("%s -L%s %s %s", sysroot, filepath.Dir(libA), libA, frameworks),
+	env, err := iosCgoEnv(clangTarget, sdkPath, libA, frameworks)
+	if err != nil {
+		return err
 	}
 	flavor := "simulator"
 	if cfg.device {
@@ -135,7 +136,11 @@ func buildIOSApp(cfg iosBuildCfg) error {
 		return fmt.Errorf("go build (ios): %w", err)
 	}
 
-	// assemble the .app bundle (binary + Info.plist).
+	// assemble the .app bundle (binary + Info.plist), replacing a previous build.
+	// Re-checked at the point of deletion: the build above took a while.
+	if err := checkIOSOutput(cfg.out); err != nil {
+		return err
+	}
 	if err := os.RemoveAll(cfg.out); err != nil {
 		return err
 	}
@@ -160,6 +165,66 @@ func buildIOSApp(cfg iosBuildCfg) error {
 		return fmt.Errorf("codesign (%s): %w", id, err)
 	}
 	return nil
+}
+
+// iosCgoEnv is the cgo env for the iOS cross-build: clang pointed at the iOS SDK, and
+// the shim archive + its frameworks on the link line. The SDK path comes from xcrun
+// and follows wherever Xcode is installed ("/Applications/Xcode 16.app", an external
+// volume), and the lib path follows the user's cache dir — either can hold a space,
+// so each path-bearing token is quoted the way the Go toolchain splits these vars
+// (see flagQuote).
+func iosCgoEnv(clangTarget, sdkPath, libA, frameworks string) ([]string, error) {
+	qs, err := flagQuote(sdkPath)
+	if err != nil {
+		return nil, fmt.Errorf("iOS SDK path: %w", err)
+	}
+	ql, err := flagQuote(libA)
+	if err != nil {
+		return nil, fmt.Errorf("native lib path: %w", err)
+	}
+	sysroot := fmt.Sprintf("-target %s -isysroot %s", clangTarget, qs+sdkPath+qs)
+	return []string{
+		"GOOS=ios", "GOARCH=arm64", "CGO_ENABLED=1", "CC=clang",
+		"CGO_CFLAGS=" + sysroot,
+		// The shim .a is named by full path (not -l:), and appears twice in the final
+		// link via Go's CGO_LDFLAGS doubling — that second pass resolves the archive↔
+		// framework cycle, the macOS/iOS analog of GNU ld's --start-group.
+		"CGO_LDFLAGS=" + fmt.Sprintf("%s %s %s %s", sysroot, ql+"-L"+filepath.Dir(libA)+ql, ql+libA+ql, frameworks),
+	}, nil
+}
+
+// checkIOSOutput guards the os.RemoveAll that clears a previous bundle before a new
+// one is assembled at out. -o is whatever the user typed, and deleting it blindly
+// turned a slip like `-o ~/Projects` (or `-o .`) into losing that directory. So an
+// existing out is only replaced when it is recognisably a bundle this command could
+// have produced: a directory that is empty, is named *.app, or already holds a signed
+// bundle (Info.plist + _CodeSignature — what a build to a non-.app -o leaves behind).
+// Anything else — a file, a symlink, a directory of other things — is an error and
+// nothing is deleted.
+func checkIOSOutput(out string) error {
+	fi, err := os.Lstat(out)
+	if os.IsNotExist(err) {
+		return nil // nothing there: the build creates it
+	}
+	if err != nil {
+		return err
+	}
+	if !fi.IsDir() {
+		return fmt.Errorf("output %s exists and is not an app bundle directory — refusing to replace it "+
+			"(remove it yourself, or pass a different -o)", out)
+	}
+	if strings.EqualFold(filepath.Ext(filepath.Clean(out)), ".app") {
+		return nil
+	}
+	ents, err := os.ReadDir(out)
+	if err != nil {
+		return err
+	}
+	if len(ents) == 0 || (exists(filepath.Join(out, "Info.plist")) && exists(filepath.Join(out, "_CodeSignature"))) {
+		return nil
+	}
+	return fmt.Errorf("output %s is an existing directory that doesn't look like an app bundle (not named *.app, "+
+		"no Info.plist + _CodeSignature) — refusing to delete it. Pass -o <name>.app, or remove it yourself", out)
 }
 
 // cmdIOSBuild is `goslint ios build`: resolve flags, build the .app, then optionally

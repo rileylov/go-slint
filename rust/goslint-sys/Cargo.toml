@@ -1,4 +1,4 @@
-# Layer 0 — the C-ABI shim crate. See ../../PLAN.md §4.
+# Layer 0 — the C-ABI shim crate. See "Layer 0 conventions" in ../../CLAUDE.md.
 # Depends ONLY on the safe `slint-interpreter` Rust API; converts to/from plain C
 # types at the boundary. Does not touch Slint's internal (non-stable) FFI ABI.
 [package]
@@ -25,7 +25,8 @@ slint-interpreter = { path = "../../slint/internal/interpreter", default-feature
     # SystemTrayIcon support (1.17). On Linux/BSD this pulls in ksni (StatusNotifier);
     # without it the tray element compiles but silently never registers an icon.
     "system-tray",
-    # exposes properties_and_callbacks() (rich langtype::Type) for `goslint generate`
+    # exposes properties_and_callbacks() (rich langtype::Type): `goslint generate`
+    # and the invoke argument check
     "internal",
 ] }
 # Headless platform for tests (init_no_event_loop / mock time). The `internal`
@@ -49,10 +50,10 @@ i-slint-common = { path = "../../slint/internal/common", features = ["fontconfig
 # The same translation crate i-slint-core uses, so we can implement tr::Translator.
 tr = { version = "0.1", default-features = false }
 spin_on = "0.1"
-# For `goslint generate` introspection only: read the rich langtype::Type exposed
-# by the interpreter's properties_and_callbacks() to emit a typed-codegen JSON.
-# This is the one place we touch the compiler's (less-stable) internal types — it's
-# isolated to introspect.rs and only affects `goslint generate`, not the runtime.
+# Read the rich langtype::Type exposed by the interpreter's
+# properties_and_callbacks(): introspect.rs emits it as typed-codegen JSON for
+# `goslint generate`, and instance.rs checks invoke arguments against it. Those are
+# the only two places we touch the compiler's (less-stable) internal types.
 i-slint-compiler = { path = "../../slint/internal/compiler" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

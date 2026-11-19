@@ -147,6 +147,29 @@ pub unsafe extern "C" fn goslint_value_as_string(v: *const Value) -> *mut c_char
     })
 }
 
+/// Borrow the string's UTF-8 bytes: writes the byte length into `len` and returns a
+/// pointer into the Value's own buffer, or NULL if `v` is not a String. The pointer
+/// is valid only until `v` is freed and must NOT be freed itself.
+///
+/// This is what the Go side reads strings with. `goslint_value_as_string` returns a
+/// NUL-terminated copy, which cannot represent a string that contains a NUL byte —
+/// such a string came back as NULL and read as "" in Go. Pointer + length carries
+/// every string unchanged, and saves the copy and the second call to free it.
+///
+/// # Safety
+/// `v` must be NULL or a pointer returned by this library; `len` NULL or valid.
+#[no_mangle]
+pub unsafe extern "C" fn goslint_value_str(v: *const Value, len: *mut usize) -> *const c_char {
+    guard(std::ptr::null(), || match v.as_ref() {
+        Some(Value::String(s)) if !len.is_null() => {
+            let text = s.as_str();
+            *len = text.len();
+            text.as_ptr() as *const c_char
+        }
+        _ => std::ptr::null(),
+    })
+}
+
 /// Build a struct Value from a GoStruct (cloned).
 ///
 /// # Safety

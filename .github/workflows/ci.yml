@@ -13,13 +13,30 @@ permissions:
 
 jobs:
   test:
+    # Both ends of the supported range: the oldest Go the module allows (go.mod) and
+    # the current release. Testing only the former hid a build break for everyone on
+    # a newer toolchain — current Go rejects archives with LTO sections in a
+    # `#cgo LDFLAGS: -L` directory, which the staged libgoslint.a had (see the
+    # strip-bitcode step in the Makefile).
+    name: test (go ${{ matrix.go }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        go: [go.mod, stable]
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-go@v5
+        if: matrix.go == 'go.mod'
         with:
           go-version-file: go.mod
+
+      - uses: actions/setup-go@v5
+        if: matrix.go != 'go.mod'
+        with:
+          go-version: ${{ matrix.go }}
+          check-latest: true
 
       - name: gofmt
         run: |

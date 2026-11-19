@@ -31,7 +31,7 @@ func As[T any](v any) (T, error) {
 		return t, nil
 	}
 	var zero T
-	return zero, fmt.Errorf("goslint: value has type %T, want %T", v, zero)
+	return zero, fmt.Errorf("slint: value has type %T, want %T", v, zero)
 }
 
 // MockElapsedTime advances the headless backend's mock clock by ms milliseconds.
@@ -310,9 +310,9 @@ func (c *Compilation) ComponentNames() []string { return c.result.ComponentNames
 
 // Create instantiates the named component.
 func (c *Compilation) Create(name string) (*Instance, error) {
-	def := c.result.Component(name)
-	if def == nil {
-		return nil, fmt.Errorf("slint: no component named %q", name)
+	def, err := c.definition(name)
+	if err != nil {
+		return nil, err
 	}
 	defer def.Free()
 	inner, err := def.Create()
@@ -322,13 +322,27 @@ func (c *Compilation) Create(name string) (*Instance, error) {
 	return &Instance{inner: inner}, nil
 }
 
+// definition looks up a component to instantiate. A closed Compilation has no
+// components, so without the first check Create after Close reported "no component
+// named …" for a name that was right.
+func (c *Compilation) definition(name string) (*slintsys.Definition, error) {
+	if !c.result.Valid() {
+		return nil, fmt.Errorf("slint: create %q: compilation is closed", name)
+	}
+	def := c.result.Component(name)
+	if def == nil {
+		return nil, fmt.Errorf("slint: no component named %q (have %s)", name, strings.Join(c.result.ComponentNames(), ", "))
+	}
+	return def, nil
+}
+
 // CreateWithWindow instantiates the named component reusing winOwner's window, so the
 // new content renders in the same on-screen window. Used by live reload to swap the
 // UI in place instead of opening a new window.
 func (c *Compilation) CreateWithWindow(name string, winOwner *Instance) (*Instance, error) {
-	def := c.result.Component(name)
-	if def == nil {
-		return nil, fmt.Errorf("slint: no component named %q", name)
+	def, err := c.definition(name)
+	if err != nil {
+		return nil, err
 	}
 	defer def.Free()
 	inner, err := def.CreateWithWindow(winOwner.inner)
@@ -346,11 +360,15 @@ type Instance struct {
 	inner *slintsys.Instance
 }
 
-// Get reads a property as a Go value (float64, bool, string, or nil).
+// Get reads a property as a Go value, in the representation the package overview
+// lists under "Value mapping" (float64, bool, string, map[string]any, []any, …).
 func (i *Instance) Get(name string) (any, error) { return i.inner.GetProperty(name) }
 
-// Set writes a property from a Go value.
-func (i *Instance) Set(name string, v any) error { return i.inner.SetProperty(name, toSys(v)) }
+// Set writes a property from a Go value. Besides the types Get returns, it takes
+// any integer or float type, typed slices and string-keyed maps, and a live model
+// (a [*SliceModel] or [*ModelHandle]) — at the top level or nested in a struct or
+// array. See "Value mapping" in the package overview.
+func (i *Instance) Set(name string, v any) error { return i.inner.SetProperty(name, v) }
 
 // Int reads a numeric property as an int.
 func (i *Instance) Int(name string) (int, error) {
@@ -534,22 +552,6 @@ func (s *SliceModel) Handle() *ModelHandle { return s.handle }
 // Close releases the model's binding handle.
 func (s *SliceModel) Close() { s.handle.Close() }
 
-// toSys maps Go-facing model wrappers to values the cgo layer understands.
-func toSys(v any) any {
-	if s, ok := v.(*SliceModel); ok {
-		return s.handle
-	}
-	return v
-}
-
-func mapToSys(args []any) []any {
-	out := make([]any, len(args))
-	for k, a := range args {
-		out[k] = toSys(a)
-	}
-	return out
-}
-
 // Color is an RGBA color (a `color` property, or a solid `brush`).
 type Color = slintsys.Color
 
@@ -591,6 +593,13 @@ func LoadImage(path string) (*Image, error) { return slintsys.LoadImage(path) }
 func NewImage(src image.Image) (*Image, error) {
 	b := src.Bounds()
 	w, h := b.Dx(), b.Dy()
+	// An *image.NRGBA whose rows are contiguous is already the buffer Slint wants:
+	// hand it over as is (ImageFromRGBA copies it once) instead of converting it
+	// pixel by pixel into a second buffer first. A sub-image with a wider stride,
+	// and every other image type, takes the general path below.
+	if n, ok := src.(*image.NRGBA); ok && n.Stride == 4*w && w > 0 && h > 0 && len(n.Pix) >= 4*w*h {
+		return slintsys.ImageFromRGBA(n.Pix[:4*w*h], w, h)
+	}
 	dst := image.NewNRGBA(image.Rect(0, 0, w, h)) // tightly packed, non-premultiplied
 	draw.Draw(dst, dst.Bounds(), src, b.Min, draw.Src)
 	return slintsys.ImageFromRGBA(dst.Pix, w, h)
@@ -692,14 +701,16 @@ func (i *Instance) OnGlobalCallback(global, name string, fn Callback) error {
 	return i.inner.SetGlobalCallback(global, name, fn)
 }
 
-// Invoke calls a callback or function, returning its result (nil for void).
+// Invoke calls a callback or function, returning its result (nil for void). The
+// arguments must match the declared signature in number and kind; a mismatch is
+// reported as an error and nothing is called.
 func (i *Instance) Invoke(name string, args ...any) (any, error) {
-	return i.inner.Invoke(name, mapToSys(args))
+	return i.inner.Invoke(name, args)
 }
 
 // InvokeGlobal calls a callback or function on an exported global.
 func (i *Instance) InvokeGlobal(global, name string, args ...any) (any, error) {
-	return i.inner.InvokeGlobal(global, name, mapToSys(args))
+	return i.inner.InvokeGlobal(global, name, args)
 }
 
 // GetGlobal reads a property of an exported global singleton.
@@ -709,7 +720,7 @@ func (i *Instance) GetGlobal(global, name string) (any, error) {
 
 // SetGlobal writes a property of an exported global singleton.
 func (i *Instance) SetGlobal(global, name string, v any) error {
-	return i.inner.SetGlobalProperty(global, name, toSys(v))
+	return i.inner.SetGlobalProperty(global, name, v)
 }
 
 // Show makes the window visible without blocking. A hidden window (closed by the
@@ -832,9 +843,9 @@ func (i *Instance) Snapshot() (*image.NRGBA, error) {
 	if err != nil {
 		return nil, err
 	}
-	img := image.NewNRGBA(image.Rect(0, 0, w, h)) // straight RGBA8 == NRGBA.Pix
-	copy(img.Pix, pix)
-	return img, nil
+	// pix is already a Go-owned, tightly packed straight-RGBA8 buffer — exactly an
+	// NRGBA's Pix — so wrap it rather than allocate a second frame and copy.
+	return &image.NRGBA{Pix: pix, Stride: 4 * w, Rect: image.Rect(0, 0, w, h)}, nil
 }
 
 // SnapshotRGBA is like Snapshot but returns the raw straight-RGBA8 bytes (w*h*4)

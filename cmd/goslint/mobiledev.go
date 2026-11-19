@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"os/signal"
 	"time"
 )
 
@@ -55,7 +54,7 @@ func (m mobileDev) run() error {
 	}()
 
 	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, os.Interrupt)
+	notifyStop(sig) // SIGTERM too, so the deferred stop() still runs (see notifyStop)
 	fmt.Println(">> watching — edit .slint or .go to rebuild + reload; Ctrl-C to stop")
 
 	last := latestSourceMod(m.pkg)

@@ -123,10 +123,9 @@ func buildAPK(cfg androidBuildCfg) error {
 		// cross-build the user's Go package as a c-shared that links libgoslint.so
 		clang := filepath.Join(tc.ndkBin, a.triple+strconv.Itoa(cfg.minSDK)+"-clang")
 		appSO := filepath.Join(abiDir, "libgoslintapp.so")
-		env := []string{
-			"GOOS=android", "GOARCH=" + a.goarch, "CGO_ENABLED=1",
-			"CC=" + clang,
-			"CGO_LDFLAGS=-L" + filepath.Dir(soPath) + " -lgoslint -llog",
+		env, err := androidCgoEnv(a.goarch, clang, filepath.Dir(soPath))
+		if err != nil {
+			return fmt.Errorf("%s: %w", a.abi, err)
 		}
 		fmt.Printf("   cross-building %s (c-shared, %s)…\n", cfg.pkg, a.goarch)
 		// -tags=goslint_android selects the Android entry file (gated on that custom
@@ -222,6 +221,26 @@ func buildAPK(cfg androidBuildCfg) error {
 		return fmt.Errorf("apksigner: %w", err)
 	}
 	return nil
+}
+
+// androidCgoEnv is the cgo env for one ABI's c-shared cross-build. CC and CGO_LDFLAGS
+// are split into tokens by the Go toolchain, and both paths routinely contain a space
+// on Windows — the NDK under C:\Users\First Last\AppData\Local\Android\Sdk, the lib
+// under the same profile's cache — so each is quoted as one token (see flagQuote).
+func androidCgoEnv(goarch, clang, libDir string) ([]string, error) {
+	qc, err := flagQuote(clang)
+	if err != nil {
+		return nil, fmt.Errorf("NDK clang path: %w", err)
+	}
+	ql, err := flagQuote(libDir)
+	if err != nil {
+		return nil, fmt.Errorf("native lib path: %w", err)
+	}
+	return []string{
+		"GOOS=android", "GOARCH=" + goarch, "CGO_ENABLED=1",
+		"CC=" + qc + clang + qc,
+		"CGO_LDFLAGS=" + ql + "-L" + libDir + ql + " -lgoslint -llog",
+	}, nil
 }
 
 // cmdAndroidBuild is `goslint android build`: resolve flags, build the signed APK, then

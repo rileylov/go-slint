@@ -2,11 +2,13 @@ package main
 
 import (
 	_ "embed"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 // cmdInit scaffolds a new go-slint project using the TYPED API: ui/app.slint with a
@@ -33,36 +35,58 @@ func cmdInit(args []string) error {
 	if name == "." || name == string(filepath.Separator) {
 		name = "goslint-app"
 	}
-	if *module == "" {
-		*module = name
+	// An existing go.mod decides the module path: the scaffold's app.go imports
+	// "<module>/ui", so taking -module (or the directory name) over what go.mod
+	// actually declares generated an import that doesn't resolve.
+	importPath := *module
+	if importPath == "" {
+		importPath = name
+	}
+	hasMod := exists(filepath.Join(dir, "go.mod"))
+	requiresSlint := false
+	if hasMod {
+		mod, err := readGoMod(dir)
+		if err != nil {
+			return err
+		}
+		if *module != "" && *module != mod.Module.Path {
+			fmt.Fprintf(os.Stderr, "note: %s already declares module %q — using that; -module %q is ignored\n",
+				filepath.Join(dir, "go.mod"), mod.Module.Path, *module)
+		}
+		importPath = mod.Module.Path
+		for _, r := range mod.Require {
+			requiresSlint = requiresSlint || r.Path == modulePath
+		}
+	}
+
+	// Check every file the scaffold writes BEFORE touching anything (all of the above
+	// only reads): init used to guard just app.go, so running it in an existing
+	// project silently replaced that project's main.go. Nothing is created — not even
+	// ui/ — unless all of them are free.
+	files := scaffoldFiles(importPath)
+	if clash := existingScaffoldFiles(dir, files); len(clash) > 0 {
+		return fmt.Errorf("%s already contains %s — refusing to overwrite (nothing was written; "+
+			"move them aside or init into an empty directory)", dir, strings.Join(clash, ", "))
 	}
 
 	if err := os.MkdirAll(filepath.Join(dir, "ui"), 0o755); err != nil {
 		return err
 	}
-	if exists(filepath.Join(dir, "app.go")) {
-		return fmt.Errorf("%s already contains app.go — refusing to overwrite", dir)
-	}
-
-	if !exists(filepath.Join(dir, "go.mod")) {
-		if err := runIn(dir, "go", "mod", "init", *module); err != nil {
+	if !hasMod {
+		if err := runIn(dir, "go", "mod", "init", importPath); err != nil {
 			return err
 		}
 	}
-	if err := runIn(dir, "go", "mod", "edit", "-require="+modulePath+"@"+version()); err != nil {
-		return err
+	// An existing go.mod that already requires go-slint keeps its pin — re-requiring
+	// it at this CLI's version could silently up- or downgrade the project.
+	if !requiresSlint {
+		if err := runIn(dir, "go", "mod", "edit", "-require="+modulePath+"@"+version()); err != nil {
+			return err
+		}
 	}
 
-	files := map[string]string{
-		"ui/app.slint":    appSlintTemplate,
-		"ui/app.slint.go": uiTemplate,
-		"app.go":          fmt.Sprintf(appGoTemplate, *module),
-		"main.go":         mainTemplate,
-		// The Android entry (android_main.go) is intentionally omitted — `goslint
-		// android build` writes it on demand. See cmdInit's doc and ensureAndroidEntry.
-	}
-	for rel, content := range files {
-		if err := os.WriteFile(filepath.Join(dir, rel), []byte(content), 0o644); err != nil {
+	for _, f := range files {
+		if err := os.WriteFile(filepath.Join(dir, filepath.FromSlash(f.rel)), []byte(f.content), 0o644); err != nil {
 			return err
 		}
 	}
@@ -80,6 +104,62 @@ func cmdInit(args []string) error {
 	fmt.Println("  goslint android build .  # build a signed APK")
 	fmt.Println("\nJust edit ui/app.slint — goslint dev/run/build regenerate ui/app.slint.go for you.")
 	return nil
+}
+
+// scaffoldFile is one file `goslint init` writes, relative to the project dir.
+type scaffoldFile struct{ rel, content string }
+
+// scaffoldFiles lists what init writes for a project whose module path is module, in
+// the order it writes them — a slice, not a map, so the order (and which file a
+// mid-way failure stops at) is the same every run. The Android entry
+// (android_main.go) is intentionally omitted — `goslint android build` writes it on
+// demand. See cmdInit's doc and ensureAndroidEntry.
+func scaffoldFiles(module string) []scaffoldFile {
+	return []scaffoldFile{
+		{"ui/app.slint", appSlintTemplate},
+		{"ui/app.slint.go", uiTemplate},
+		{"app.go", fmt.Sprintf(appGoTemplate, module)},
+		{"main.go", mainTemplate},
+	}
+}
+
+// existingScaffoldFiles returns the scaffold files already present in dir (as their
+// relative paths, in scaffold order). Lstat, so a dangling symlink counts as taken.
+func existingScaffoldFiles(dir string, files []scaffoldFile) []string {
+	var clash []string
+	for _, f := range files {
+		if _, err := os.Lstat(filepath.Join(dir, filepath.FromSlash(f.rel))); err == nil {
+			clash = append(clash, f.rel)
+		}
+	}
+	return clash
+}
+
+// goMod is the part of `go mod edit -json` init needs from an existing go.mod.
+type goMod struct {
+	Module  struct{ Path string }
+	Require []struct{ Path, Version string }
+}
+
+// readGoMod reads dir's go.mod through the toolchain (`go mod edit -json`) rather
+// than parsing it by hand, so every spelling the go command accepts — quoted paths,
+// block form, trailing comments — yields the same module path the build will use.
+func readGoMod(dir string) (goMod, error) {
+	var m goMod
+	cmd := exec.Command("go", "mod", "edit", "-json")
+	cmd.Dir = dir
+	cmd.Stderr = os.Stderr
+	out, err := cmd.Output()
+	if err != nil {
+		return m, fmt.Errorf("read %s: %w", filepath.Join(dir, "go.mod"), err)
+	}
+	if err := json.Unmarshal(out, &m); err != nil {
+		return m, fmt.Errorf("read %s: %w", filepath.Join(dir, "go.mod"), err)
+	}
+	if m.Module.Path == "" {
+		return m, fmt.Errorf("%s declares no module path", filepath.Join(dir, "go.mod"))
+	}
+	return m, nil
 }
 
 func runIn(dir, name string, args ...string) error {

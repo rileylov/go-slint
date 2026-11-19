@@ -385,6 +385,17 @@ Value mapping: numbers ↔ `float64`, `string`, `bool`, struct ↔ `map[string]a
 enum ↔ `slint.Enum`, color ↔ `slint.Color`, image ↔ `*slint.Image`, array ↔ `[]any`
 (read) / `slint.SliceModel` (live, write).
 
+That is how values are *read*. Writing (`Set`, `Invoke` arguments, callback returns,
+model rows) also accepts any integer or float type, a `time.Duration` for a
+`duration` (as milliseconds), typed slices and string-keyed maps (`[]string`,
+`[]map[string]any`, `map[string]string`), and a `*SliceModel` / `*ModelHandle`
+anywhere an array is expected — nested in a struct field or array element included.
+
+Errors say what was being done and to what (`slint: get property "countr": no such
+property`). `Invoke` checks its arguments against the declared signature first, so a
+wrong count or kind is an error (`slint: invoke "add": takes 2 arguments, got 1`)
+and nothing is called.
+
 **Live models.** Back a list with a `slint.SliceModel` (or implement `slint.Model`)
 and mutate it while the UI is shown:
 

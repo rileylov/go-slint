@@ -13,9 +13,11 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -334,12 +336,25 @@ func ensureProvisioned(tgt string, force bool) (target, string, string, error) {
 	if err := os.MkdirAll(pcdir, 0o755); err != nil {
 		return t, libpath, slint, err
 	}
+	// Build both link lines before writing either, so a cache path that can't be
+	// quoted (see flagQuote) fails here with nothing half-written.
 	libdir := filepath.Dir(libpath)
-	if err := os.WriteFile(filepath.Join(pcdir, "goslint.pc"), []byte(buildPC(tgt, libdir, t.Libs, slint)), 0o644); err != nil {
+	pc, err := buildPC(tgt, libdir, t.Libs, slint)
+	if err != nil {
 		return t, libpath, slint, err
 	}
-	// Also write the raw cgo link line so the CLI can build without pkg-config.
-	if err := os.WriteFile(filepath.Join(pcdir, "cgo_ldflags"), []byte(linkLine(tgt, libdir, t.Libs)), 0o644); err != nil {
+	ld, err := linkLine(tgt, libdir, t.Libs)
+	if err != nil {
+		return t, libpath, slint, err
+	}
+	if err := writeFileAtomic(filepath.Join(pcdir, "goslint.pc"), []byte(pc), 0o644); err != nil {
+		return t, libpath, slint, err
+	}
+	// The raw cgo link line lets the CLI build without pkg-config. It doubles as the
+	// "provisioned" marker (see cachedLinkLine), so it is written LAST — only once the
+	// verified lib and goslint.pc are in place — and atomically, so a goslint racing
+	// this one never reads a half-written line.
+	if err := writeFileAtomic(filepath.Join(pcdir, "cgo_ldflags"), []byte(ld), 0o644); err != nil {
 		return t, libpath, slint, err
 	}
 	return t, libpath, slint, nil
@@ -382,12 +397,14 @@ func provision(tgt string, force bool) (target, string, string, error) {
 
 	if force || !fileHasSHA(libpath, t.SHA256) {
 		url := base + "/" + t.Archive
-		fmt.Printf("downloading %s …\n", url)
-		if err := download(url, libpath); err != nil {
+		// Progress goes to stderr: provisioning also runs under `goslint env`, whose
+		// stdout is meant to be eval'd — a stray line there would be run as a command.
+		fmt.Fprintf(os.Stderr, "downloading %s …\n", url)
+		if err := download(url, libpath, t.SHA256); err != nil {
+			if errors.Is(err, errChecksumMismatch) {
+				return target{}, "", "", fmt.Errorf("checksum mismatch for %s (expected %s)", t.Archive, t.SHA256)
+			}
 			return target{}, "", "", err
-		}
-		if !fileHasSHA(libpath, t.SHA256) {
-			return target{}, "", "", fmt.Errorf("checksum mismatch for %s (expected %s)", t.Archive, t.SHA256)
 		}
 	}
 	// Already cached: stay quiet (matches `goslint build`, which reuses its cached link
@@ -395,7 +412,17 @@ func provision(tgt string, force bool) (target, string, string, error) {
 	return t, libpath, m.Slint, nil
 }
 
-func buildPC(tgt, libdir, libs, slint string) string {
+func buildPC(tgt, libdir, libs, slint string) (string, error) {
+	// pkg-config splits Libs like a shell would, AFTER expanding ${libdir}: an
+	// unquoted backslash is an escape (so a Windows path would lose its separators —
+	// hence forward slashes, as linkLine uses for MinGW), and a space splits the
+	// path in two unless the token is quoted. The quote is chosen from the real
+	// path even though the token is written with the ${libdir} reference.
+	libdir = filepath.ToSlash(libdir)
+	q, err := flagQuote(libdir)
+	if err != nil {
+		return "", err
+	}
 	// Cflags are intentionally empty: the goslint.h include path comes from the Go
 	// module itself (slintsys' own #cgo CFLAGS -I${SRCDIR}/../include). This file
 	// only supplies the link line; staticLibLink makes it static-archive-safe per
@@ -408,7 +435,7 @@ Description: Slint Go bindings native shim (static) — Slint %s
 Version: %s
 Cflags:
 Libs: %s
-`, libdir, slint, strings.TrimPrefix(version(), "v"), staticLibLink(tgt, "${libdir}", libs))
+`, libdir, slint, strings.TrimPrefix(version(), "v"), staticLibLink(tgt, "${libdir}", libs, q)), nil
 }
 
 // ---- go build/run wrappers ----
@@ -557,8 +584,14 @@ func darwinCross(libTarget, goarch, zigTriple string) (crossTarget, error) {
 	if !isDir(sdk) {
 		return crossTarget{}, fmt.Errorf("GOSLINT_MACOS_SDK=%q is not a directory", sdk)
 	}
-	cc := fmt.Sprintf("CC=zig cc -target %s -isysroot %s -F%s/System/Library/Frameworks -L%s/usr/lib",
-		zigTriple, sdk, sdk, sdk)
+	// CC is split by the Go toolchain like CGO_LDFLAGS, so an SDK path with a space
+	// (an external volume, "Application Support", …) must be quoted per token.
+	q, err := flagQuote(sdk)
+	if err != nil {
+		return crossTarget{}, fmt.Errorf("GOSLINT_MACOS_SDK: %w", err)
+	}
+	cc := fmt.Sprintf("CC=zig cc -target %s -isysroot %s %s %s", zigTriple,
+		q+sdk+q, q+"-F"+sdk+"/System/Library/Frameworks"+q, q+"-L"+sdk+"/usr/lib"+q)
 	return crossTarget{libTarget: libTarget, goos: "darwin",
 		env: []string{"GOOS=darwin", "GOARCH=" + goarch, cc}}, nil
 }
@@ -745,25 +778,60 @@ func wrapperEnv(tgt string) ([]string, error) {
 func cgoLDFLAGS(tgt string) (string, error) {
 	if dir := os.Getenv("GOSLINT_LIB_DIR"); dir != "" {
 		d := filepath.ToSlash(dir)
-		return fmt.Sprintf("-L%s -Wl,-rpath,%s -lgoslint", d, d), nil
-	}
-	ldpath := filepath.Join(pkgconfigDir(tgt), "cgo_ldflags")
-	b, err := os.ReadFile(ldpath)
-	if err != nil {
-		if !os.IsNotExist(err) {
-			return "", err
+		q, err := flagQuote(d)
+		if err != nil {
+			return "", fmt.Errorf("GOSLINT_LIB_DIR: %w", err)
 		}
+		return fmt.Sprintf("%s %s -lgoslint", q+"-L"+d+q, q+"-Wl,-rpath,"+d+q), nil
+	}
+	line, ok, err := cachedLinkLine(tgt)
+	if err != nil {
+		return "", err
+	}
+	if !ok {
 		// Not set up yet — fresh machine or a newly-pinned go-slint version. Fetch it
 		// now instead of erroring; cached globally per version+target, so once only.
 		fmt.Fprintf(os.Stderr, "goslint: native lib for %s not cached — fetching it now (one-time)…\n", tgt)
 		if _, _, _, perr := ensureProvisioned(tgt, false); perr != nil {
 			return "", fmt.Errorf("could not auto-provision the native lib for %s: %w", tgt, perr)
 		}
-		if b, err = os.ReadFile(ldpath); err != nil {
+		if line, ok, err = cachedLinkLine(tgt); err != nil {
 			return "", err
 		}
+		if !ok {
+			return "", fmt.Errorf("the native lib for %s has no cgo link line after provisioning (not a static target?)", tgt)
+		}
 	}
-	return strings.TrimSpace(string(b)), nil
+	return line, nil
+}
+
+// cachedLinkLine returns the cgo link line ensureProvisioned recorded for tgt; ok is
+// false when tgt isn't (fully) provisioned. The cgo_ldflags file is the completion
+// marker — written last, atomically — but it is only trusted while the archive it
+// names is still there (a partly-cleaned cache would otherwise surface as a baffling
+// "no such file" at link time). One more case reads as unprovisioned: a lib dir with
+// a space whose line was cached by an older goslint, unquoted. That line never
+// linked; re-provisioning rewrites it (no re-download — the lib's checksum matches).
+func cachedLinkLine(tgt string) (line string, ok bool, err error) {
+	b, err := os.ReadFile(filepath.Join(pkgconfigDir(tgt), "cgo_ldflags"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", false, nil
+		}
+		return "", false, err
+	}
+	libdir := filepath.Join(cacheDir(tgt), "lib")
+	if !exists(filepath.Join(libdir, "libgoslint.a")) {
+		return "", false, nil
+	}
+	d := filepath.ToSlash(libdir)
+	q, err := flagQuote(d)
+	if err != nil {
+		return "", false, err
+	}
+	line = strings.TrimSpace(string(b))
+	stale := strings.ContainsAny(d, " \t") && !strings.HasPrefix(line, q+"-L"+d+q+" ")
+	return line, !stale, nil
 }
 
 // isProvisioned reports whether the native lib for tgt is already set up, WITHOUT
@@ -772,15 +840,48 @@ func isProvisioned(tgt string) bool {
 	if os.Getenv("GOSLINT_LIB_DIR") != "" {
 		return true
 	}
-	_, err := os.Stat(filepath.Join(pkgconfigDir(tgt), "cgo_ldflags"))
-	return err == nil
+	_, ok, _ := cachedLinkLine(tgt)
+	return ok
 }
 
 // linkLine builds the CGO_LDFLAGS for the static shim in libdir with libs being the
 // native-static-libs the manifest records. tgt selects the archive-reference form (see
 // linkByPath).
-func linkLine(tgt, libdir, libs string) string {
-	return staticLibLink(tgt, filepath.ToSlash(libdir), libs)
+func linkLine(tgt, libdir, libs string) (string, error) {
+	d := filepath.ToSlash(libdir)
+	q, err := flagQuote(d)
+	if err != nil {
+		return "", err
+	}
+	return staticLibLink(tgt, d, libs, q), nil
+}
+
+// flagQuote picks the quote character that keeps a flag token containing path in ONE
+// piece: "" when it needs none (so ordinary paths produce exactly the flags they
+// always did), otherwise ' or ". The flag strings built here have two readers:
+//
+//   - the Go toolchain, for CGO_LDFLAGS / CGO_CFLAGS / CC (cmd/internal/quoted.Split):
+//     fields split at whitespace; a field that BEGINS with ' or " runs verbatim to the
+//     matching quote. Nothing is unescaped — a backslash is an ordinary byte, so
+//     Windows paths pass through — and a quote later in a field is literal;
+//   - pkg-config, for goslint.pc's Libs: shell-style quoting.
+//
+// Wrapping the WHOLE token ('-L/a b/lib', never -L'/a b/lib' — the Go splitter would
+// take that second form apart at the space) satisfies both, so callers write
+// q+token+q. A path holding both quote characters, or a line break, can't be written
+// for either reader: that is an error, not a link line that silently splits.
+func flagQuote(path string) (string, error) {
+	switch {
+	case strings.ContainsAny(path, "\r\n"):
+		return "", fmt.Errorf("path %q contains a line break and can't be passed to the linker", path)
+	case !strings.ContainsAny(path, " \t'\""):
+		return "", nil
+	case !strings.Contains(path, "'"):
+		return "'", nil
+	case !strings.Contains(path, `"`):
+		return `"`, nil
+	}
+	return "", fmt.Errorf("path %q contains both ' and \" and can't be quoted for the linker — use a path without one of them", path)
 }
 
 // linkByPath reports whether tgt's linker wants libgoslint.a named by PATH rather than
@@ -810,12 +911,15 @@ func linkByPath(tgt string) bool {
 // The "duplicate libraries" warning is benign (GNU ld simply doesn't print it). If Go
 // ever stops doubling CGO_LDFLAGS, name the archive twice here (or use
 // -Wl,-force_load,<path>) to keep the second pass on macOS.
-func staticLibLink(tgt, libdir, libs string) string {
+//
+// q is the quote flagQuote chose for the real lib dir; it wraps each token that
+// carries libdir, so a cache dir with a space (C:/Users/First Last/…) stays one token.
+func staticLibLink(tgt, libdir, libs, q string) string {
 	if linkByPath(tgt) {
-		return fmt.Sprintf("-L%s %s/libgoslint.a %s", libdir, libdir, libs)
+		return fmt.Sprintf("%s %s %s", q+"-L"+libdir+q, q+libdir+"/libgoslint.a"+q, libs)
 	}
-	return fmt.Sprintf("-L%s -Wl,--start-group -l:libgoslint.a %s -Wl,--end-group",
-		libdir, libs)
+	return fmt.Sprintf("%s -Wl,--start-group -l:libgoslint.a %s -Wl,--end-group",
+		q+"-L"+libdir+q, libs)
 }
 
 // pickCC decides the cgo C compiler for a host build: nil means a native cc/gcc/clang
@@ -926,12 +1030,17 @@ func withGoslintOnPath(env []string) []string {
 // tag, if you prefer it.)
 func cmdEnv(args []string) error {
 	tgt := hostTarget()
-	if ld, err := cgoLDFLAGS(tgt); err == nil {
+	ld, err := cgoLDFLAGS(tgt)
+	if err == nil {
 		fmt.Println("export CGO_ENABLED=1")
 		fmt.Printf("export CGO_LDFLAGS=%q\n", ld)
 	}
 	fmt.Printf("export PKG_CONFIG_PATH=%q\n", prependPath(pkgconfigDir(tgt)))
-	return nil
+	// stdout is unchanged when the link line can't be resolved (it is what gets
+	// eval'd), but the failure is no longer swallowed: returning it prints the reason
+	// on stderr and exits non-zero, instead of an `eval` that quietly exports nothing
+	// usable and a link error much later.
+	return err
 }
 
 func prependPath(dir string) string {
@@ -1074,26 +1183,102 @@ func fetchBytes(url string) ([]byte, error) {
 	return io.ReadAll(r)
 }
 
-func download(url, dst string) error {
+// errChecksumMismatch is download's "the bytes aren't the release's" result; provision
+// turns it into the user-facing message naming the archive.
+var errChecksumMismatch = errors.New("checksum mismatch")
+
+// download fetches url and installs it at dst only once its SHA-256 matches want. The
+// bytes go to a uniquely-named temp file beside dst first: two goslint processes
+// provisioning the same lib at once (parallel builds on a fresh machine) then never
+// write into each other's file, and dst only ever appears — through an atomic rename —
+// as a complete, verified archive. A truncated or tampered download is never
+// installed, not even briefly. Every failure path removes the temp file.
+func download(url, dst, want string) (err error) {
 	r, err := open(url)
 	if err != nil {
 		return err
 	}
 	defer r.Close()
-	tmp := dst + ".tmp"
-	f, err := os.Create(tmp)
+	tmpPattern := filepath.Base(dst) + ".*.tmp"
+	// A goslint killed mid-download (Ctrl-C on a slow link) can't run the cleanup
+	// below, and with unique names nothing would ever overwrite its temp file. Sweep
+	// ones old enough that no live download can still be writing them.
+	orphans, _ := filepath.Glob(filepath.Join(filepath.Dir(dst), tmpPattern))
+	for _, p := range orphans {
+		if fi, serr := os.Stat(p); serr == nil && time.Since(fi.ModTime()) > time.Hour {
+			os.Remove(p)
+		}
+	}
+	f, err := os.CreateTemp(filepath.Dir(dst), tmpPattern)
 	if err != nil {
 		return err
 	}
-	if _, err := io.Copy(f, r); err != nil {
-		f.Close()
-		os.Remove(tmp)
+	tmp := f.Name()
+	defer func() {
+		if err != nil {
+			f.Close() // no-op if already closed
+			os.Remove(tmp)
+		}
+	}()
+	if _, err = io.Copy(f, r); err != nil {
 		return err
 	}
-	if err := f.Close(); err != nil {
+	if err = f.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmp, dst)
+	if !fileHasSHA(tmp, want) {
+		return errChecksumMismatch
+	}
+	// CreateTemp makes the file 0600; the cached lib is ordinary shared cache data.
+	if err = os.Chmod(tmp, 0o644); err != nil {
+		return err
+	}
+	if err = os.Rename(tmp, dst); err != nil {
+		// Windows won't replace a file another process holds open — e.g. the linker
+		// of a concurrent build reading the lib a racing goslint just installed. If
+		// dst already is the verified archive, their copy is as good as ours.
+		if fileHasSHA(dst, want) {
+			os.Remove(tmp)
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
+// writeFileAtomic writes data to a temp file beside path and renames it into place,
+// so a concurrent reader sees the old file or the new one — never a truncated one.
+func writeFileAtomic(path string, data []byte, perm os.FileMode) (err error) {
+	f, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
+	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	defer func() {
+		if err != nil {
+			f.Close() // no-op if already closed
+			os.Remove(tmp)
+		}
+	}()
+	if _, err = f.Write(data); err != nil {
+		return err
+	}
+	if err = f.Close(); err != nil {
+		return err
+	}
+	if err = os.Chmod(tmp, perm); err != nil {
+		return err
+	}
+	if err = os.Rename(tmp, path); err != nil {
+		// Same Windows open-handle case as download: a racing goslint that already
+		// wrote identical content has done this job.
+		if cur, rerr := os.ReadFile(path); rerr == nil && bytes.Equal(cur, data) {
+			os.Remove(tmp)
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 func fileHasSHA(path, want string) bool {

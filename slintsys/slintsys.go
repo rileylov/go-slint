@@ -6,8 +6,8 @@
 // and value call must happen on one OS thread (lock it with runtime.LockOSThread).
 //
 // Linking: the native shim is resolved per build tag (see link_dev.go /
-// link_pkgconfig.go). For in-repo development, `make lib` stages it in
-// ../lib/<goos>_<goarch>/ before `go build`/`go test`.
+// link_extlib.go / link_pkgconfig.go). For in-repo development, `make lib` stages
+// it in ../lib/<goos>_<goarch>/ before `go build`/`go test`.
 package slintsys
 
 /*
@@ -18,16 +18,22 @@ package slintsys
 import "C"
 
 // The LDFLAGS that link the native shim live in build-tag-gated files so the same
-// source ships two ways:
+// source ships three ways:
 //   - default (in-repo dev): link the lib staged by `make lib` in lib/<goos>_<goarch>/
 //     — see link_dev.go.
-//   - `-tags goslint_pkgconfig` (the shippable path): resolve link flags via
-//     pkg-config, so `goslint setup` can point at a downloaded prebuilt — see
-//     link_pkgconfig.go.
+//   - `-tags goslint_extlib` (what the goslint CLI uses): no flags here at all; they
+//     come from the CGO_LDFLAGS the CLI exports for the downloaded prebuilt — see
+//     link_extlib.go.
+//   - `-tags goslint_pkgconfig`: resolve link flags via pkg-config, against the
+//     goslint.pc that `goslint setup` writes — see link_pkgconfig.go.
 // On android neither applies: that build is a c-shared whose goslint_* symbols are
 // resolved later when the Rust cdylib links the archive in.
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+	"strings"
+)
 
 // takeString converts an owned char* returned by the library into a Go string
 // and frees the C allocation. A NULL pointer yields "".
@@ -45,6 +51,38 @@ func lastErrorOr(what string) string {
 		return e
 	}
 	return "slint: " + what + " failed"
+}
+
+// errClosed is the detail reported when an instance is used after Close released
+// its native component.
+var errClosed = errors.New("instance is closed")
+
+// opError is the error for a failed operation on an instance: "slint: <op>:
+// <detail>". The detail is what the shim recorded, which on its own is only "no
+// such property" or "wrong type" — it names neither the property nor its origin,
+// so a bare `if err != nil { log.Print(err) }` printed a message nobody could place.
+// op carries that: `get property "count"`, `invoke "save"`. With nothing recorded
+// the result is "slint: <op> failed".
+func opError(op string) error {
+	if e := LastError(); e != "" {
+		return fmt.Errorf("slint: %s: %s", op, e)
+	}
+	return fmt.Errorf("slint: %s failed", op)
+}
+
+// opRC is rc for an instance operation (see opError).
+func opRC(code C.int, op string) error {
+	if code == 0 {
+		return nil
+	}
+	return opError(op)
+}
+
+// shimError is the error for a failed call whose shim message already says what
+// was being done (`load image "x.png": …`, `take snapshot: …`): that message under
+// the "slint:" prefix, or "slint: <what> failed" when nothing was recorded.
+func shimError(what string) error {
+	return errors.New("slint: " + strings.TrimPrefix(lastErrorOr(what), "slint: "))
 }
 
 // rc turns a C status code (0 == ok) into an error.

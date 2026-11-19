@@ -64,7 +64,10 @@ func (t *Timer) Restart() {
 }
 
 // Running reports whether the timer is currently active.
-func (t *Timer) Running() bool { return bool(C.goslint_timer_running(t.raw())) }
+func (t *Timer) Running() bool {
+	CheckUIThread("Timer.Running", "")
+	return bool(C.goslint_timer_running(t.raw()))
+}
 
 // Close stops and releases the timer's native memory. Safe to call multiple
 // times and through any copy — the first call frees, the rest are no-ops.
@@ -80,6 +83,7 @@ func (t *Timer) Free() { t.Close() }
 
 // SingleShot fires fn once after intervalMs without a retained Timer.
 func SingleShot(intervalMs uint64, fn func()) {
+	CheckUIThread("SingleShot", "")
 	h := cgo.NewHandle(fn)
 	C.goslintTimerSingleShotBridge(C.uint64_t(intervalMs), C.uintptr_t(h))
 }

@@ -25,6 +25,8 @@ the bindings.
 ```sh
 make slint    # clone/checkout upstream Slint at .slint-version (gitignored)
 make lib      # cargo-build the shim + stage libgoslint.{a,so} into lib/<os>_<arch>/
+              # (and strip LLVM bitcode from the .a — Go rejects LTO sections in a
+              # `#cgo LDFLAGS: -L` dir; "disallowed LTO section" = rerun make lib)
 make test     # lib, then go test . ./slintsys/ ./internal/conformance/
 make conformance
 make update-slint [SLINT_REF=v1.x]   # bump the pin, rebuild, verify, record .slint-version
@@ -50,6 +52,14 @@ localized Rust compile error in `make lib`, not a silent runtime break.
   call site (see `newResult` in `compiler.go`), never after a function's defers ran.
 - Returned `char*`/handles are library-owned; callers free via the matching `_free`.
   NULL = failure; detail via `goslint_last_error()`.
+- Strings returned to Go as NUL-terminated `char*` can't carry a NUL byte
+  (`to_c_string` yields NULL). Identifiers and messages never contain one; *value*
+  strings can, so they are read through `goslint_value_str` (borrowed pointer +
+  length). Use that pattern for any new user-data string going Rust→Go.
+- Errors from instance operations are built by `opError` (slintsys.go) as
+  `slint: <op> "<name>": <shim detail>` — the shim's own message is only the detail
+  (`no such property`). A method on a closed instance returns `…: instance is closed`
+  without calling the shim.
 - Go strings are validated before crossing (`validString` in `value.go`): the shim
   rejects non-UTF-8 and `C.CString` truncates at NUL, so both must fail loudly.
   `cValue` never returns a nil value with a nil error. Conversion errors carry no
@@ -73,8 +83,19 @@ the cgo.Handle early → "misuse of an invalid Handle". See `timer.rs`
 Void↔nil, Number↔float64, Bool↔bool, String↔string, Struct↔map[string]any
 (recursive), Enum↔`slint.Enum{Type,Value}`, Color↔`slint.Color{R,G,B,A}`,
 Image↔`slint.Image`, Model↔[]any (read snapshot) / `slint.SliceModel` |
-`NewModel(Model)` (live, write). Set/Get and callbacks accept/return all of these
-(models unwrap via `toSys` in Set/Invoke).
+`NewModel(Model)` (live, write). Set/Get and callbacks accept/return all of these.
+Reads always produce that canonical form; writes take more. `cValue` (value.go) is
+the one funnel every Go→Slint value passes through — top-level, struct field, array
+element, model row, callback return — so anything it accepts works in all of those
+places: every int/float kind, `time.Duration` (→ ms), and, via its reflection
+fallback `cOther`, named basic types, typed slices/arrays, string-keyed typed maps
+and model wrappers (anything with `Handle() *ModelHandle`, i.e. `slint.SliceModel`).
+Add a new accepted type there, never by pre-converting in package `slint`.
+
+**Invoke is validated in the shim.** The interpreter trusts `invoke`'s arguments and
+panics on a wrong count/kind, so `goslint_instance_invoke{,_global}` first check
+them against the declared signature (`check_args` in instance.rs; signatures are
+cached per instance in a thread-local, dropped in `goslint_instance_free`).
 
 **Model bridge:** a Go `Model` (RowCount/RowData/SetRowData) is wrapped by a Rust
 `GoModelInner: i_slint_core::model::Model` holding a `ModelNotify`; the opaque
@@ -191,7 +212,7 @@ Tracked breaking changes to make when cutting **v1.0** (don't do them in 0.x):
   v1 contract. Make them real `slint` structs wrapping the `slintsys` handle. This is
   non-trivial: images/timers flow through the dynamic Value system *as* `slintsys`
   types, so it needs wrapping/unwrapping at every boundary where one surfaces — `Set`
-  (via `toSys`), `Get`/typed getters (`goValue` returns `*slintsys.Image`), callback
+  (via `cValue`), `Get`/typed getters (`goValue` returns `*slintsys.Image`), callback
   args, model rows, and values nested inside structs. Keep the finalizer leak-watch
   (the wrapper's `Close` must still drive the inner handle's release) and the
   image-read path (#2) working. See the `TODO(v1.0)` at the `Image`/`Timer` aliases in

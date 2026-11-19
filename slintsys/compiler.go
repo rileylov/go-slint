@@ -186,7 +186,7 @@ func (d *Definition) Create() (*Instance, error) {
 	CheckUIThread("Create", "")
 	p := C.goslint_definition_create(d.ptr)
 	if p == nil {
-		return nil, errors.New(lastErrorOr("create"))
+		return nil, opError("create")
 	}
 	return (&Instance{ptr: p}).watch(), nil
 }
@@ -197,7 +197,7 @@ func (d *Definition) CreateWithWindow(winOwner *Instance) (*Instance, error) {
 	CheckUIThread("CreateWithWindow", "")
 	p := C.goslint_definition_create_with_window(d.ptr, winOwner.ptr)
 	if p == nil {
-		return nil, errors.New(lastErrorOr("create with window"))
+		return nil, opError("create with window")
 	}
 	return (&Instance{ptr: p}).watch(), nil
 }

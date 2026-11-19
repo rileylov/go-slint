@@ -110,3 +110,70 @@ func TestIOSShimLibLocal(t *testing.T) {
 		}
 	}
 }
+
+// TestCheckIOSOutput pins what `goslint ios build` may delete to make room for the
+// new bundle. It used to os.RemoveAll whatever -o named, so `-o ~/Projects` (or
+// `-o .`) wiped that directory; now only something recognisably an app bundle is
+// replaced, and everything else is an error with nothing removed.
+func TestCheckIOSOutput(t *testing.T) {
+	root := t.TempDir()
+	dirWith := func(name string, files ...string) string {
+		d := filepath.Join(root, name)
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		for _, f := range files {
+			mkfile(t, d, f, "x")
+		}
+		return d
+	}
+	plainFile := filepath.Join(root, "notes.txt")
+	mkfile(t, root, "notes.txt", "x")
+
+	cases := []struct {
+		name, out string
+		wantOK    bool
+	}{
+		{"nothing there yet", filepath.Join(root, "New.app"), true},
+		{"previous .app bundle", dirWith("Old.app", "Old", "Info.plist"), true},
+		{".app left by an interrupted build", dirWith("Half.app", "Half"), true},
+		{".app with a trailing slash", dirWith("Slash.app", "Info.plist") + string(filepath.Separator), true},
+		{"empty directory", dirWith("empty"), true},
+		{"signed bundle under a non-.app name", dirWith("out", "app", "Info.plist", "_CodeSignature/CodeResources"), true},
+		{"a projects directory", dirWith("Projects", "work/main.go", "thesis.tex"), false},
+		{"a directory that merely has an Info.plist", dirWith("XcodeProj", "Info.plist", "AppDelegate.swift"), false},
+		{"a regular file", plainFile, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := checkIOSOutput(tc.out); (err == nil) != tc.wantOK {
+				t.Errorf("checkIOSOutput(%s) = %v, want ok=%v", tc.out, err, tc.wantOK)
+			}
+		})
+	}
+
+	// "." must be judged by what it contains, never waved through.
+	chdir(t, dirWith("cwd", "keep.txt"))
+	if err := checkIOSOutput("."); err == nil {
+		t.Error("checkIOSOutput(\".\") accepted a directory of unrelated files")
+	}
+}
+
+// TestBuildIOSAppRefusesForeignOutput drives the real build entry point: pointed at a
+// directory of the user's files it must fail before building anything (so this runs
+// without Xcode) and leave every file in place.
+func TestBuildIOSAppRefusesForeignOutput(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "Projects")
+	mkfile(t, out, "work/main.go", "package main\n")
+	mkfile(t, out, "thesis.tex", "years of work\n")
+
+	err := buildIOSApp(resolveIOSCfg(".", out, "", "", "1.0", 1, "14.0", "portrait", "", "", false))
+	if err == nil || !strings.Contains(err.Error(), "refusing to delete") {
+		t.Fatalf("buildIOSApp = %v, want a refusal to delete the output dir", err)
+	}
+	for _, rel := range []string{"work/main.go", "thesis.tex"} {
+		if !exists(filepath.Join(out, rel)) {
+			t.Errorf("%s was deleted", rel)
+		}
+	}
+}

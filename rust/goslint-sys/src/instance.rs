@@ -2,8 +2,14 @@
 // property get/set and window show/hide/run. UI-thread affine.
 
 use crate::{guard, guard_release, opt_str, set_last_error, to_c_string};
+use i_slint_compiler::langtype::Type as LangType;
+use i_slint_compiler::object_tree::PropertyVisibility;
+use i_slint_compiler::parser::normalize_identifier;
 use slint_interpreter::{ComponentDefinition, ComponentHandle, ComponentInstance, Value};
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::ffi::c_char;
+use std::rc::Rc;
 
 /// Owned component name, or NULL.
 ///
@@ -188,14 +194,19 @@ pub unsafe extern "C" fn goslint_instance_set_property(
 #[no_mangle]
 pub unsafe extern "C" fn goslint_instance_show(i: *const ComponentInstance) -> i32 {
     guard(1, || match i.as_ref() {
-        Some(i) => match i.show() {
+        // clone_strong (see RE-ENTRANCY RULE): showing lays the window out, which
+        // evaluates bindings and so can reach a Go-implemented pure callback.
+        Some(i) => match i.clone_strong().show() {
             Ok(()) => 0,
             Err(e) => {
                 set_last_error(e.to_string());
                 1
             }
         },
-        None => 1,
+        None => {
+            set_last_error("instance is NULL");
+            1
+        }
     })
 }
 
@@ -206,14 +217,17 @@ pub unsafe extern "C" fn goslint_instance_show(i: *const ComponentInstance) -> i
 #[no_mangle]
 pub unsafe extern "C" fn goslint_instance_hide(i: *const ComponentInstance) -> i32 {
     guard(1, || match i.as_ref() {
-        Some(i) => match i.hide() {
+        Some(i) => match i.clone_strong().hide() {
             Ok(()) => 0,
             Err(e) => {
                 set_last_error(e.to_string());
                 1
             }
         },
-        None => 1,
+        None => {
+            set_last_error("instance is NULL");
+            1
+        }
     })
 }
 
@@ -234,7 +248,10 @@ pub unsafe extern "C" fn goslint_instance_run(i: *const ComponentInstance) -> i3
                 1
             }
         },
-        None => 1,
+        None => {
+            set_last_error("instance is NULL");
+            1
+        }
     })
 }
 
@@ -745,6 +762,7 @@ pub unsafe extern "C" fn goslint_instance_window_drag_resize(
 pub unsafe extern "C" fn goslint_instance_free(i: *mut ComponentInstance) {
     guard_release((), || {
         if !i.is_null() {
+            forget_signatures(i);
             drop(Box::from_raw(i));
         }
     });
@@ -782,6 +800,143 @@ impl GoCallbackData {
             *unsafe { Box::from_raw(ret) }
         }
     }
+}
+
+// ---- argument validation for invoke -----------------------------------------
+//
+// `ComponentInstance::invoke` trusts its arguments. A `.slint` function (or a
+// callback whose handler is written in `.slint`) reads them by index and by
+// declared type, so too few arguments or one of the wrong kind PANICS inside the
+// interpreter ("index out of bounds", "unsupported Value::String * Value::Number").
+// `guard` contains that, but the caller got "panic in goslint-sys" plus a Rust
+// backtrace on stderr for what is an ordinary mistake in their own call. So the
+// call is checked against the declared signature first and rejected with a message
+// that says what is wrong. (`set_property` needs no such help: the interpreter
+// type-checks the value itself and returns `SetPropertyError`.)
+
+/// Declared argument types of an instance's public callbacks and functions, by
+/// normalized name; a global's are under its exported name.
+#[derive(Default)]
+struct Signatures {
+    own: HashMap<String, Vec<LangType>>,
+    globals: HashMap<String, HashMap<String, Vec<LangType>>>,
+}
+
+thread_local! {
+    /// Signatures per live instance, keyed by the instance's handle address. Built
+    /// on an instance's first invoke — enumerating a component's interface clones
+    /// every property's type, far too slow to repeat per call — and dropped in
+    /// `goslint_instance_free`, so an address is never looked up after its
+    /// instance is gone (and a reused address starts empty).
+    static SIGNATURES: RefCell<HashMap<usize, Rc<Signatures>>> = RefCell::new(HashMap::new());
+}
+
+fn callables(
+    items: impl Iterator<Item = (String, (LangType, PropertyVisibility))>,
+) -> HashMap<String, Vec<LangType>> {
+    items
+        .filter(|(_, (_, vis))| !matches!(vis, PropertyVisibility::Private))
+        .filter_map(|(name, (ty, _))| match ty {
+            LangType::Callback(f) | LangType::Function(f) => {
+                Some((normalize_identifier(&name).to_string(), f.args.clone()))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+fn signatures(key: *const ComponentInstance, inst: &ComponentInstance) -> Rc<Signatures> {
+    let key = key as usize;
+    if let Some(s) = SIGNATURES.with(|c| c.borrow().get(&key).cloned()) {
+        return s;
+    }
+    let def = inst.definition();
+    let mut sigs = Signatures {
+        own: callables(def.properties_and_callbacks()),
+        globals: HashMap::new(),
+    };
+    for g in def.globals() {
+        if let Some(items) = def.global_properties_and_callbacks(&g) {
+            sigs.globals.insert(g, callables(items));
+        }
+    }
+    let sigs = Rc::new(sigs);
+    SIGNATURES.with(|c| c.borrow_mut().insert(key, sigs.clone()));
+    sigs
+}
+
+fn forget_signatures(key: *const ComponentInstance) {
+    // try_with: this runs from a release path, which may be reached during thread
+    // teardown after the thread-local itself was destroyed.
+    let _ = SIGNATURES.try_with(|c| c.borrow_mut().remove(&(key as usize)));
+}
+
+/// Whether `v` is the kind of value a parameter of type `ty` takes. Mirrors the
+/// interpreter's own check for `set_property`, but only for the types the Go
+/// mapping produces; anything else is left for the interpreter to judge. An array
+/// is checked by kind only — walking its rows would call into a Go-backed model
+/// once per row on every invoke.
+fn value_fits(ty: &LangType, v: &Value) -> bool {
+    match ty {
+        LangType::Int32
+        | LangType::Float32
+        | LangType::UnitProduct(_)
+        | LangType::Duration
+        | LangType::PhysicalLength
+        | LangType::LogicalLength
+        | LangType::Rem
+        | LangType::Angle
+        | LangType::Percent => matches!(v, Value::Number(_)),
+        LangType::String => matches!(v, Value::String(_)),
+        LangType::Bool => matches!(v, Value::Bool(_)),
+        LangType::Color | LangType::Brush => matches!(v, Value::Brush(_)),
+        LangType::Image => matches!(v, Value::Image(_)),
+        LangType::Array(_) => matches!(v, Value::Model(_)),
+        LangType::Struct(s) => match v {
+            Value::Struct(sv) => sv
+                .iter()
+                .all(|(k, fv)| s.fields.get(k).is_some_and(|ft| value_fits(ft, fv))),
+            _ => false,
+        },
+        LangType::Enumeration(en) => {
+            matches!(v, Value::EnumerationValue(name, _) if name == en.name.as_str())
+        }
+        _ => true,
+    }
+}
+
+/// What a value is, in `.slint` terms, for an error message.
+fn describe(v: &Value) -> String {
+    match v {
+        Value::Void => "void".into(),
+        Value::Number(_) => "a number".into(),
+        Value::String(_) => "a string".into(),
+        Value::Bool(_) => "a bool".into(),
+        Value::Model(_) => "an array".into(),
+        Value::Struct(_) => "a struct".into(),
+        Value::Brush(_) => "a color/brush".into(),
+        Value::Image(_) => "an image".into(),
+        Value::EnumerationValue(name, _) => format!("a {name} enum value"),
+        _ => "a value of another type".into(),
+    }
+}
+
+/// Check `args` against a declared parameter list.
+fn check_args(params: &[LangType], args: &[Value]) -> Result<(), String> {
+    if params.len() != args.len() {
+        return Err(format!(
+            "takes {} argument{}, got {}",
+            params.len(),
+            if params.len() == 1 { "" } else { "s" },
+            args.len()
+        ));
+    }
+    for (k, (ty, v)) in params.iter().zip(args).enumerate() {
+        if !value_fits(ty, v) {
+            return Err(format!("argument {k}: got {}, want {ty}", describe(v)));
+        }
+    }
+    Ok(())
 }
 
 /// Clone a borrowed C array of Value pointers into owned Values.
@@ -872,6 +1027,17 @@ pub unsafe extern "C" fn goslint_instance_invoke(
             }
         };
         let a = unsafe { collect_args(args, n) };
+        // A name the signatures don't know is left to the interpreter, which
+        // reports it as "no such callback or function".
+        if let Some(params) = signatures(i, &inst)
+            .own
+            .get(normalize_identifier(name).as_str())
+        {
+            if let Err(e) = check_args(params, &a) {
+                set_last_error(e);
+                return std::ptr::null_mut();
+            }
+        }
         match inst.invoke(name, &a) {
             Ok(val) => Box::into_raw(Box::new(val)),
             Err(e) => {
@@ -901,7 +1067,12 @@ pub unsafe extern "C" fn goslint_instance_get_global_property(
         let inst = inst.clone_strong(); // see RE-ENTRANCY RULE
         let (g, nm) = match (opt_str(global), opt_str(name)) {
             (Some(g), Some(n)) => (g, n),
-            _ => return std::ptr::null_mut(),
+            _ => {
+                crate::set_last_error(
+                    "get_global_property: global or name is NULL or not valid UTF-8",
+                );
+                return std::ptr::null_mut();
+            }
         };
         match inst.get_global_property(g, nm) {
             Ok(v) => Box::into_raw(Box::new(v)),
@@ -933,7 +1104,12 @@ pub unsafe extern "C" fn goslint_instance_set_global_property(
         let inst = inst.clone_strong(); // see RE-ENTRANCY RULE
         let (g, nm) = match (opt_str(global), opt_str(name)) {
             (Some(g), Some(n)) => (g, n),
-            _ => return 1,
+            _ => {
+                crate::set_last_error(
+                    "set_global_property: global or name is NULL or not valid UTF-8",
+                );
+                return 1;
+            }
         };
         let val = match v.as_ref() {
             Some(v) => v.clone(),
@@ -981,7 +1157,9 @@ pub unsafe extern "C" fn goslint_instance_set_global_callback(
         let (g, nm) = match (opt_str(global), opt_str(name)) {
             (Some(g), Some(n)) => (g, n),
             _ => {
-                crate::set_last_error("set_global_callback: global or name is NULL or not valid UTF-8");
+                crate::set_last_error(
+                    "set_global_callback: global or name is NULL or not valid UTF-8",
+                );
                 return 1;
             }
         };
@@ -1016,9 +1194,22 @@ pub unsafe extern "C" fn goslint_instance_invoke_global(
         let inst = inst.clone_strong(); // see RE-ENTRANCY RULE
         let (g, nm) = match (opt_str(global), opt_str(name)) {
             (Some(g), Some(n)) => (g, n),
-            _ => return std::ptr::null_mut(),
+            _ => {
+                crate::set_last_error("invoke_global: global or name is NULL or not valid UTF-8");
+                return std::ptr::null_mut();
+            }
         };
         let a = unsafe { collect_args(args, n) };
+        if let Some(params) = signatures(i, &inst)
+            .globals
+            .get(g)
+            .and_then(|m| m.get(normalize_identifier(nm).as_str()))
+        {
+            if let Err(e) = check_args(params, &a) {
+                set_last_error(e);
+                return std::ptr::null_mut();
+            }
+        }
         match inst.invoke_global(g, nm, &a) {
             Ok(val) => Box::into_raw(Box::new(val)),
             Err(e) => {

@@ -47,7 +47,7 @@ func LoadImage(path string) (*Image, error) {
 	defer C.free(unsafe.Pointer(cs))
 	p := C.goslint_image_load_from_path(cs)
 	if p == nil {
-		return nil, errors.New(lastErrorOr("load image " + path))
+		return nil, shimError("load image " + path)
 	}
 	return newImage(p), nil
 }
@@ -76,7 +76,7 @@ func ImageFromSVG(data []byte) (*Image, error) {
 	}
 	p := C.goslint_image_load_from_svg_data((*C.uint8_t)(unsafe.Pointer(&data[0])), C.size_t(len(data)))
 	if p == nil {
-		return nil, errors.New(lastErrorOr("load SVG image"))
+		return nil, shimError("load SVG image")
 	}
 	return newImage(p), nil
 }
@@ -92,7 +92,7 @@ func ImageFromData(data []byte, format string) (*Image, error) {
 	defer C.free(unsafe.Pointer(cf))
 	p := C.goslint_image_load_from_data((*C.uint8_t)(unsafe.Pointer(&data[0])), C.size_t(len(data)), cf)
 	if p == nil {
-		return nil, errors.New(lastErrorOr("load image data"))
+		return nil, shimError("load image data")
 	}
 	return newImage(p), nil
 }
@@ -107,7 +107,7 @@ func imageFromPixels(pix []byte, w, h, bpp int, mk func(*C.uint8_t) *C.GoImage) 
 	}
 	p := mk((*C.uint8_t)(unsafe.Pointer(&pix[0])))
 	if p == nil {
-		return nil, errors.New(lastErrorOr("image from pixels"))
+		return nil, shimError("image from pixels")
 	}
 	return newImage(p), nil
 }

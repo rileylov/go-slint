@@ -1,6 +1,6 @@
 // goslint-sys: a flat C ABI over the safe `slint-interpreter` Rust API.
 //
-// Conventions (see ../../PLAN.md §4.1):
+// Conventions (see "Layer 0 conventions" in ../../CLAUDE.md):
 //   * Every extern "C" body runs inside `guard` (catch_unwind). Unwinding across
 //     the C boundary is UB.
 //   * Returned `*mut c_char` / handles are heap-owned by this library; the caller
@@ -76,7 +76,7 @@ pub(crate) fn guard<T>(default: T, f: impl FnOnce() -> T) -> T {
 /// `guard` for the infallible release entry points (`goslint_*_free`): the same
 /// catch_unwind containment, but the last-error slot is left untouched, so a free
 /// between a failing call and `goslint_last_error` cannot erase its message. A
-/// panic inside a release still records "panic in goslint-sys".
+/// panic inside a release still records "panic in goslint-sys: <message>".
 pub(crate) fn guard_release<T>(default: T, f: impl FnOnce() -> T) -> T {
     run_guarded(default, f)
 }
@@ -84,8 +84,18 @@ pub(crate) fn guard_release<T>(default: T, f: impl FnOnce() -> T) -> T {
 fn run_guarded<T>(default: T, f: impl FnOnce() -> T) -> T {
     match catch_unwind(AssertUnwindSafe(f)) {
         Ok(v) => v,
-        Err(_) => {
-            set_last_error("panic in goslint-sys");
+        Err(payload) => {
+            // Keep the panic's own message: "panic in goslint-sys" alone told the
+            // caller nothing, while the text that explains it (an index out of
+            // bounds inside the interpreter, say) only went to stderr.
+            let detail = payload
+                .downcast_ref::<&str>()
+                .map(|s| s.to_string())
+                .or_else(|| payload.downcast_ref::<String>().cloned());
+            set_last_error(match detail {
+                Some(d) => format!("panic in goslint-sys: {d}"),
+                None => "panic in goslint-sys".to_string(),
+            });
             default
         }
     }

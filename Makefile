@@ -15,6 +15,36 @@ SLINT_REF ?= origin/master
 
 .PHONY: lib slint test conformance clean update-slint lib-windows build-windows lib-ios
 
+# Remove embedded LLVM bitcode from a static archive, in place.
+#
+# Rust's prebuilt std carries bitcode in every object so it can take part in LTO.
+# Our own crates are merged by `lto = "fat"`, but compiler_builtins is exempt from
+# LTO and its objects are copied into libgoslint.a as they are — `.llvmbc` sections
+# included. Current Go toolchains scan the archives in a `#cgo LDFLAGS: -L` directory
+# and refuse to build if one holds an LTO section ("disallowed LTO section
+# ".llvmbc""), which broke `go build`/`go test` in this repo: link_dev.go points -L at
+# lib/<os>_<arch>/, where this archive is staged next to the .so it actually links.
+# The bitcode is dead weight for a normal link, so drop it. (The four names cover
+# ELF/COFF and Mach-O; a name that doesn't occur is ignored.)
+#
+# objcopy: llvm-objcopy or GNU objcopy from PATH (either handles an archive in
+# place); failing those, the llvm-objcopy rustup ships as rust-objcopy — last,
+# because on Linux it only runs with the toolchain's lib dir on the loader path. A
+# missing or failing objcopy only warns: the lib itself is fine, and Go's error is
+# explicit if the strip turns out to matter.
+OBJCOPY ?= $(shell command -v llvm-objcopy || command -v objcopy || \
+	{ r="$$(rustc --print sysroot 2>/dev/null)/lib/rustlib/$$(rustc -vV 2>/dev/null | sed -n 's/^host: //p')/bin/rust-objcopy"; \
+	  [ -x "$$r" ] && echo "$$r"; })
+define strip-bitcode
+	@if [ -n "$(OBJCOPY)" ]; then \
+		"$(OBJCOPY)" --remove-section=.llvmbc --remove-section=.llvmcmd \
+			--remove-section=__LLVM,__bitcode --remove-section=__LLVM,__cmdline $(1) \
+			|| echo "warning: could not strip LLVM bitcode from $(1); recent Go toolchains may refuse to link next to it"; \
+	else \
+		echo "warning: no objcopy found; $(1) keeps its LLVM bitcode and recent Go toolchains will refuse to link next to it (install llvm or binutils, or set OBJCOPY=)"; \
+	fi
+endef
+
 # Fetch the pinned upstream Slint source (gitignored; needed only to build the
 # native shim from source — most users use prebuilt libs via `goslint setup`).
 slint:
@@ -27,6 +57,7 @@ lib:
 	cd $(RUST_DIR) && cargo build --release
 	mkdir -p $(LIBDIR)
 	cp $(TARGET)/libgoslint.a $(LIBDIR)/libgoslint.a
+	$(call strip-bitcode,$(LIBDIR)/libgoslint.a)
 	cp $(TARGET)/libgoslint.so $(LIBDIR)/libgoslint.so 2>/dev/null || true
 	cp $(TARGET)/libgoslint.dylib $(LIBDIR)/libgoslint.dylib 2>/dev/null || true
 	@# macOS: cargo bakes an absolute deps/ path as the dylib's install name, so a

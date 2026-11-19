@@ -8,9 +8,16 @@ package slintsys
 // the -rpath below resolves it instead of the absolute cargo target path.) Windows:
 // link the import lib (libgoslint.dll.a) and ship goslint.dll beside the .exe.
 // Shipping a real app uses the goslint_extlib or goslint_pkgconfig path instead.
+//
+// The Go toolchain inspects every archive in a `#cgo LDFLAGS: -L` directory and
+// rejects ones that carry LTO sections, so the libgoslint.a staged next to the .so
+// must have its LLVM bitcode stripped — `make lib` does that (see strip-bitcode in
+// the Makefile). "disallowed LTO section" from `go build` means a stale lib/: rerun
+// `make lib`.
 
 /*
 #cgo linux,amd64 LDFLAGS: -L${SRCDIR}/../lib/linux_amd64 -Wl,-rpath,${SRCDIR}/../lib/linux_amd64 -lgoslint
+#cgo linux,arm64 LDFLAGS: -L${SRCDIR}/../lib/linux_arm64 -Wl,-rpath,${SRCDIR}/../lib/linux_arm64 -lgoslint
 #cgo darwin,arm64 LDFLAGS: -L${SRCDIR}/../lib/darwin_arm64 -Wl,-rpath,${SRCDIR}/../lib/darwin_arm64 -lgoslint
 #cgo darwin,amd64 LDFLAGS: -L${SRCDIR}/../lib/darwin_amd64 -Wl,-rpath,${SRCDIR}/../lib/darwin_amd64 -lgoslint
 #cgo windows,amd64 LDFLAGS: -L${SRCDIR}/../lib/windows_amd64 -lgoslint

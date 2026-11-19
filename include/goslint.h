@@ -1,6 +1,8 @@
 /* goslint.h — C ABI for the go-slint shim (Layer 0).
  *
- * Hand-written through M1; cbindgen takes over as the surface grows (PLAN.md §4).
+ * Hand-written: this file is the ABI contract. Keep it in step with the
+ * extern "C" functions in rust/goslint-sys/src (see "Layer 0 conventions" in
+ * CLAUDE.md).
  *
  * Ownership: every char* and every handle (GoValue*, GoCompiler*, ...) returned
  * by this library is heap-owned by the library and must be released with the
@@ -180,6 +182,10 @@ int32_t  goslint_value_type(const GoValue *v);
 bool     goslint_value_as_double(const GoValue *v, double *out);
 bool     goslint_value_as_bool(const GoValue *v, bool *out);
 char    *goslint_value_as_string(const GoValue *v);
+/* Borrowed UTF-8 bytes of a string value (NOT NUL-terminated; length in *len), or
+ * NULL if v is not a string. Valid until v is freed; do not free the pointer. Unlike
+ * goslint_value_as_string this carries strings that contain NUL bytes. */
+const char *goslint_value_str(const GoValue *v, size_t *len);
 GoValue *goslint_value_clone(const GoValue *v);
 bool     goslint_value_eq(const GoValue *a, const GoValue *b);
 void     goslint_value_free(GoValue *v);

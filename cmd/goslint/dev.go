@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -115,7 +116,7 @@ func cmdDev(args []string) error {
 	watchSlint := devWatchesSlint(genDir)
 
 	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, os.Interrupt)
+	notifyStop(sig)
 
 	if watchSlint {
 		fmt.Println(">> running — edit .slint or .go to rebuild + reload (embedded markup); Ctrl-C to stop")
@@ -170,16 +171,50 @@ func cmdDev(args []string) error {
 	}
 }
 
+// notifyStop routes the signals that should end a dev session to sig. Ctrl-C alone
+// isn't enough: a supervisor, an IDE's stop button, or a plain `kill` sends SIGTERM,
+// and left unhandled it kills goslint outright — the deferred cleanup never runs, so
+// the app it launched keeps running with nothing watching it. syscall.SIGTERM is
+// defined on every OS Go builds this for; on Windows os/signal delivers it for
+// console-close/logoff/shutdown, so no build tag is needed.
+func notifyStop(sig chan<- os.Signal) {
+	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+}
+
 // newestExt returns the latest mtime among files with the given extension under
 // pkg's directory.
 func newestExt(pkg, ext string) time.Time {
+	return newestSource(pkg, func(p string) bool { return filepath.Ext(p) == ext })
+}
+
+// generatedNewest returns the latest mtime among generated wrappers (*.slint.go)
+// under pkg's directory; zero if there are none.
+func generatedNewest(pkg string) time.Time {
+	return newestSource(pkg, func(p string) bool { return strings.HasSuffix(p, ".slint.go") })
+}
+
+// newestSource returns the latest mtime among the files under pkg's directory that
+// match. The dev loops call it twice a second, so it must not descend into trees that
+// hold no project source — a .git or node_modules can be tens of thousands of files,
+// all of them stat'ed on every tick for nothing. skipWatchDir prunes those; the root
+// itself is never pruned, whatever it is called ("." included).
+func newestSource(pkg string, match func(path string) bool) time.Time {
 	dir := pkg
 	if fi, err := os.Stat(pkg); err == nil && !fi.IsDir() {
 		dir = filepath.Dir(pkg)
 	}
 	var newest time.Time
 	_ = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() || filepath.Ext(p) != ext {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			if p != dir && skipWatchDir(d.Name()) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !match(p) {
 			return nil
 		}
 		if fi, err := d.Info(); err == nil && fi.ModTime().After(newest) {
@@ -190,24 +225,13 @@ func newestExt(pkg, ext string) time.Time {
 	return newest
 }
 
-// generatedNewest returns the latest mtime among generated wrappers (*.slint.go)
-// under pkg's directory; zero if there are none.
-func generatedNewest(pkg string) time.Time {
-	dir := pkg
-	if fi, err := os.Stat(pkg); err == nil && !fi.IsDir() {
-		dir = filepath.Dir(pkg)
-	}
-	var newest time.Time
-	_ = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() || !strings.HasSuffix(p, ".slint.go") {
-			return nil
-		}
-		if fi, err := d.Info(); err == nil && fi.ModTime().After(newest) {
-			newest = fi.ModTime()
-		}
-		return nil
-	})
-	return newest
+// skipWatchDir reports whether the change watcher should stay out of a directory:
+// everything codegen discovery already ignores (skipDir — VCS and other dot-dirs,
+// node_modules, vendor, testdata), so the watcher and the generator agree on what
+// project source is, plus the one directory goslint itself writes into a project —
+// an iOS .app bundle (`goslint ios build`'s default output), which is build output.
+func skipWatchDir(name string) bool {
+	return skipDir(name) || strings.HasSuffix(name, ".app")
 }
 
 // needsGenerate reports whether the typed wrappers under pkg are stale: true if a
