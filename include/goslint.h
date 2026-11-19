@@ -86,6 +86,8 @@ GoImage *goslint_image_from_gl_texture(uint32_t texture, uint32_t width, uint32_
 GoCompiler *goslint_compiler_new(void);
 void        goslint_compiler_free(GoCompiler *c);
 void        goslint_compiler_set_style(GoCompiler *c, const char *style);
+/* Select the edition (the major.minor Slint release whose language behavior to use). */
+void        goslint_compiler_set_edition(GoCompiler *c, uint32_t major, uint32_t minor);
 void        goslint_compiler_set_include_paths(GoCompiler *c, const char *const *paths, size_t n);
 void        goslint_compiler_set_library_paths(GoCompiler *c, const char *const *names, const char *const *paths, size_t n);
 /* fallback import loader: returns malloc'd source or NULL. The CALLER (Go side) owns
@@ -100,7 +102,7 @@ GoCompilationResult *goslint_compiler_build_from_path(GoCompiler *c, const char 
 /* ---- compilation result ---- */
 bool   goslint_result_has_errors(const GoCompilationResult *r);
 size_t goslint_result_diagnostic_count(const GoCompilationResult *r);
-/* level: 0=error 1=warning 2=note. message/file are owned out-strings (free
+/* level: 0=error 1=warning 2=info. message/file are owned out-strings (free
  * each; file may be set to NULL). Any out-pointer may be NULL to skip it. */
 void   goslint_result_diagnostic(const GoCompilationResult *r, size_t i,
                                  int32_t *level, char **message, char **file,

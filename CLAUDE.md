@@ -183,17 +183,31 @@ windows-gnu/mingw lib keeps the `--start-group -l:` form. Codegen always runs on
 ## Tests
 
 `internal/conformance` runs Slint's full `.slint` corpus (auto-discovers all case
-dirs) through the Go API, mirroring Slint's interpreter test driver
-(SLINT_ENABLE_EXPERIMENTAL_FEATURES + test fonts + OS=Windows): 0 failures.
+dirs) through the Go API, mirroring Slint's interpreter test driver: every
+experimental feature enabled (the name list is read from the driver's
+`ALL_EXPERIMENTAL_FEATURES`, since 1.19 rejects the old `=1`), each case compiled
+under its `//edition:` directive or else the current edition, `//include_path:` and
+`//library_path(name):` honored, test fonts, OS=Windows: 0 failures, 0 compile errors.
+A compile or create error is only logged, not failed — read the `-v` summary line
+(`make conformance`) after a Slint update.
+
+**Editions (Slint 1.19).** `slint.WithEdition(major, minor)` → `Compiler::set_edition`.
+No edition means pre-edition (1.18) behavior, which is what go-slint leaves as the
+default so an update never changes an app's layout; `goslint generate -edition 1.19`
+bakes the option into generated bindings. `goslint init` scaffolds new projects on
+the latest edition: `scaffoldEdition` in `cmd/goslint/init.go` feeds the scaffold's
+`//go:generate` line and `make scaffold-template` (a test keeps the three in step). A `slint-project.json` is honored only when
+the project dir/file itself is passed to `CompileFile`.
 `internal/timertest` verifies timers fire via the integration backend. Each
 `examples/*` has a compile-smoke `*_test.go` (validates markup, no display).
 
 ### Known platform limitations
 
-- **Skia-only properties don't render.** go-slint ships femtovg + software, not Skia,
-  so `drop-shadow-spread` and the `inner-shadow-*` properties on `Rectangle` (Slint
-  1.17) are ignored. Plain `drop-shadow-*` works everywhere; only the spread/inner
-  variants need Skia.
+- **Shadow support depends on the renderer.** go-slint ships femtovg + software, not
+  Skia. Since Slint 1.19 femtovg (the desktop default) draws `drop-shadow-spread` and
+  the `inner-shadow-*` properties on `Rectangle`, and the software renderer draws drop
+  shadows; `inner-shadow-*` is still ignored under `SLINT_BACKEND=software`.
+  `backdrop-blur` (1.19) is femtovg/Skia only.
 - **`DragArea.drag-image` must point at a file on disk, not a `data:` URL or a
   Go-set image.** The cursor-following drag overlay (Slint 1.17) is loaded from the
   `@image-url` resolved relative to the `.slint` source file's directory — so compile

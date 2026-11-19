@@ -96,7 +96,8 @@ check-android:
 	  AR_aarch64_linux_android="$$bin/llvm-ar" \
 	  cargo check --target $(ANDROID_CHECK_TARGET)
 
-# Regenerate the scaffold's embedded ui wrapper that `goslint init` ships. It MUST be
+# Regenerate the scaffold's embedded ui wrapper that `goslint init` ships, under the
+# edition new projects start on (scaffoldEdition in cmd/goslint/init.go). It MUST be
 # generated CO-LOCATED with the markup (ui/app.slint + ui/app.slint.go in one dir) so
 # the emitted //go:embed app.slint directive resolves — the generator rejects a
 # non-co-located layout. Run after changing the scaffold's app.slint (appSlintTemplate
@@ -105,7 +106,8 @@ check-android:
 scaffold-template: lib
 	tmp=$$(mktemp -d) && mkdir -p $$tmp/ui && \
 	  python3 -c "import re;open('$$tmp/ui/app.slint','w').write(re.search(r'const appSlintTemplate = \`(.*?)\`\n',open('cmd/goslint/init.go').read(),re.S).group(1))" && \
-	  go run ./cmd/goslint-gen -o $$tmp/ui/app.slint.go -package ui $$tmp/ui/app.slint && \
+	  edition=$$(sed -n 's/^const scaffoldEdition = "\(.*\)"$$/\1/p' cmd/goslint/init.go) && \
+	  go run ./cmd/goslint-gen -edition $$edition -o $$tmp/ui/app.slint.go -package ui $$tmp/ui/app.slint && \
 	  cp $$tmp/ui/app.slint.go cmd/goslint/templates/app.slint.go.tmpl && \
 	  rm -rf $$tmp && echo "regenerated cmd/goslint/templates/app.slint.go.tmpl"
 

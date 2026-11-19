@@ -16,6 +16,7 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/rileylov/go-slint/slintsys"
@@ -26,10 +27,19 @@ func main() {
 	pkg := flag.String("package", "", "package name (default: output directory name)")
 	component := flag.String("component", "", "component to wrap (default: last exported)")
 	style := flag.String("style", "fluent", "widget style baked into the generated compile()")
+	editionFlag := flag.String("edition", "", "Slint edition baked into the generated compile(), e.g. 1.19 (default: none — the behavior of Slint 1.18 and earlier)")
 	flag.Parse()
+	opts := compileOpts{style: *style}
+	if *editionFlag != "" {
+		ed, err := parseEdition(*editionFlag)
+		if err != nil {
+			fatal(err)
+		}
+		opts.edition = &ed
+	}
 	in := flag.Arg(0)
 	if in == "" {
-		fmt.Fprintln(os.Stderr, "usage: goslint generate [-o out.go] [-package p] [-component C] <input.slint>")
+		fmt.Fprintln(os.Stderr, "usage: goslint generate [-o out.go] [-package p] [-component C] [-style s] [-edition 1.19] <input.slint>")
 		os.Exit(2)
 	}
 	if *out == "" {
@@ -51,6 +61,11 @@ func main() {
 	c := slintsys.NewCompiler()
 	defer c.Free()
 	c.SetStyle(*style)
+	// Introspect under the same edition the generated code will compile with, so
+	// an edition this Slint rejects fails here rather than in the user's program.
+	if opts.edition != nil {
+		c.SetEdition(opts.edition.major, opts.edition.minor)
+	}
 	c.SetIncludePaths([]string{filepath.Dir(in)})
 	r, err := c.BuildFromSource(string(src), in)
 	if err != nil {
@@ -115,7 +130,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "goslint: warning:", w)
 	}
 
-	code, err := generate(&iface, *pkg, *style, rel, files, assets)
+	code, err := generate(&iface, *pkg, opts, rel, files, assets)
 	if err != nil {
 		fatal(err)
 	}
@@ -123,6 +138,17 @@ func main() {
 		fatal(err)
 	}
 	fmt.Printf("generated %s (%s.%s)\n", *out, *pkg, exported(iface.Component))
+}
+
+// parseEdition reads an edition as written in slint-project.json: "1.19".
+func parseEdition(s string) (edition, error) {
+	major, minor, ok := strings.Cut(s, ".")
+	ma, err1 := strconv.ParseUint(major, 10, 32)
+	mi, err2 := strconv.ParseUint(minor, 10, 32)
+	if !ok || err1 != nil || err2 != nil {
+		return edition{}, fmt.Errorf("-edition %q: want <major>.<minor>, e.g. 1.19", s)
+	}
+	return edition{major: uint32(ma), minor: uint32(mi)}, nil
 }
 
 func fatal(err error) { fmt.Fprintln(os.Stderr, "goslint-gen:", err); os.Exit(1) }

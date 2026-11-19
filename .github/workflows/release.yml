@@ -210,6 +210,15 @@ jobs:
         working-directory: rust/goslint-sys
         run: |
           NDK="$ANDROID_NDK_LATEST_HOME"
+          # Slint 1.19's prebuilt Skia binaries need the C++ standard library of NDK
+          # r30 or newer. With an older NDK the lib still builds, but an app using it
+          # crashes at startup — so refuse to publish one, loudly, here.
+          rev="$(sed -n 's/^Pkg.Revision *= *//p' "$NDK/source.properties")"
+          echo "building with NDK $rev ($NDK)"
+          if [ "${rev%%.*}" -lt 30 ]; then
+            echo "::error::Android NDK r30+ is required (Slint 1.19 prebuilt Skia); the runner's latest is $rev. Install a newer NDK with sdkmanager and point NDK at it, or set FORCE_SKIA_BUILD=1 to build Skia from source."
+            exit 1
+          fi
           BIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
           API=24
           clang="$BIN/${{ matrix.rust }}$API-clang"

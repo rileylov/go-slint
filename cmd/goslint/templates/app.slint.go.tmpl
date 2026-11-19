@@ -27,7 +27,7 @@ var (
 
 func compile() (*slint.Compilation, error) {
 	compileOnce.Do(func() {
-		compiled, compileErr = slint.CompileFS(slintFS, "app.slint", slint.WithStyle("fluent"))
+		compiled, compileErr = slint.CompileFS(slintFS, "app.slint", slint.WithStyle("fluent"), slint.WithEdition(1, 19))
 	})
 	return compiled, compileErr
 }
@@ -111,7 +111,7 @@ func (c *AppWindow) Run() error {
 					}
 				}
 				return nil
-			}, slint.WithStyle("fluent"))
+			}, slint.WithStyle("fluent"), slint.WithEdition(1, 19))
 		}
 	}
 	return c.inner.Run()

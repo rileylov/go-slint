@@ -14,12 +14,14 @@
 package conformance
 
 import (
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -27,6 +29,52 @@ import (
 )
 
 var includeRe = regexp.MustCompile(`//include_path:\s*(.+)`)
+
+// libraryRe matches a case's `//library_path(name): path` directive.
+var libraryRe = regexp.MustCompile(`//library_path\((.+)\):\s*(.+)`)
+
+// editionRe matches a case's `//edition: 1.18` directive (the driver's own pattern).
+var editionRe = regexp.MustCompile(`//edition:\s*(\S+)\s*\n`)
+
+// allFeaturesRe finds the driver's list of every experimental feature.
+var allFeaturesRe = regexp.MustCompile(`ALL_EXPERIMENTAL_FEATURES:\s*&str\s*=\s*"([^"]*)"`)
+
+// experimentalFeatures returns the value Slint's test drivers give
+// SLINT_ENABLE_EXPERIMENTAL_FEATURES: the name of every experimental feature. Since
+// Slint 1.19 the variable is a list of names — "1", which used to mean "all", is now
+// an error on every compile — and the corpus exercises all of them. The list is read
+// from the driver library beside the corpus (tests/driver/driverlib/lib.rs) rather
+// than copied here, so it follows the pinned Slint as features come and go.
+func experimentalFeatures(casesRoot string) (string, error) {
+	lib := filepath.Join(casesRoot, "..", "driver", "driverlib", "lib.rs")
+	b, err := os.ReadFile(lib)
+	if err != nil {
+		return "", err
+	}
+	m := allFeaturesRe.FindSubmatch(b)
+	if m == nil {
+		return "", fmt.Errorf("no ALL_EXPERIMENTAL_FEATURES in %s — did the driver change?", lib)
+	}
+	return string(m[1]), nil
+}
+
+// caseEdition returns the edition to compile a case with, as the driver does: the
+// one its `//edition:` directive names, else the edition of this Slint release (so
+// the corpus is tested with current language behavior unless a case pins an older
+// one). ok is false for a directive that isn't major.minor.
+func caseEdition(source string) (major, minor uint32, ok bool) {
+	ed := slintsys.Version() // "1.19.0" -> 1.19
+	if m := editionRe.FindStringSubmatch(source); m != nil {
+		ed = m[1]
+	}
+	parts := strings.Split(ed, ".")
+	if len(parts) < 2 {
+		return 0, 0, false
+	}
+	ma, err1 := strconv.ParseUint(parts[0], 10, 32)
+	mi, err2 := strconv.ParseUint(parts[1], 10, 32)
+	return uint32(ma), uint32(mi), err1 == nil && err2 == nil
+}
 
 // defaultDirs is every category under the cases root (the full corpus).
 func defaultDirs(root string) []string {
@@ -65,18 +113,22 @@ func TestConformance(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
+	root := casesRoot()
+	if abs, err := filepath.Abs(root); err == nil {
+		root = abs // absolute paths make @image-url and include paths resolve correctly
+	}
+
 	// Match the interpreter test driver's environment.
-	os.Setenv("SLINT_ENABLE_EXPERIMENTAL_FEATURES", "1")
+	features, err := experimentalFeatures(root)
+	if err != nil {
+		t.Fatalf("experimental feature list: %v", err)
+	}
+	os.Setenv("SLINT_ENABLE_EXPERIMENTAL_FEATURES", features)
 	if err := slintsys.InitHeadless(); err != nil {
 		t.Fatalf("InitHeadless: %v", err)
 	}
 	slintsys.ConfigureTestFonts()
 	slintsys.SetTestingOSWindows()
-
-	root := casesRoot()
-	if abs, err := filepath.Abs(root); err == nil {
-		root = abs // absolute paths make @image-url and include paths resolve correctly
-	}
 	dirs := defaultDirs(root)
 	if v := os.Getenv("SLINT_CONFORMANCE_DIRS"); v != "" {
 		dirs = strings.Split(v, ",")
@@ -155,8 +207,16 @@ func runCase(path string) (outcome, string) {
 	c := slintsys.NewCompiler()
 	defer c.Free()
 	c.SetStyle("fluent")
+	major, minor, ok := caseEdition(source)
+	if !ok {
+		return compileErr, "unparseable //edition: directive"
+	}
+	c.SetEdition(major, minor)
 	if inc := extractIncludePaths(source, filepath.Dir(path)); len(inc) > 0 {
 		c.SetIncludePaths(inc)
+	}
+	if libs := extractLibraryPaths(source, filepath.Dir(path)); len(libs) > 0 {
+		c.SetLibraryPaths(libs)
 	}
 
 	r, err := c.BuildFromSource(source, path)
@@ -203,6 +263,22 @@ func firstError(diags []slintsys.Diagnostic) string {
 		}
 	}
 	return "compile error"
+}
+
+// extractLibraryPaths reads the `//library_path(name): path` directives: the
+// `@name` imports a case resolves, each to a .slint file, a directory, or (Slint
+// 1.19) a library's slint-project.json. Relative paths are anchored like the
+// include paths.
+func extractLibraryPaths(source, dir string) map[string]string {
+	out := map[string]string{}
+	for _, m := range libraryRe.FindAllStringSubmatch(source, -1) {
+		p := strings.TrimSpace(m[2])
+		if !filepath.IsAbs(p) {
+			p = filepath.Join(dir, p)
+		}
+		out[strings.TrimSpace(m[1])] = p
+	}
+	return out
 }
 
 func extractIncludePaths(source, dir string) []string {

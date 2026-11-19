@@ -329,6 +329,41 @@ built binary is still self-contained - no `.slint` tree is needed at run time.
 
 ---
 
+## Editions
+
+Slint 1.19 introduced **editions**: a release can change how existing markup behaves,
+and your markup opts in by naming the release. Edition 1.19, for instance, changes how
+`if`/`for` elements count toward a layout's size and what a property set by only some
+states does in the others ([the full list](https://slint.dev/releases/1.19.0/docs/slint/guide/language/concepts/editions/)).
+
+It works like the `go` line in `go.mod`. **A project made with `goslint init` is
+already on the current edition** — the `-edition` flag in its `//go:generate` line —
+and stays there until you raise the number, so updating go-slint never changes how
+your app lays out.
+
+A project created before editions has no `-edition` and keeps the behavior of Slint
+1.18 and earlier. To move it (or any project) to a newer edition, review the changes
+and set the flag in the `//go:generate goslint generate …` directive in `app.go`:
+
+```go
+//go:generate goslint generate -edition 1.19 -o ui/app.slint.go -package ui ui/app.slint
+```
+
+`goslint dev`/`run`/`build` regenerate from that directive, so the edition sticks. With the dynamic API, pass
+`slint.WithEdition(1, 19)` to `Compile`/`CompileFile`/`CompileFS`.
+
+A [`slint-project.json`](https://slint.dev/releases/1.19.0/docs/slint/guide/tooling/project-file/)
+(edition, main file, include and library paths) is honored when the project is what
+you compile: `slint.CompileFile("ui")` or `slint.CompileFile("ui/slint-project.json")`.
+Compiling a `.slint` file directly does not look for one beside it, and generated
+bindings don't read it — use `-edition` there.
+
+**Experimental features.** Since Slint 1.19, `SLINT_ENABLE_EXPERIMENTAL_FEATURES` takes
+a comma-separated list of feature names (`SLINT_ENABLE_EXPERIMENTAL_FEATURES=match,closures`).
+The old `=1` is now a compile error on every file.
+
+---
+
 ## Live development
 
 You write your app **one way** - create, bind, `Run()` - and it does the right thing

@@ -202,7 +202,14 @@ export component AppWindow inherits Window {
 // goGenerateDirective is kept separate so the literal "//go:generate" line doesn't
 // sit at column 0 in this file (which would make `go generate ./...` over the
 // go-slint repo try to run it here, where there's no app.slint).
-const goGenerateDirective = "//go:generate goslint generate -o ui/app.slint.go -package ui ui/app.slint"
+const goGenerateDirective = "//go:generate goslint generate -edition " + scaffoldEdition + " -o ui/app.slint.go -package ui ui/app.slint"
+
+// scaffoldEdition is the Slint edition a new project starts on: the latest, since a
+// new project has no older behavior to preserve. The project then stays on it until
+// its author raises the number, so a later go-slint update can't shift its layout.
+// Raise this when a Slint update brings a new edition (its changelog says "With
+// edition X.Y, …"), then run `make scaffold-template`.
+const scaffoldEdition = "1.19"
 
 const appGoTemplate = `package main
 

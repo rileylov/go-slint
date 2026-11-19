@@ -135,3 +135,22 @@ func TestInitFreshDirectory(t *testing.T) {
 		t.Errorf("go.mod should declare the module and require go-slint:\n%s", mod)
 	}
 }
+
+// A new project starts on scaffoldEdition, and the three places that say so must
+// agree: the //go:generate directive (what every later regeneration uses), and both
+// compile sites of the pre-generated wrapper shipped in the scaffold. A wrapper
+// generated under another edition would behave differently from the first
+// `goslint dev`, which regenerates it from the directive.
+func TestScaffoldEditionIsConsistent(t *testing.T) {
+	major, minor, ok := strings.Cut(scaffoldEdition, ".")
+	if !ok {
+		t.Fatalf("scaffoldEdition = %q, want <major>.<minor>", scaffoldEdition)
+	}
+	if want := " -edition " + scaffoldEdition + " "; !strings.Contains(goGenerateDirective, want) {
+		t.Errorf("the scaffold's directive %q doesn't pass%s", goGenerateDirective, want)
+	}
+	want := "slint.WithEdition(" + major + ", " + minor + ")"
+	if n := strings.Count(uiTemplate, want); n != 2 {
+		t.Errorf("templates/app.slint.go.tmpl has %s at %d compile sites, want 2 — run `make scaffold-template`", want, n)
+	}
+}

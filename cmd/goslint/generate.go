@@ -47,6 +47,7 @@ func cmdGenerate(args []string) error {
 	pkg := flags.String("package", "", "")
 	comp := flags.String("component", "", "")
 	style := flags.String("style", "fluent", "")
+	edition := flags.String("edition", "", "")
 	parseErr := flags.Parse(args)
 
 	// Decide how this invocation maps to work: an explicit file (or a flag we don't
@@ -93,6 +94,9 @@ func cmdGenerate(args []string) error {
 		}
 		for _, e := range entries {
 			job := []string{"-o", e + ".go", "-style", *style}
+			if *edition != "" {
+				job = append(job, "-edition", *edition)
+			}
 			if *pkg != "" {
 				job = append(job, "-package", *pkg)
 			}

@@ -41,6 +41,17 @@ make update-slint SLINT_REF=v1.14.0   # checkout + rebuild + conformance, record
 
 or, equivalently, edit `.slint-version` and run `make slint && make lib && make test`.
 
+### If the release adds an edition
+
+Slint gates deliberate behavior changes behind an *edition* (the changelog says "With
+edition X.Y, …"). Existing projects are unaffected — they keep the edition in their
+`//go:generate` line — but new projects should start on the latest one:
+
+```sh
+# cmd/goslint/init.go:  const scaffoldEdition = "X.Y"
+make scaffold-template    # regenerates the scaffold's wrapper under that edition
+```
+
 ### If `make lib` fails
 
 The interpreter API changed. The error points at the exact function in the shim

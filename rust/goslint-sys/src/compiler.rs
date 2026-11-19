@@ -38,6 +38,23 @@ pub unsafe extern "C" fn goslint_compiler_set_style(c: *mut Compiler, style: *co
     })
 }
 
+/// Select the edition (Slint 1.19+): the `major.minor` release whose language
+/// behavior to compile with, e.g. (1, 19). Without one the compiler keeps the
+/// pre-edition (1.18) behavior and attaches an info diagnostic saying so. An
+/// edition older than 1.18 or newer than this Slint fails the build with a
+/// diagnostic, so there is nothing to report from here.
+///
+/// # Safety
+/// `c` must be NULL or a valid compiler pointer.
+#[no_mangle]
+pub unsafe extern "C" fn goslint_compiler_set_edition(c: *mut Compiler, major: u32, minor: u32) {
+    guard((), || {
+        if let Some(c) = c.as_mut() {
+            c.set_edition((major, minor));
+        }
+    })
+}
+
 /// Set the include paths used to resolve `.slint` imports.
 ///
 /// # Safety
@@ -259,7 +276,8 @@ pub unsafe extern "C" fn goslint_result_diagnostic_count(r: *const CompilationRe
     })
 }
 
-/// Read diagnostic `i`. `level` is 0=error, 1=warning, 2=note. `message` and
+/// Read diagnostic `i`. `level` is 0=error, 1=warning, 2=info (a suggestion that
+/// doesn't affect the compilation; Slint 1.19 — and any level added later). `message` and
 /// `file` receive owned strings the caller must free (`file` may be set to NULL).
 ///
 /// # Safety

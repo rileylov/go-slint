@@ -3,7 +3,7 @@
 
 use crate::{guard, guard_release, opt_str, set_last_error, to_c_string};
 use i_slint_compiler::langtype::Type as LangType;
-use i_slint_compiler::object_tree::PropertyVisibility;
+use i_slint_compiler::native_class::PropertyVisibility;
 use i_slint_compiler::parser::normalize_identifier;
 use slint_interpreter::{ComponentDefinition, ComponentHandle, ComponentInstance, Value};
 use std::cell::RefCell;

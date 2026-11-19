@@ -29,6 +29,12 @@ func (c *Compiler) SetStyle(style string) {
 	C.goslint_compiler_set_style(c.ptr, cs)
 }
 
+// SetEdition selects the edition: the major.minor Slint release whose language
+// behavior to compile with. An unsupported one fails the build with a diagnostic.
+func (c *Compiler) SetEdition(major, minor uint32) {
+	C.goslint_compiler_set_edition(c.ptr, C.uint32_t(major), C.uint32_t(minor))
+}
+
 // SetIncludePaths sets the paths used to resolve `.slint` imports.
 func (c *Compiler) SetIncludePaths(paths []string) {
 	if len(paths) == 0 {
@@ -100,7 +106,8 @@ func newResult(p *C.GoCompilationResult, what string) (*Result, error) {
 	return (&Result{ptr: p}).watch(), nil
 }
 
-// Diagnostic is a compiler message. Level: 0=error, 1=warning, 2=note.
+// Diagnostic is a compiler message. Level: 0=error, 1=warning, 2=info (a
+// suggestion that doesn't affect the compilation).
 type Diagnostic struct {
 	Level   int
 	Message string

@@ -27,7 +27,7 @@ func TestGenerate(t *testing.T) {
 		Enums:   map[string]EnumInfo{"Mode": {Values: []string{"idle", "active"}}},
 	}
 	// generate runs go/format internally, so a nil error means the output is valid Go.
-	code, err := generate(iface, "ui", "fluent", "app.slint", nil, nil)
+	code, err := generate(iface, "ui", compileOpts{style: "fluent"}, "app.slint", nil, nil)
 	if err != nil {
 		t.Fatalf("generate produced invalid Go: %v\n%s", err, code)
 	}
@@ -79,7 +79,7 @@ func TestGenerateMultiFile(t *testing.T) {
 		"components/widget.slint": `export component Widget {}`,
 		"shared/base.slint":       `export component Base {}`,
 	}
-	code, err := generate(iface, "ui", "fluent", "app.slint", files, nil)
+	code, err := generate(iface, "ui", compileOpts{style: "fluent"}, "app.slint", files, nil)
 	if err != nil {
 		t.Fatalf("generate produced invalid Go: %v\n%s", err, code)
 	}
@@ -105,12 +105,12 @@ func TestGenerateMultiFile(t *testing.T) {
 func TestCoLocationGuard(t *testing.T) {
 	iface := &Interface{Component: "App"}
 	// entry not co-located with the binding (relPath has a directory component)
-	if _, err := generate(iface, "ui", "fluent", "../app.slint", nil, nil); err == nil {
+	if _, err := generate(iface, "ui", compileOpts{style: "fluent"}, "../app.slint", nil, nil); err == nil {
 		t.Error("expected an error when the entry .slint is not co-located with the .go")
 	}
 	// an import outside the binding's directory
 	files := map[string]string{"../theme.slint": `export global Theme {}`}
-	if _, err := generate(iface, "ui", "fluent", "app.slint", files, nil); err == nil {
+	if _, err := generate(iface, "ui", compileOpts{style: "fluent"}, "app.slint", files, nil); err == nil {
 		t.Error("expected an error when an imported .slint is outside the package directory")
 	}
 }
@@ -146,7 +146,7 @@ func TestGenerateNameCollision(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := generate(tc.iface, "ui", "fluent", "app.slint", nil, nil)
+			_, err := generate(tc.iface, "ui", compileOpts{style: "fluent"}, "app.slint", nil, nil)
 			if err == nil {
 				t.Fatal("expected a collision error, got nil (would have produced uncompilable Go)")
 			}
@@ -158,7 +158,7 @@ func TestGenerateNameCollision(t *testing.T) {
 
 	// a clean interface must still generate without error.
 	clean := &Interface{Component: "App", Properties: []Prop{{Name: "name", Ty: TypeInfo{Kind: "string"}}}}
-	if _, err := generate(clean, "ui", "fluent", "app.slint", nil, nil); err != nil {
+	if _, err := generate(clean, "ui", compileOpts{style: "fluent"}, "app.slint", nil, nil); err != nil {
 		t.Fatalf("clean interface should generate: %v", err)
 	}
 }
@@ -180,7 +180,7 @@ func TestExportedUnicode(t *testing.T) {
 	// End to end: a unicode property name must survive validation and produce
 	// parseable Go (pre-fix it corrupted the method name into invalid UTF-8).
 	iface := &Interface{Component: "App", Properties: []Prop{{Name: "ñame", Ty: TypeInfo{Kind: "string"}}}}
-	src, err := generate(iface, "ui", "fluent", "app.slint", nil, nil)
+	src, err := generate(iface, "ui", compileOpts{style: "fluent"}, "app.slint", nil, nil)
 	if err != nil {
 		t.Fatalf("unicode property should generate: %v", err)
 	}
@@ -200,7 +200,7 @@ func TestGenerateOutPropertyNoSetter(t *testing.T) {
 			{Name: "label", Ty: TypeInfo{Kind: "string"}, Direction: "in"},
 		},
 	}
-	code, err := generate(iface, "ui", "fluent", "app.slint", nil, nil)
+	code, err := generate(iface, "ui", compileOpts{style: "fluent"}, "app.slint", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -236,6 +236,43 @@ func TestSanitizePkg(t *testing.T) {
 	for in, want := range cases {
 		if got := sanitizePkg(in); got != want {
 			t.Errorf("sanitizePkg(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// The compiler options the generator introspected under are the ones baked into the
+// generated compile() and its live-reload path. Without -edition the output is what
+// it always was; with one, both call sites select it.
+func TestGenerateBakesEdition(t *testing.T) {
+	iface := &Interface{Component: "AppWindow"}
+
+	plain, err := generate(iface, "ui", compileOpts{style: "fluent"}, "app.slint", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(plain), "WithEdition") {
+		t.Error("no -edition must not emit WithEdition")
+	}
+	if n := strings.Count(string(plain), `slint.WithStyle("fluent")`); n != 2 {
+		t.Errorf("want the style at both compile sites, found %d", n)
+	}
+
+	withEd, err := generate(iface, "ui", compileOpts{style: "material", edition: &edition{1, 19}}, "app.slint", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(string(withEd), `slint.WithStyle("material"), slint.WithEdition(1, 19)`); n != 2 {
+		t.Errorf("want style + edition at both compile sites, found %d", n)
+	}
+}
+
+func TestParseEdition(t *testing.T) {
+	if ed, err := parseEdition("1.19"); err != nil || ed != (edition{1, 19}) {
+		t.Errorf(`parseEdition("1.19") = %v, %v`, ed, err)
+	}
+	for _, bad := range []string{"", "1", "1.19.0", "v1.19", "1.x", "-1.2"} {
+		if _, err := parseEdition(bad); err == nil {
+			t.Errorf("parseEdition(%q) should fail", bad)
 		}
 	}
 }

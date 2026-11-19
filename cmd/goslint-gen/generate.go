@@ -8,6 +8,26 @@ import (
 	"unicode/utf8"
 )
 
+// edition is a Slint edition: the major.minor release whose language behavior the
+// markup is compiled with.
+type edition struct{ major, minor uint32 }
+
+// compileOpts are the compiler settings baked into the generated code — the same
+// ones the generator itself introspects the markup under.
+type compileOpts struct {
+	style   string
+	edition *edition // nil: no edition (pre-1.19 behavior)
+}
+
+// source renders the options as the slint.Option arguments of a Compile call.
+func (o compileOpts) source() string {
+	s := fmt.Sprintf("slint.WithStyle(%q)", o.style)
+	if o.edition != nil {
+		s += fmt.Sprintf(", slint.WithEdition(%d, %d)", o.edition.major, o.edition.minor)
+	}
+	return s
+}
+
 // generate produces the typed Go source for a component interface. relPath is the
 // entry .slint's path relative to the output .go — a bare filename, since the binding
 // is co-located with the markup. files holds every transitively-imported local .slint
@@ -15,7 +35,7 @@ import (
 // markup references, keyed the same way. Entry, imports, and images are emitted as
 // one //go:embed list, so the .slint stays the single source of truth and the binary
 // is self-contained — slint.CompileFS serves the images from the embedded FS.
-func generate(iface *Interface, pkg, style, relPath string, files map[string]string, assets []string) ([]byte, error) {
+func generate(iface *Interface, pkg string, opts compileOpts, relPath string, files map[string]string, assets []string) ([]byte, error) {
 	// Fail loudly on identifier collisions/invalid names before emitting anything:
 	// format.Source only parses the output, so a duplicate method would slip through
 	// and break the user's build with a confusing error.
@@ -58,7 +78,7 @@ func generate(iface *Interface, pkg, style, relPath string, files map[string]str
 	p("var (\n\tcompileOnce sync.Once\n\tcompiled    *slint.Compilation\n\tcompileErr  error\n)\n\n")
 	p("func compile() (*slint.Compilation, error) {\n")
 	p("\tcompileOnce.Do(func() {\n")
-	p("\t\tcompiled, compileErr = slint.CompileFS(slintFS, %q, slint.WithStyle(%q))\n", relPath, style)
+	p("\t\tcompiled, compileErr = slint.CompileFS(slintFS, %q, %s)\n", relPath, opts.source())
 	p("\t})\n")
 	p("\treturn compiled, compileErr\n}\n\n")
 
@@ -119,7 +139,7 @@ func generate(iface *Interface, pkg, style, relPath string, files map[string]str
 	p("\t\t\t\tfor _, replay := range c.rec.replays {\n")
 	p("\t\t\t\t\tif err := replay(&%s{inner: inst}); err != nil {\n\t\t\t\t\t\treturn err\n\t\t\t\t\t}\n", comp)
 	p("\t\t\t\t}\n\t\t\t\treturn nil\n")
-	p("\t\t\t}, slint.WithStyle(%q))\n", style)
+	p("\t\t\t}, %s)\n", opts.source())
 	p("\t\t}\n\t}\n")
 	p("\treturn c.inner.Run()\n}\n")
 	p("// OnCloseRequested runs when the window's close is requested; return true to allow it to close.\n")

@@ -9,7 +9,7 @@
 
 use crate::{guard, to_c_string};
 use i_slint_compiler::langtype::{Function, Struct as LangStruct, Type as LangType};
-use i_slint_compiler::object_tree::PropertyVisibility;
+use i_slint_compiler::native_class::PropertyVisibility;
 use serde::Serialize;
 use slint_interpreter::ComponentDefinition;
 use std::collections::BTreeMap;

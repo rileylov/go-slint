@@ -111,7 +111,8 @@ func SetTranslator(fn func(msgid string) string) error { return slintsys.SetTran
 // ClearTranslator removes the translator so `@tr` shows its source strings again.
 func ClearTranslator() { slintsys.ClearTranslator() }
 
-// Diagnostic is a single compiler message (error, warning, or note).
+// Diagnostic is a single compiler message. Level is 0 for an error, 1 for a
+// warning and 2 for an info (a suggestion that doesn't affect the compilation).
 type Diagnostic = slintsys.Diagnostic
 
 // DiagnosticError reports one or more compiler errors.
@@ -143,6 +144,21 @@ type Option func(*slintsys.Compiler)
 // Required for `.slint` files that import "std-widgets.slint".
 func WithStyle(style string) Option {
 	return func(c *slintsys.Compiler) { c.SetStyle(style) }
+}
+
+// WithEdition selects the Slint edition — the major.minor release whose language
+// behavior the markup is compiled with, e.g. WithEdition(1, 19). Slint 1.19
+// introduced editions so that a release can change how existing markup behaves
+// (1.19 changes how `if`/`for` elements count toward a layout's size, and what a
+// property set by only some states does in the others) without changing it under
+// apps that haven't opted in.
+//
+// Without this option — and without a slint-project.json naming an edition — the
+// markup keeps the behavior of Slint 1.18 and earlier. An edition older than 1.18
+// or newer than the Slint these bindings were built against ([Version]) fails the
+// compile with a [*DiagnosticError].
+func WithEdition(major, minor uint) Option {
+	return func(c *slintsys.Compiler) { c.SetEdition(uint32(major), uint32(minor)) }
 }
 
 // WithIncludePaths sets the paths used to resolve `.slint` imports.
