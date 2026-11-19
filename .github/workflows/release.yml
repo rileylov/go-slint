@@ -35,14 +35,14 @@ jobs:
           # fontconfig dev package installs without a cross-apt dance.
           - { target: linux_amd64, runner: ubuntu-latest, rust: x86_64-unknown-linux-gnu, kind: static, apt: libfontconfig-dev }
           - { target: linux_arm64, runner: ubuntu-24.04-arm, rust: aarch64-unknown-linux-gnu, kind: static, apt: libfontconfig-dev }
-          # macOS: BOTH built on macos-14 (Apple Silicon). darwin_amd64 cross-compiles to
+          # macOS: BOTH built on macos-15 (Apple Silicon). darwin_amd64 cross-compiles to
           # x86_64-apple-darwin — the macOS SDK is universal and the static build only
           # archives objects (no link/exec of x86_64 code), so no scarce/slow Intel
-          # (macos-13) runner is needed. Xcode CLT (the AppKit/Foundation frameworks the
+          # runner is needed. Xcode CLT (the AppKit/Foundation frameworks the
           # system-tray appkit backend needs) is preinstalled, so no apt. The release
           # ships the static .a; the dylib/install_name_tool dance is only for `make lib`.
-          - { target: darwin_arm64, runner: macos-14, rust: aarch64-apple-darwin, kind: static, apt: "" }
-          - { target: darwin_amd64, runner: macos-14, rust: x86_64-apple-darwin, kind: static, apt: "" }
+          - { target: darwin_arm64, runner: macos-15, rust: aarch64-apple-darwin, kind: static, apt: "" }
+          - { target: darwin_amd64, runner: macos-15, rust: x86_64-apple-darwin, kind: static, apt: "" }
           # Windows + Android cross-compile from x86_64 (neither uses fontconfig).
           - { target: windows_amd64, runner: ubuntu-latest, rust: x86_64-pc-windows-gnu, kind: static, apt: gcc-mingw-w64-x86-64 }
           # A second Windows lib for the LLVM ABI (windows-gnullvm): its exception-handling
@@ -54,12 +54,12 @@ jobs:
           - { target: windows_gnullvm_amd64, runner: ubuntu-latest, rust: x86_64-pc-windows-gnullvm, kind: static, apt: "" }
           - { target: android_arm64, runner: ubuntu-latest, rust: aarch64-linux-android, kind: shared, apt: "" }
           - { target: android_amd64, runner: ubuntu-latest, rust: x86_64-linux-android, kind: shared, apt: "" }
-          # iOS: static .a built on macos-14 (Xcode ships the iOS SDKs). Like darwin these
+          # iOS: static .a built on macos-15 (Xcode ships the iOS SDKs). Like darwin these
           # only archive objects, so cross-compiling to the device (aarch64-apple-ios) and
           # the Apple-Silicon simulator (aarch64-apple-ios-sim) needs no target link/exec.
           # `goslint ios build` downloads these; the frameworks come from native-static-libs.
-          - { target: ios_arm64, runner: macos-14, rust: aarch64-apple-ios, kind: static, apt: "" }
-          - { target: ios_sim_arm64, runner: macos-14, rust: aarch64-apple-ios-sim, kind: static, apt: "" }
+          - { target: ios_arm64, runner: macos-15, rust: aarch64-apple-ios, kind: static, apt: "" }
+          - { target: ios_sim_arm64, runner: macos-15, rust: aarch64-apple-ios-sim, kind: static, apt: "" }
     steps:
       - uses: actions/checkout@v4
 
@@ -115,7 +115,7 @@ jobs:
         run: |
           # Build ONLY the staticlib (what desktop ships) — not the cdylib. Skipping the
           # cdylib speeds every desktop target and, crucially, avoids cross-LINKING a
-          # cdylib for darwin_amd64 on the arm64 macos-14 runner (a staticlib just
+          # cdylib for darwin_amd64 on the arm64 macos-15 runner (a staticlib just
           # archives objects, so cross-compiling needs no target link/exec).
           cargo rustc --release --target ${{ matrix.rust }} --crate-type staticlib
           libs="$(cargo rustc --release --target ${{ matrix.rust }} --crate-type staticlib -- \
